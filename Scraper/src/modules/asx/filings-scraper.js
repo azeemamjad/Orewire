@@ -158,6 +158,7 @@ async function scrapeAsxFilingsForCompany(ticker, options = {}) {
         const snippet = (await page.content()).substring(0, 800);
         console.error(`[ASX] Page snippet: ${snippet}`);
       }
+      await context.close();
       return results;
     }
 
@@ -214,6 +215,9 @@ async function scrapeAsxFilingsForCompany(ticker, options = {}) {
         console.error(`[ASX] Error on ${idsId}: ${err.message}`);
       }
     }
+
+    await context.close();
+    return results;
   });
 }
 
