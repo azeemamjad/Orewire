@@ -1,0 +1,136 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Editorial financial-news base — warm paper, deep navy ink */
+    --background: 36 30% 96%;          /* warm paper #f7f3ec */
+    --surface: 0 0% 100%;              /* card surface */
+    --foreground: 220 45% 12%;         /* deep navy ink */
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 45% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 45% 12%;
+
+    /* Navy primary, gold accent (CTAs / premium) */
+    --primary: 220 55% 18%;            /* navy */
+    --primary-foreground: 36 40% 96%;
+
+    --accent: 38 78% 50%;              /* gold/amber */
+    --accent-foreground: 220 45% 12%;
+
+    --secondary: 36 22% 92%;
+    --secondary-foreground: 220 45% 12%;
+
+    --muted: 36 18% 90%;
+    --muted-foreground: 220 12% 38%;
+
+    /* Verdict colors */
+    --noteworthy: 174 62% 32%;         /* teal */
+    --noteworthy-foreground: 0 0% 100%;
+    --watch: 38 88% 48%;               /* amber */
+    --watch-foreground: 220 45% 12%;
+    --routine: 220 8% 55%;             /* warm gray */
+    --routine-foreground: 0 0% 100%;
+
+    --highlight: 54 100% 70%;
+    --up: 152 60% 36%;
+    --down: 0 72% 48%;
+
+    --destructive: 0 72% 48%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 14% 86%;
+    --input: 220 14% 86%;
+    --ring: 38 78% 50%;
+
+    --radius: 0.25rem;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 220 30% 20%;
+    --sidebar-primary: 220 55% 18%;
+    --sidebar-primary-foreground: 36 40% 96%;
+    --sidebar-accent: 36 22% 92%;
+    --sidebar-accent-foreground: 220 45% 12%;
+    --sidebar-border: 220 14% 86%;
+    --sidebar-ring: 38 78% 50%;
+  }
+
+  .dark {
+    --background: 220 35% 8%;
+    --surface: 220 30% 11%;
+    --foreground: 36 30% 94%;
+    --card: 220 30% 11%;
+    --card-foreground: 36 30% 94%;
+    --popover: 220 30% 10%;
+    --popover-foreground: 36 30% 94%;
+    --primary: 38 78% 55%;
+    --primary-foreground: 220 45% 10%;
+    --accent: 38 78% 55%;
+    --accent-foreground: 220 45% 10%;
+    --secondary: 220 25% 16%;
+    --secondary-foreground: 36 30% 94%;
+    --muted: 220 25% 16%;
+    --muted-foreground: 36 12% 65%;
+    --noteworthy: 174 62% 42%;
+    --noteworthy-foreground: 220 45% 8%;
+    --watch: 38 88% 58%;
+    --watch-foreground: 220 45% 8%;
+    --routine: 220 8% 50%;
+    --routine-foreground: 0 0% 100%;
+    --up: 152 60% 48%;
+    --down: 0 72% 58%;
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 20% 22%;
+    --input: 220 20% 22%;
+    --ring: 38 78% 55%;
+    --sidebar-background: 220 30% 11%;
+    --sidebar-foreground: 36 20% 88%;
+    --sidebar-primary: 38 78% 55%;
+    --sidebar-primary-foreground: 220 45% 10%;
+    --sidebar-accent: 220 25% 16%;
+    --sidebar-accent-foreground: 36 30% 94%;
+    --sidebar-border: 220 20% 22%;
+    --sidebar-ring: 38 78% 55%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  html, body { @apply bg-background text-foreground; font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  h1, h2, h3, h4 { font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif; letter-spacing: -0.015em; font-weight: 700; }
+  .font-display { font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif; letter-spacing: -0.018em; }
+  .font-mono { font-family: 'JetBrains Mono', monospace; }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+  .grain {
+    background-image: radial-gradient(hsl(220 45% 12% / 0.04) 1px, transparent 1px);
+    background-size: 3px 3px;
+  }
+  .topo {
+    background-image:
+      radial-gradient(circle at 20% 30%, hsl(220 45% 12% / 0.05) 0, transparent 40%),
+      radial-gradient(circle at 80% 70%, hsl(220 45% 12% / 0.06) 0, transparent 45%),
+      repeating-radial-gradient(circle at 50% 50%, transparent 0 18px, hsl(220 45% 12% / 0.03) 18px 19px);
+  }
+  .ticker { animation: ticker 50s linear infinite; }
+  @keyframes ticker {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+  .animate-pulse-dot {
+    animation: pulseDot 1.6s ease-in-out infinite;
+    border-radius: 9999px;
+  }
+  @keyframes pulseDot {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 hsl(var(--noteworthy) / 0.5); }
+    50% { opacity: 0.6; box-shadow: 0 0 0 4px hsl(var(--noteworthy) / 0); }
+  }
+  .rule-thick { border-top: 4px double hsl(var(--foreground)); }
+}

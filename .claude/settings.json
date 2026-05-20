@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx playwright *)",
+      "Bash(node index.js)",
+      "Bash(node -e \"require\\('./db'\\); console.log\\('DB OK'\\);\")",
+      "Bash(curl -s http://localhost:3000/api/filings/stats)",
+      "Bash(taskkill /F /FI \"WINDOWTITLE eq node*\" /FI \"IMAGENAME eq node.exe\")",
+      "Bash(node -e ' *)",
+      "Bash(node -e \"require\\('dotenv'\\).config\\(\\); require\\('./routes/upload'\\); console.log\\('OK'\\);\")",
+      "Bash(node index.js \"AbraSilver Resource Corp.\" --no-analyze)",
+      "Bash(node debug-asx-announcements.js)",
+      "Bash(curl -s -X POST http://localhost:3000/api/seeder/cse)",
+      "Bash(node index.js \"New Found Gold Corp.\")"
+    ]
+  }
+}

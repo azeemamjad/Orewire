@@ -1,0 +1,11 @@
+{
+  "schedule": "0 6 * * *",
+  "concurrency": 5,
+  "daysBack": 30,
+  "seedOnStart": true,
+  "asxSeedOnStart": false,
+  "analyze": true,
+  "enabled": false,
+  "asxSchedule": "0 6 * * *",
+  "asxEnabled": false
+}

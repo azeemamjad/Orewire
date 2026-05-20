@@ -1,0 +1,1631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mining Intel — Management</title>
+<style>
+  :root {
+    --bg:         #0f172a;
+    --surface:    #1e293b;
+    --border:     #334155;
+    --accent:     #3b82f6;
+    --accent-h:   #2563eb;
+    --text:       #e2e8f0;
+    --muted:      #94a3b8;
+    --noteworthy: #ef4444;
+    --watch:      #f59e0b;
+    --routine:    #64748b;
+    --success:    #10b981;
+    --danger:     #ef4444;
+    --radius:     8px;
+    --sidebar-w:  220px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; font-size: 14px; display: flex; min-height: 100vh; }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: var(--sidebar-w); background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; flex-shrink: 0; position: fixed; top: 0; left: 0; bottom: 0;
+  }
+  .logo { padding: 20px 16px 12px; font-size: 16px; font-weight: 700; color: var(--accent); letter-spacing: -0.3px; border-bottom: 1px solid var(--border); }
+  .logo span { color: var(--muted); font-weight: 400; font-size: 11px; display: block; margin-top: 2px; }
+  nav ul { list-style: none; padding: 10px 0; }
+  nav li { padding: 10px 16px; cursor: pointer; color: var(--muted); border-left: 3px solid transparent; transition: all .15s; display: flex; align-items: center; gap: 8px; }
+  nav li:hover { color: var(--text); background: rgba(255,255,255,.04); }
+  nav li.active { color: var(--accent); border-left-color: var(--accent); background: rgba(59,130,246,.08); }
+  nav li .icon { font-size: 16px; }
+
+  /* ── Main ── */
+  .main { margin-left: var(--sidebar-w); flex: 1; padding: 24px; overflow-y: auto; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* ── Page header ── */
+  .page-header { margin-bottom: 20px; }
+  .page-header h1 { font-size: 20px; font-weight: 600; }
+  .page-header p { color: var(--muted); margin-top: 4px; font-size: 13px; }
+
+  /* ── Stat cards ── */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; margin-bottom: 24px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .stat-card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .4px; }
+  .stat-card .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+  .stat-card.noteworthy .value { color: var(--noteworthy); }
+  .stat-card.watch .value { color: var(--watch); }
+  .stat-card.routine .value { color: var(--muted); }
+
+  /* ── Toolbar ── */
+  .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .toolbar input, .toolbar select { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 6px; font-size: 13px; outline: none; }
+  .toolbar input:focus, .toolbar select:focus { border-color: var(--accent); }
+  .toolbar input[type=search] { width: 240px; }
+
+  /* ── Buttons ── */
+  .btn { padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; transition: opacity .15s; display: inline-flex; align-items: center; gap: 6px; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: var(--accent-h); }
+  .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover { color: var(--text); border-color: var(--text); }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+  .btn-danger { background: var(--danger); color: #fff; }
+
+  /* ── Table ── */
+  .table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { background: var(--surface); padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: rgba(255,255,255,.03); }
+  tbody td { padding: 10px 14px; vertical-align: middle; }
+  .empty-row td { text-align: center; color: var(--muted); padding: 32px; }
+
+  /* ── Badges ── */
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 100px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+  .badge-noteworthy { background: rgba(239,68,68,.15); color: var(--noteworthy); }
+  .badge-watch { background: rgba(245,158,11,.15); color: var(--watch); }
+  .badge-routine { background: rgba(100,116,139,.15); color: var(--muted); }
+  .badge-analyzed { background: rgba(16,185,129,.15); color: var(--success); }
+  .badge-pending { background: rgba(100,116,139,.15); color: var(--muted); }
+
+  /* ── Import dropzone ── */
+  .dropzone {
+    border: 2px dashed var(--border); border-radius: var(--radius); padding: 40px;
+    text-align: center; color: var(--muted); cursor: pointer; transition: all .2s; background: var(--surface);
+  }
+  .dropzone:hover, .dropzone.drag-over { border-color: var(--accent); color: var(--text); background: rgba(59,130,246,.05); }
+  .dropzone .drop-icon { font-size: 36px; margin-bottom: 10px; }
+  .dropzone .drop-hint { font-size: 12px; margin-top: 6px; }
+
+  /* ── Preview table (import) ── */
+  .preview-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-top: 16px; }
+  .preview-box h3 { font-size: 13px; margin-bottom: 12px; }
+  .sheet-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  .sheet-tab { padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; background: var(--bg); border: 1px solid var(--border); color: var(--muted); }
+  .sheet-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* ── Scraper log ── */
+  .log-box { background: #000; border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; font-family: 'Courier New', monospace; font-size: 12px; max-height: 400px; overflow-y: auto; }
+  .log-box .log-out { color: #a3e635; }
+  .log-box .log-err { color: #f87171; }
+  .log-box .log-sys { color: var(--muted); }
+
+  /* ── ASX autocomplete ── */
+  .asx-ac-item { padding: 8px 12px; cursor: pointer; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+  .asx-ac-item:hover { background: rgba(59,130,246,.12); }
+  .asx-ac-item .ac-ticker { color: var(--accent); font-size: 11px; font-weight: 600; }
+
+  /* ── Modal ── */
+  .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
+  .modal-backdrop.open { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); width: 100%; max-width: 680px; max-height: 90vh; overflow-y: auto; }
+  .modal-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .modal-header h2 { font-size: 16px; }
+  .modal-close { background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; line-height: 1; }
+  .modal-body { padding: 20px; }
+  .detail-row { display: flex; gap: 8px; margin-bottom: 12px; }
+  .detail-label { color: var(--muted); font-size: 12px; min-width: 120px; padding-top: 2px; }
+  .detail-value { flex: 1; font-size: 13px; line-height: 1.5; }
+  .fact-list { list-style: none; }
+  .fact-list li { padding: 5px 0; border-bottom: 1px solid var(--border); display: flex; gap: 8px; }
+  .fact-list li::before { content: '→'; color: var(--accent); flex-shrink: 0; }
+
+  /* ── Toast ── */
+  #toast { position: fixed; bottom: 24px; right: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 18px; font-size: 13px; z-index: 200; transform: translateY(80px); opacity: 0; transition: all .25s; pointer-events: none; }
+  #toast.show { transform: none; opacity: 1; }
+  #toast.toast-ok { border-color: var(--success); color: var(--success); }
+  #toast.toast-err { border-color: var(--danger); color: var(--danger); }
+
+  /* ── AI validation card ── */
+  .ai-card { border-radius: 6px; padding: 12px 14px; margin-bottom: 14px; display: flex; gap: 12px; align-items: flex-start; }
+  .ai-card.valid   { background: rgba(16,185,129,.1);  border: 1px solid rgba(16,185,129,.3); }
+  .ai-card.invalid { background: rgba(239,68,68,.1);   border: 1px solid rgba(239,68,68,.3); }
+  .ai-card.unknown { background: rgba(100,116,139,.1); border: 1px solid rgba(100,116,139,.3); }
+  .ai-card .ai-icon { font-size: 20px; line-height: 1; flex-shrink: 0; margin-top: 1px; }
+  .ai-card .ai-body { flex: 1; }
+  .ai-card .ai-title { font-weight: 600; font-size: 13px; margin-bottom: 3px; }
+  .ai-card.valid   .ai-title { color: var(--success); }
+  .ai-card.invalid .ai-title { color: var(--danger); }
+  .ai-card.unknown .ai-title { color: var(--muted); }
+  .ai-card .ai-reason { font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .ai-card .ai-mapping { margin-top: 8px; font-size: 11px; color: var(--muted); }
+  .ai-card .ai-mapping span { display: inline-block; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; margin: 2px 2px 0 0; }
+  .ai-loading { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; padding: 10px 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
+
+  /* ── Pipeline ── */
+  .pipeline-status-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 24px; display: flex; align-items: center; gap: 20px; margin-bottom: 20px; }
+  .pipeline-status-card .status-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .status-dot.idle { background: var(--muted); }
+  .status-dot.running { background: var(--success); animation: pulse 1.2s ease-in-out infinite; }
+  .status-dot.stopping { background: var(--watch); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+  .pipeline-status-card .status-text { flex: 1; }
+  .pipeline-status-card .status-text .status-label { font-size: 16px; font-weight: 600; text-transform: capitalize; }
+  .pipeline-status-card .status-text .status-sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
+  .progress-bar-wrap { height: 6px; background: var(--border); border-radius: 3px; margin-top: 10px; overflow: hidden; width: 100%; max-width: 400px; }
+  .progress-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width .4s; }
+  .config-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-bottom: 16px; }
+  .config-field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+  .config-field input, .config-field select { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 6px; font-size: 13px; outline: none; }
+  .config-field input:focus, .config-field select:focus { border-color: var(--accent); }
+  .config-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
+  .config-toggle input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+  .pl-log-box { background: #000; border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; font-family: 'Courier New', monospace; font-size: 12px; height: 420px; overflow-y: auto; }
+  .pl-log-box .ll-out { color: #a3e635; }
+  .pl-log-box .ll-err { color: #f87171; }
+  .pl-log-box .ll-log { color: #94a3b8; }
+  .pl-log-box .ll-warn { color: #fbbf24; }
+
+  /* ── Misc ── */
+  .text-muted { color: var(--muted); }
+  .mt-4 { margin-top: 16px; }
+  .mb-4 { margin-bottom: 16px; }
+  .section-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .loading { color: var(--muted); text-align: center; padding: 40px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+<aside class="sidebar">
+  <div class="logo">⛏ Mining Intel<span>SEDAR+ Filing Tracker</span></div>
+  <nav>
+    <ul>
+      <li class="active" data-tab="dashboard"><span class="icon">📊</span> Dashboard</li>
+      <li data-tab="companies"><span class="icon">🏢</span> Companies</li>
+      <li data-tab="filings"><span class="icon">📄</span> Filings</li>
+      <li data-tab="import"><span class="icon">📥</span> Import Data</li>
+      <li data-tab="scraper"><span class="icon">🤖</span> Run Scraper</li>
+      <li data-tab="pipeline"><span class="icon">⚙️</span> Pipeline</li>
+    </ul>
+  </nav>
+</aside>
+
+<!-- ═══════════════════ MAIN ═══════════════════ -->
+<main class="main">
+
+  <!-- ── DASHBOARD ── -->
+  <div id="tab-dashboard" class="tab-content active">
+    <div class="page-header">
+      <h1>Dashboard</h1>
+      <p>Overview of your mining filings pipeline</p>
+    </div>
+
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-card"><div class="label">Companies</div><div class="value" id="stat-companies">—</div></div>
+      <div class="stat-card"><div class="label">Total Filings</div><div class="value" id="stat-filings">—</div></div>
+      <div class="stat-card"><div class="label">Analyzed</div><div class="value" id="stat-analyzed">—</div></div>
+      <div class="stat-card noteworthy"><div class="label">Noteworthy</div><div class="value" id="stat-noteworthy">—</div></div>
+      <div class="stat-card watch"><div class="label">Watch</div><div class="value" id="stat-watch">—</div></div>
+      <div class="stat-card routine"><div class="label">Routine</div><div class="value" id="stat-routine">—</div></div>
+    </div>
+
+    <div class="section-title">Recent Filings</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Company</th><th>File</th><th>Verdict</th><th>Summary</th><th></th></tr></thead>
+        <tbody id="recent-filings-body"><tr class="empty-row"><td colspan="5">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── COMPANIES ── -->
+  <div id="tab-companies" class="tab-content">
+    <div class="page-header">
+      <h1>Companies</h1>
+      <p>All tracked mining companies</p>
+    </div>
+
+    <div class="toolbar">
+      <input type="search" id="co-search" placeholder="Search name / ticker…" oninput="_coPage=1;loadCompanies()" />
+      <select id="co-exchange" onchange="_coPage=1;loadCompanies()">
+        <option value="">All exchanges</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="_coPage=1;loadCompanies()">↻ Refresh</button>
+      <span id="co-count" class="text-muted" style="margin-left:auto;font-size:12px;"></span>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Name</th><th>Exchange</th><th>Ticker</th><th>SEDAR Ticker</th><th>Market Cap (C$M)</th><th>Sector</th><th>Actions</th></tr></thead>
+        <tbody id="companies-body"><tr class="empty-row"><td colspan="7">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div id="co-pagination" style="display:flex;align-items:center;gap:10px;margin-top:14px;justify-content:flex-end;">
+      <span id="co-page-info" style="font-size:12px;color:var(--muted);"></span>
+      <button class="btn btn-ghost btn-sm" id="co-prev" onclick="coChangePage(-1)">← Prev</button>
+      <button class="btn btn-ghost btn-sm" id="co-next" onclick="coChangePage(1)">Next →</button>
+    </div>
+  </div>
+
+  <!-- ── FILINGS ── -->
+  <div id="tab-filings" class="tab-content">
+    <div class="page-header">
+      <h1>Filings</h1>
+      <p>All downloaded and analyzed PDF filings</p>
+    </div>
+
+    <div class="toolbar">
+      <input type="search" id="fi-search" placeholder="Search company…" oninput="loadFilings()" />
+      <select id="fi-verdict" onchange="loadFilings()">
+        <option value="">All verdicts</option>
+        <option value="noteworthy">Noteworthy</option>
+        <option value="watch">Watch</option>
+        <option value="routine">Routine</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="loadFilings()">↻ Refresh</button>
+      <span id="fi-count" class="text-muted" style="margin-left:auto;font-size:12px;"></span>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Company</th><th>File</th><th>Type</th><th>Verdict</th><th>Ticker Summary</th><th>Status</th><th></th></tr></thead>
+        <tbody id="filings-body"><tr class="empty-row"><td colspan="7">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── IMPORT ── -->
+  <div id="tab-import" class="tab-content">
+    <div class="page-header">
+      <h1>Import Data</h1>
+      <p>Import company list from Excel, seed from the TSX/TSXV live feed, or sync AI analysis files</p>
+    </div>
+
+    <!-- Live Seeders row -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px;">
+
+      <!-- TSX/TSXV -->
+      <div class="preview-box">
+        <div class="section-title" style="margin-bottom:10px;">TSX / TSXV Auto-Seed</div>
+        <p style="color:var(--muted);font-size:13px;line-height:1.6;margin-bottom:14px;">
+          Downloads the latest issuer list from <strong style="color:var(--text);">tsx.com</strong>
+          (both TSX and TSXV sheets) and inserts any new companies.
+        </p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-primary" id="seed-tsx-btn" onclick="seedTsx()">⬇ Seed TSX / TSXV</button>
+          <button class="btn btn-ghost btn-sm" onclick="previewTsx()">Preview</button>
+        </div>
+        <div id="seed-result" style="margin-top:12px;font-size:13px;"></div>
+        <div id="seed-preview" style="margin-top:14px;display:none;"></div>
+      </div>
+
+      <!-- CSE -->
+      <div class="preview-box">
+        <div class="section-title" style="margin-bottom:10px;">CSE Auto-Seed</div>
+        <p style="color:var(--muted);font-size:13px;line-height:1.6;margin-bottom:14px;">
+          Opens <strong style="color:var(--text);">thecse.com</strong> mining listings,
+          downloads the Excel export, and inserts any new companies.
+          <span style="color:var(--watch);">Takes ~30 s (browser automation).</span>
+        </p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-primary" id="seed-cse-btn" onclick="seedCse()">⬇ Seed CSE</button>
+          <span id="seed-cse-status" style="font-size:12px;color:var(--muted);"></span>
+        </div>
+        <div id="seed-cse-result" style="margin-top:12px;font-size:13px;"></div>
+        <div id="seed-cse-logs" class="log-box" style="margin-top:12px;display:none;max-height:160px;"></div>
+      </div>
+
+      <!-- ASX -->
+      <div class="preview-box">
+        <div class="section-title" style="margin-bottom:10px;">ASX Auto-Seed</div>
+        <p style="color:var(--muted);font-size:13px;line-height:1.6;margin-bottom:14px;">
+          Opens <strong style="color:var(--text);">asx.com.au</strong> company directory,
+          downloads the CSV, and inserts any new Australian companies.
+          <span style="color:var(--watch);">Takes ~30 s (browser automation).</span>
+        </p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-primary" id="seed-asx-btn" onclick="seedAsx()">⬇ Seed ASX</button>
+          <span id="seed-asx-status" style="font-size:12px;color:var(--muted);"></span>
+        </div>
+        <div id="seed-asx-result" style="margin-top:12px;font-size:13px;"></div>
+        <div id="seed-asx-logs" class="log-box" style="margin-top:12px;display:none;max-height:160px;"></div>
+      </div>
+
+    </div>
+
+    <div class="two-col">
+      <!-- Excel import -->
+      <div>
+        <div class="section-title">Excel Company Import</div>
+        <div class="dropzone" id="dropzone" onclick="document.getElementById('excel-input').click()">
+          <div class="drop-icon">📊</div>
+          <div>Click or drag & drop your Excel file here</div>
+          <div class="drop-hint">Supports .xlsx / .xls — both sheets will be read</div>
+        </div>
+        <input type="file" id="excel-input" accept=".xlsx,.xls" style="display:none" onchange="handleExcelUpload(event)" />
+
+        <div id="preview-box" class="preview-box" style="display:none">
+          <h3>Preview</h3>
+          <div class="sheet-tabs" id="sheet-tabs"></div>
+          <div id="ai-assessment"></div>
+          <div id="preview-info" style="font-size:13px;color:var(--muted);margin-bottom:12px;"></div>
+          <div class="table-wrap" style="max-height:220px;overflow:auto;">
+            <table id="preview-table">
+              <thead id="preview-thead"></thead>
+              <tbody id="preview-tbody"></tbody>
+            </table>
+          </div>
+          <div style="margin-top:14px;display:flex;gap:10px;align-items:center;">
+            <select id="import-sheet-select" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:13px;"></select>
+            <button class="btn btn-primary" id="import-btn" onclick="doImport()">Import into Database</button>
+            <button class="btn btn-ghost" onclick="resetImport()">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sync analyses -->
+      <div>
+        <div class="section-title">Sync Analysis Files</div>
+        <div class="preview-box">
+          <p style="color:var(--muted);font-size:13px;line-height:1.6;margin-bottom:14px;">
+            Scan the Scraper's <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">downloads/</code> folder and import
+            any <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">_analysis.json</code> files that haven't been
+            imported yet.
+          </p>
+          <button class="btn btn-primary" onclick="syncAnalyses()">↻ Sync Analysis Files</button>
+          <div id="sync-result" style="margin-top:12px;font-size:13px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SCRAPER ── -->
+  <div id="tab-scraper" class="tab-content">
+    <div class="page-header">
+      <h1>Run Scraper</h1>
+      <p>Trigger the SEDAR+ scraper for a company</p>
+    </div>
+
+    <div class="two-col">
+      <div class="preview-box">
+        <div class="section-title" style="margin-bottom:14px;">New Scrape Job</div>
+        <div style="margin-bottom:12px;">
+          <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px;">Exchange</label>
+          <select id="scrape-exchange" onchange="updateScraperPlaceholder()" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:6px;font-size:13px;margin-bottom:10px;">
+            <option value="">SEDAR+ (TSX / TSXV / CSE)</option>
+            <option value="ASX">ASX (Australian)</option>
+          </select>
+          <!-- SEDAR: company name input -->
+          <div id="scrape-company-wrap">
+            <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px;">Company Name</label>
+            <input id="scrape-company" type="text" placeholder="e.g. Apogee Minerals Ltd." style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:6px;font-size:13px;outline:none;" />
+          </div>
+          <!-- ASX: company name with autocomplete -->
+          <div id="scrape-asx-wrap" style="display:none;">
+            <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px;">Company Name</label>
+            <div style="position:relative;">
+              <input id="scrape-asx-company" type="text" placeholder="e.g. Adalta Limited" autocomplete="off"
+                style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:6px;font-size:13px;outline:none;"
+                oninput="asxCompanySearch()" />
+              <div id="asx-autocomplete" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-top:none;border-radius:0 0 6px 6px;z-index:100;max-height:200px;overflow-y:auto;"></div>
+            </div>
+            <div id="asx-ticker-badge" style="display:none;margin-top:6px;font-size:12px;color:var(--muted);">
+              Ticker: <strong id="asx-ticker-label" style="color:var(--accent);"></strong>
+            </div>
+          </div>
+        </div>
+        <div style="margin-bottom:16px;">
+          <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px;">Mode</label>
+          <select id="scrape-mode" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:6px;font-size:13px;">
+            <option value="both">Scrape + Analyze</option>
+            <option value="scrape-only">Scrape only (no AI)</option>
+            <option value="analyze-only">Analyze only (PDFs already downloaded)</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="run-btn" onclick="runScraper()">▶ Run Scraper</button>
+      </div>
+
+      <div class="preview-box">
+        <div class="section-title" style="margin-bottom:10px;">Recent Runs</div>
+        <div id="runs-list" style="font-size:13px;color:var(--muted);">No runs yet.</div>
+      </div>
+    </div>
+
+    <div id="log-section" style="margin-top:20px;display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div class="section-title" style="margin:0;">Live Log — <span id="log-company"></span></div>
+        <span id="log-status" class="badge"></span>
+      </div>
+      <div class="log-box" id="log-box"></div>
+    </div>
+  </div>
+
+  <!-- ── PIPELINE ── -->
+  <div id="tab-pipeline" class="tab-content">
+    <div class="page-header">
+      <h1>Automated Pipeline</h1>
+      <p>Schedule and monitor the full seed → scrape → analyze cycle for all ~1600 companies</p>
+    </div>
+
+    <!-- Status card -->
+    <div class="pipeline-status-card" id="pl-status-card">
+      <div class="status-dot idle" id="pl-dot"></div>
+      <div class="status-text" style="flex:1;">
+        <div class="status-label" id="pl-status-label">Idle</div>
+        <div class="status-sub" id="pl-status-sub">Pipeline is not running</div>
+        <div class="progress-bar-wrap" id="pl-progress-wrap" style="display:none;">
+          <div class="progress-bar-fill" id="pl-progress-fill" style="width:0%"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+        <button class="btn btn-primary" id="pl-start-btn" onclick="pipelineStart()">▶ Run Main</button>
+        <button class="btn btn-primary" id="pl-start-asx-btn" onclick="pipelineStartAsx()" style="background:#8b5cf6;">▶ Run ASX</button>
+        <button class="btn btn-danger"  id="pl-stop-btn"  onclick="pipelineStop()" style="display:none;">■ Stop</button>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <!-- Main Config panel -->
+      <div class="preview-box">
+        <div class="section-title" style="margin-bottom:14px;">Main Pipeline (Canada — TSX / TSXV / CSE)</div>
+        <div class="config-grid">
+          <div class="config-field">
+            <label>Cron Schedule</label>
+            <input id="pl-schedule" type="text" placeholder="0 6 * * *" title="Standard cron: min hour dom mon dow" />
+          </div>
+          <div class="config-field">
+            <label>Download Workers</label>
+            <input id="pl-concurrency" type="number" min="1" max="20" placeholder="5" />
+          </div>
+          <div class="config-field">
+            <label>AI Workers</label>
+            <input id="pl-ai-concurrency" type="number" min="1" max="10" placeholder="2" />
+          </div>
+          <div class="config-field">
+            <label>Days Back (SEDAR search)</label>
+            <input id="pl-daysback" type="number" min="1" max="365" placeholder="30" />
+          </div>
+        </div>
+        <div style="display:flex;gap:20px;margin-bottom:16px;flex-wrap:wrap;">
+          <label class="config-toggle">
+            <input type="checkbox" id="pl-seed-on-start" />
+            Seed company lists before scraping
+          </label>
+          <label class="config-toggle">
+            <input type="checkbox" id="pl-analyze" />
+            Run AI analysis after scraping
+          </label>
+          <label class="config-toggle">
+            <input type="checkbox" id="pl-enabled" onchange="pipelineCronToggle(this.checked, 'main')" />
+            Enable scheduled cron job
+          </label>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="pipelineSaveConfig()">Save Config</button>
+        <span id="pl-config-msg" style="font-size:12px;color:var(--success);margin-left:10px;display:none;">Saved</span>
+      </div>
+
+      <!-- ASX Config panel -->
+      <div class="preview-box">
+        <div class="section-title" style="margin-bottom:14px;">ASX Pipeline (Australia)</div>
+        <div class="config-grid">
+          <div class="config-field">
+            <label>ASX Cron Schedule</label>
+            <input id="pl-asx-schedule" type="text" placeholder="0 7 * * *" title="Standard cron: min hour dom mon dow" />
+          </div>
+          <div class="config-field" style="visibility:hidden;">
+            <label>&nbsp;</label>
+            <input type="text" disabled />
+          </div>
+          <div class="config-field" style="visibility:hidden;">
+            <label>&nbsp;</label>
+            <input type="text" disabled />
+          </div>
+        </div>
+        <div style="display:flex;gap:20px;margin-bottom:16px;flex-wrap:wrap;">
+          <label class="config-toggle">
+            <input type="checkbox" id="pl-asx-enabled" onchange="pipelineCronToggle(this.checked, 'asx')" />
+            Enable ASX scheduled cron job
+          </label>
+        </div>
+        <div style="margin-top:14px;">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">ASX Schedule</div>
+          <div id="pl-asx-cron-status" style="font-size:13px;">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats mini-panel -->
+    <div class="preview-box" style="margin-top:20px;">
+      <div class="section-title" style="margin-bottom:14px;">Last Run Stats</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;" id="pl-stats">
+        <div class="stat-card"><div class="label">Companies</div><div class="value" id="pl-stat-total">—</div></div>
+        <div class="stat-card"><div class="label">Downloaded</div><div class="value" id="pl-stat-done" style="color:var(--success);">—</div></div>
+        <div class="stat-card"><div class="label">DL Errors</div><div class="value" id="pl-stat-err" style="color:var(--danger);">—</div></div>
+        <div class="stat-card"><div class="label">Phase</div><div class="value" style="font-size:14px;" id="pl-stat-phase">—</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:8px;" id="pl-ai-stats">
+        <div class="stat-card"><div class="label">AI Queued</div><div class="value" id="pl-stat-ai-total">—</div></div>
+        <div class="stat-card"><div class="label">AI Done</div><div class="value" id="pl-stat-ai-done" style="color:var(--success);">—</div></div>
+        <div class="stat-card"><div class="label">AI Errors</div><div class="value" id="pl-stat-ai-err" style="color:var(--danger);">—</div></div>
+        <div class="stat-card"><div class="label">AI Progress</div><div class="value" id="pl-stat-ai-pct" style="font-size:14px;">—</div></div>
+      </div>
+      <div style="margin-top:14px;display:flex;gap:40px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Main Schedule</div>
+          <div id="pl-cron-status" style="font-size:13px;">—</div>
+        </div>
+        <div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">ASX Schedule</div>
+          <div id="pl-asx-cron-status" style="font-size:13px;">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Log viewer -->
+    <div class="preview-box" style="margin-top:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div class="section-title" style="margin:0;">Live Log</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer;">
+            <input type="checkbox" id="pl-autoscroll" checked style="accent-color:var(--accent);"> Auto-scroll
+          </label>
+          <button class="btn btn-ghost btn-sm" onclick="pipelineClearLogs()">Clear view</button>
+        </div>
+      </div>
+      <div class="pl-log-box" id="pl-log-box"></div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ── FILING DETAIL MODAL ── -->
+<div class="modal-backdrop" id="filing-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modal-title">Filing Detail</h2>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body">Loading…</div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+const API = '';  // same origin
+
+// ── Tab navigation ──
+document.querySelectorAll('nav li').forEach(li => {
+  li.addEventListener('click', () => {
+    document.querySelectorAll('nav li').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
+    li.classList.add('active');
+    document.getElementById('tab-' + li.dataset.tab).classList.add('active');
+    if (li.dataset.tab === 'dashboard')  loadDashboard();
+    if (li.dataset.tab === 'companies')  { loadExchanges(); loadCompanies(); }
+    if (li.dataset.tab === 'filings')    loadFilings();
+    if (li.dataset.tab === 'import')     { loadCseStatus(); loadAsxStatus(); }
+    if (li.dataset.tab === 'scraper')    loadRuns();
+    if (li.dataset.tab === 'pipeline')   pipelineInit();
+  });
+});
+
+// ── Toast ──
+function toast(msg, type = 'ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `show toast-${type}`;
+  setTimeout(() => el.className = '', 3000);
+}
+
+// ── Dashboard ──
+async function loadDashboard() {
+  try {
+    const s = await fetch(`${API}/api/filings/stats`).then(r => r.json());
+    document.getElementById('stat-companies').textContent   = s.companies ?? 0;
+    document.getElementById('stat-filings').textContent     = s.filings ?? 0;
+    document.getElementById('stat-analyzed').textContent    = s.analyzed ?? 0;
+    document.getElementById('stat-noteworthy').textContent  = s.noteworthy ?? 0;
+    document.getElementById('stat-watch').textContent       = s.watch ?? 0;
+    document.getElementById('stat-routine').textContent     = s.routine ?? 0;
+  } catch { /* ignore */ }
+
+  try {
+    const rows = await fetch(`${API}/api/filings`).then(r => r.json());
+    const tbody = document.getElementById('recent-filings-body');
+    const recent = rows.slice(0, 15);
+    if (!recent.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No filings yet. Import company data and run the scraper.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = recent.map(f => `
+      <tr>
+        <td>${esc(f.company_name)}</td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(f.pdf_filename)}">${esc(f.pdf_filename ?? '—')}</td>
+        <td>${verdictBadge(f.verdict)}</td>
+        <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);" title="${esc(f.ticker_summary)}">${esc(f.ticker_summary ?? '—')}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="showFiling(${f.id})">View</button></td>
+      </tr>`).join('');
+  } catch { /* ignore */ }
+}
+
+// ── Companies ──
+async function loadExchanges() {
+  try {
+    const exc = await fetch(`${API}/api/companies/exchanges`).then(r => r.json());
+    const sel = document.getElementById('co-exchange');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">All exchanges</option>' + exc.map(e => `<option ${e===cur?'selected':''} value="${esc(e)}">${esc(e)}</option>`).join('');
+  } catch { /* ignore */ }
+}
+
+function coChangePage(delta) {
+  _coPage = Math.max(1, _coPage + delta);
+  loadCompanies();
+}
+
+async function loadCompanies() {
+  const search   = document.getElementById('co-search').value;
+  const exchange = document.getElementById('co-exchange').value;
+  const params   = new URLSearchParams();
+  if (search)   params.set('search', search);
+  if (exchange) params.set('exchange', exchange);
+  params.set('page', _coPage);
+  params.set('limit', '20');
+
+  const tbody = document.getElementById('companies-body');
+  tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Loading…</td></tr>';
+
+  try {
+    const result = await fetch(`${API}/api/companies?${params}`).then(r => r.json());
+    const rows   = result.data || [];
+    const pg     = result.pagination || {};
+
+    document.getElementById('co-count').textContent = `${pg.total ?? rows.length} companies`;
+    document.getElementById('co-page-info').textContent = `Page ${pg.page ?? 1} of ${pg.totalPages ?? 1}`;
+    document.getElementById('co-prev').disabled = !pg.hasPrev;
+    document.getElementById('co-next').disabled = !pg.hasNext;
+
+    if (!rows.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No companies found. Import an Excel file first.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(c => `
+      <tr>
+        <td><strong>${esc(c.name)}</strong></td>
+        <td><span class="badge badge-pending">${esc(c.exchange ?? '—')}</span></td>
+        <td>${esc(c.ticker ?? '—')}</td>
+        <td>${esc(c.sedar_ticker ?? '—')}</td>
+        <td>${c.market_cap != null ? Number(c.market_cap).toLocaleString() : '—'}</td>
+        <td>${esc(c.sector ?? '—')}</td>
+        <td style="display:flex;gap:6px;">
+          <button class="btn btn-primary btn-sm" onclick="quickScrape('${esc(c.name).replace(/'/g,"\\'")}','${esc(c.exchange??'')}','${esc(c.ticker??'')}')">▶ Scrape</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteCompany(${c.id})">✕</button>
+        </td>
+      </tr>`).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Error: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+function quickScrape(name, exchange, ticker) {
+  document.querySelectorAll('nav li').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
+  document.querySelector('nav li[data-tab="scraper"]').classList.add('active');
+  document.getElementById('tab-scraper').classList.add('active');
+  if (exchange === 'ASX' && ticker) {
+    document.getElementById('scrape-exchange').value = 'ASX';
+    updateScraperPlaceholder();
+    asxSelectCompany(ticker, name);
+  } else {
+    document.getElementById('scrape-exchange').value = '';
+    updateScraperPlaceholder();
+    document.getElementById('scrape-company').value = name;
+  }
+}
+
+async function deleteCompany(id) {
+  if (!confirm('Delete this company?')) return;
+  await fetch(`${API}/api/companies/${id}`, { method: 'DELETE' });
+  toast('Company deleted');
+  loadCompanies();
+}
+
+// ── Filings ──
+async function loadFilings() {
+  const search  = document.getElementById('fi-search').value;
+  const verdict = document.getElementById('fi-verdict').value;
+  const params  = new URLSearchParams();
+  if (search)  params.set('search', search);
+  if (verdict) params.set('verdict', verdict);
+
+  const tbody = document.getElementById('filings-body');
+  tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Loading…</td></tr>';
+
+  try {
+    const rows = await fetch(`${API}/api/filings?${params}`).then(r => r.json());
+    document.getElementById('fi-count').textContent = `${rows.length} filings`;
+
+    if (!rows.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No filings found. Run the scraper or sync analysis files.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(f => `
+      <tr>
+        <td><strong>${esc(f.company_name)}</strong></td>
+        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(f.pdf_filename)}">${esc(f.pdf_filename ?? '—')}</td>
+        <td>${esc(f.filing_type ?? '—')}</td>
+        <td>${verdictBadge(f.verdict)}</td>
+        <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);" title="${esc(f.ticker_summary)}">${esc(f.ticker_summary ?? '—')}</td>
+        <td><span class="badge ${f.analyzed ? 'badge-analyzed' : 'badge-pending'}">${f.analyzed ? 'Analyzed' : 'Pending'}</span></td>
+        <td><button class="btn btn-ghost btn-sm" onclick="showFiling(${f.id})">View</button></td>
+      </tr>`).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Error: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+// ── Filing detail modal ──
+async function showFiling(id) {
+  document.getElementById('filing-modal').classList.add('open');
+  document.getElementById('modal-body').innerHTML = '<div class="loading">Loading…</div>';
+
+  try {
+    const f = await fetch(`${API}/api/filings/${id}`).then(r => r.json());
+    const a = f.analysis || {};
+
+    document.getElementById('modal-title').textContent = f.company_name + ' — ' + (f.pdf_filename ?? '');
+
+    const facts = (() => {
+      try { return JSON.parse(a.key_facts || '[]'); } catch { return []; }
+    })();
+    const res = (() => {
+      try { return JSON.parse(a.resource_estimate || 'null'); } catch { return null; }
+    })();
+    const insiders = (() => {
+      try { return JSON.parse(a.insider_holdings || 'null'); } catch { return null; }
+    })();
+
+    document.getElementById('modal-body').innerHTML = `
+      <div class="detail-row">
+        <div class="detail-label">Verdict</div>
+        <div class="detail-value">${verdictBadge(a.verdict)} <span style="color:var(--muted);font-size:12px;">${esc(a.verdict_reason ?? '')}</span></div>
+      </div>
+      <div class="detail-row">
+        <div class="detail-label">Ticker Summary</div>
+        <div class="detail-value">${esc(a.ticker_summary ?? '—')}</div>
+      </div>
+      <div class="detail-row">
+        <div class="detail-label">Summary</div>
+        <div class="detail-value" style="line-height:1.6;">${esc(a.summary ?? '—')}</div>
+      </div>
+      ${facts.length ? `
+      <div class="detail-row">
+        <div class="detail-label">Key Facts</div>
+        <div class="detail-value"><ul class="fact-list">${facts.map(f => `<li>${esc(f)}</li>`).join('')}</ul></div>
+      </div>` : ''}
+      <div class="detail-row">
+        <div class="detail-label">Context</div>
+        <div class="detail-value" style="color:var(--muted);">${esc(a.context ?? '—')}</div>
+      </div>
+      ${a.grade_commentary ? `
+      <div class="detail-row">
+        <div class="detail-label">Grade</div>
+        <div class="detail-value">${esc(a.grade_commentary)}</div>
+      </div>` : ''}
+      <div class="detail-row">
+        <div class="detail-label">Watch For</div>
+        <div class="detail-value" style="color:var(--watch);">${esc(a.what_to_watch ?? '—')}</div>
+      </div>
+      ${a.cash_position != null ? `
+      <div class="detail-row">
+        <div class="detail-label">Cash Position</div>
+        <div class="detail-value">$${Number(a.cash_position).toLocaleString()}M</div>
+      </div>` : ''}
+      ${res ? `
+      <div class="detail-row">
+        <div class="detail-label">Resource Est.</div>
+        <div class="detail-value">${esc(res.category ?? '')} ${esc(res.tonnes_mt != null ? res.tonnes_mt + ' Mt' : '')} @ ${esc(res.grade ?? '')} — ${esc(res.contained_metal ?? '')}</div>
+      </div>` : ''}
+      ${insiders && insiders.length ? `
+      <div class="detail-row">
+        <div class="detail-label">Insiders</div>
+        <div class="detail-value">${insiders.map(i => `${esc(i.name)} (${esc(i.title)}): ${Number(i.shares).toLocaleString()} shares`).join('<br>')}</div>
+      </div>` : ''}
+      <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:12px;font-size:11px;color:var(--muted);">
+        File: ${esc(f.pdf_filename ?? '')} &nbsp;·&nbsp; Imported: ${esc(f.created_at ?? '')}
+      </div>`;
+  } catch (e) {
+    document.getElementById('modal-body').innerHTML = `<p style="color:var(--danger);">Error: ${esc(e.message)}</p>`;
+  }
+}
+
+function closeModal() {
+  document.getElementById('filing-modal').classList.remove('open');
+}
+document.getElementById('filing-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+// ── Excel import ──
+let _tempPath = null, _sheets = [], _previewData = {}, _aiResults = {}, _headerRows = {};
+
+async function handleExcelUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  // Show preview box immediately with loading state
+  document.getElementById('preview-box').style.display = 'block';
+  document.getElementById('sheet-tabs').innerHTML = '';
+  document.getElementById('ai-assessment').innerHTML =
+    '<div class="ai-loading"><div class="spinner"></div> AI is validating your data…</div>';
+  document.getElementById('preview-info').textContent = '';
+  document.getElementById('preview-thead').innerHTML = '';
+  document.getElementById('preview-tbody').innerHTML = '';
+  document.getElementById('import-btn').disabled = true;
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  try {
+    const r = await fetch(`${API}/api/upload/excel`, { method: 'POST', body: fd }).then(r => r.json());
+    if (r.error) { toast(r.error, 'err'); resetImport(); return; }
+
+    _tempPath    = r.tempPath;
+    _sheets      = r.sheets;
+    _previewData = r.preview;
+    _aiResults   = r.aiResults || {};
+    // Store the AI-determined header row per sheet so import can use it
+    for (const s of r.sheets) {
+      _headerRows[s] = r.preview[s]?.headerRow ?? null;
+    }
+
+    const tabs = document.getElementById('sheet-tabs');
+    const sel  = document.getElementById('import-sheet-select');
+    tabs.innerHTML = _sheets.map((s,i) => `<div class="sheet-tab ${i===0?'active':''}" onclick="switchPreviewSheet('${esc(s)}')">${esc(s)}</div>`).join('');
+    sel.innerHTML  = _sheets.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+
+    switchPreviewSheet(_sheets[0]);
+  } catch (err) {
+    toast(err.message, 'err');
+    resetImport();
+  }
+  e.target.value = '';
+}
+
+function switchPreviewSheet(sheet) {
+  document.querySelectorAll('.sheet-tab').forEach(t => t.classList.toggle('active', t.textContent === sheet));
+  document.getElementById('import-sheet-select').value = sheet;
+
+  // AI card
+  const ai  = _aiResults[sheet];
+  const box = document.getElementById('ai-assessment');
+  if (ai) {
+    const cls     = ai.is_valid ? 'valid' : ai.confidence === 'low' ? 'unknown' : 'invalid';
+    const icon    = ai.is_valid ? '✅' : ai.confidence === 'low' ? '⚠️' : '❌';
+    const title   = ai.is_valid
+      ? `Valid data detected: ${esc(ai.data_type)}`
+      : `Wrong data: ${esc(ai.data_type)}`;
+    const confBadge = `<span style="font-size:10px;opacity:.7;">(${ai.confidence} confidence)</span>`;
+
+    // Build detected mapping chips
+    const cm = ai.column_mapping || {};
+    const chips = Object.entries(cm)
+      .filter(([, v]) => v)
+      .map(([k, v]) => `<span title="${esc(k)}">${esc(v)}</span>`)
+      .join('');
+
+    box.innerHTML = `
+      <div class="ai-card ${cls}">
+        <div class="ai-icon">${icon}</div>
+        <div class="ai-body">
+          <div class="ai-title">${title} ${confBadge}</div>
+          <div class="ai-reason">${esc(ai.reason)}</div>
+          ${chips ? `<div class="ai-mapping">Mapped columns: ${chips}</div>` : ''}
+        </div>
+      </div>`;
+
+    // AI result is advisory only — never block the import
+    document.getElementById('import-btn').disabled = false;
+    document.getElementById('import-btn').title = '';
+  } else {
+    box.innerHTML = '';
+    document.getElementById('import-btn').disabled = false;
+  }
+
+  const p = _previewData[sheet];
+  if (!p) return;
+
+  const hRow = p.headerRow != null ? `  ·  headers on row ${p.headerRow + 1}` : '';
+  document.getElementById('preview-info').textContent = `${p.rowCount} rows  ·  ${p.columns.length} columns${hRow}`;
+  const thead = document.getElementById('preview-thead');
+  const tbody = document.getElementById('preview-tbody');
+  thead.innerHTML = '<tr>' + p.columns.map(c => `<th>${esc(c)}</th>`).join('') + '</tr>';
+  tbody.innerHTML = p.sample.map(row =>
+    '<tr>' + p.columns.map(c => `<td style="white-space:nowrap;">${esc(row[c] ?? '')}</td>`).join('') + '</tr>'
+  ).join('');
+}
+
+async function doImport() {
+  const sheet = document.getElementById('import-sheet-select').value;
+  const ai    = _aiResults[sheet] || {};
+
+  const btn = document.getElementById('import-btn');
+  btn.disabled = true;
+  btn.textContent = 'Importing…';
+
+  try {
+    const r = await fetch(`${API}/api/upload/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tempPath:    _tempPath,
+        sheetName:   sheet,
+        aiColumnMap: ai.column_mapping || null,
+        headerRow:   _headerRows[sheet] ?? null,
+      }),
+    }).then(r => r.json());
+
+    if (r.error) { toast(r.error, 'err'); }
+    else {
+      toast(`Imported ${r.inserted} companies (${r.skipped} skipped)`, 'ok');
+      resetImport();
+    }
+  } catch (err) {
+    toast(err.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Import into Database';
+  }
+}
+
+function resetImport() {
+  _tempPath = null; _sheets = []; _previewData = {}; _aiResults = {}; _headerRows = {};
+  document.getElementById('preview-box').style.display = 'none';
+  document.getElementById('ai-assessment').innerHTML = '';
+}
+
+// Drag & drop
+const dz = document.getElementById('dropzone');
+dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const fakeEvent = { target: { files: [file], value: '' } };
+  handleExcelUpload(fakeEvent);
+});
+
+// ── Sync analyses ──
+async function syncAnalyses() {
+  const btn = document.querySelector('[onclick="syncAnalyses()"]');
+  btn.disabled = true;
+  btn.textContent = 'Syncing…';
+  const res = document.getElementById('sync-result');
+  res.textContent = '';
+
+  try {
+    const r = await fetch(`${API}/api/upload/sync-analyses`, { method: 'POST' }).then(r => r.json());
+    if (r.error) {
+      res.style.color = 'var(--danger)';
+      res.textContent = '✗ ' + r.error;
+    } else {
+      res.style.color = 'var(--success)';
+      res.textContent = `✓ Imported ${r.imported} | Skipped ${r.skipped}` +
+        (r.errors.length ? ` | ${r.errors.length} errors` : '');
+      toast(`Sync complete: ${r.imported} imported`, 'ok');
+    }
+  } catch (e) {
+    res.style.color = 'var(--danger)';
+    res.textContent = '✗ ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '↻ Sync Analysis Files';
+  }
+}
+
+// ── TSX/TSXV Seeder ──
+async function seedTsx() {
+  const btn = document.getElementById('seed-tsx-btn');
+  const res = document.getElementById('seed-result');
+  btn.disabled = true;
+  btn.textContent = 'Downloading…';
+  res.textContent = '';
+  document.getElementById('seed-preview').style.display = 'none';
+
+  try {
+    const r = await fetch(`${API}/api/seeder/tsx`, { method: 'POST' }).then(r => r.json());
+    if (r.error) {
+      res.style.color = 'var(--danger)';
+      res.innerHTML = '✗ ' + esc(r.error);
+    } else {
+      res.style.color = 'var(--success)';
+      const sheetLines = (r.sheets || []).map(s => `${s.name}: +${s.inserted} new, ${s.skipped} skipped`).join(' &nbsp;·&nbsp; ');
+      res.innerHTML = `✓ Total: <strong>${r.inserted} new companies</strong>, ${r.skipped} already existed`
+        + (sheetLines ? `<br><span style="font-size:12px;color:var(--muted);">${sheetLines}</span>` : '')
+        + (r.errors.length ? `<br><span style="color:var(--danger);font-size:12px;">${r.errors.length} row error(s)</span>` : '');
+      toast(`Seeded ${r.inserted} new companies`, 'ok');
+    }
+  } catch (e) {
+    res.style.color = 'var(--danger)';
+    res.textContent = '✗ ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⬇ Seed from TSX / TSXV';
+  }
+}
+
+async function previewTsx() {
+  const res     = document.getElementById('seed-result');
+  const preBox  = document.getElementById('seed-preview');
+  res.style.color = 'var(--muted)';
+  res.textContent = 'Fetching preview…';
+  preBox.style.display = 'none';
+
+  try {
+    const r = await fetch(`${API}/api/seeder/tsx/preview`).then(r => r.json());
+    if (r.error) { res.style.color = 'var(--danger)'; res.innerHTML = '✗ ' + esc(r.error); return; }
+
+    res.textContent = '';
+    let html = '';
+    for (const [sheet, p] of Object.entries(r.preview)) {
+      html += `<div style="margin-bottom:16px;">
+        <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:6px;">${esc(sheet)} — ${p.rowCount} rows</div>
+        <div class="table-wrap" style="max-height:160px;overflow:auto;">
+          <table>
+            <thead><tr>${p.columns.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead>
+            <tbody>${p.sample.map(row => '<tr>' + p.columns.map(c => `<td style="white-space:nowrap;">${esc(row[c] ?? '')}</td>`).join('') + '</tr>').join('')}</tbody>
+          </table>
+        </div>
+      </div>`;
+    }
+    preBox.innerHTML = html;
+    preBox.style.display = 'block';
+  } catch (e) {
+    res.style.color = 'var(--danger)';
+    res.textContent = '✗ ' + e.message;
+  }
+}
+
+// ── CSE Seeder ──
+async function loadCseStatus() {
+  try {
+    const s = await fetch(`${API}/api/seeder/cse/status`).then(r => r.json());
+    const btn = document.getElementById('seed-cse-btn');
+    const statusEl = document.getElementById('seed-cse-status');
+    if (!s.allowed) {
+      btn.disabled = true;
+      btn.title = `Next seed available at ${new Date(s.nextSeed).toLocaleString()}`;
+      const hrs = Math.floor(s.minutesLeft / 60);
+      const mins = s.minutesLeft % 60;
+      statusEl.textContent = `⏳ Cooldown: ${hrs}h ${mins}m left`;
+      statusEl.style.color = 'var(--watch)';
+    } else {
+      btn.disabled = false;
+      btn.title = '';
+      if (s.lastSeed) {
+        const ago = Math.round((Date.now() - new Date(s.lastSeed).getTime()) / 3600000);
+        statusEl.textContent = `Last seeded ${ago}h ago`;
+        statusEl.style.color = 'var(--muted)';
+      } else {
+        statusEl.textContent = 'Never seeded';
+        statusEl.style.color = 'var(--muted)';
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+async function seedCse() {
+  const btn    = document.getElementById('seed-cse-btn');
+  const res    = document.getElementById('seed-cse-result');
+  const logBox = document.getElementById('seed-cse-logs');
+  btn.disabled = true;
+  btn.textContent = 'Running browser…';
+  res.textContent = '';
+  logBox.innerHTML = '';
+  logBox.style.display = 'block';
+
+  try {
+    const resp = await fetch(`${API}/api/seeder/cse`, { method: 'POST' });
+    const r = await resp.json();
+
+    if (!resp.ok && resp.status === 429) {
+      res.style.color = 'var(--watch)';
+      res.innerHTML = '⏳ ' + esc(r.error);
+      loadCseStatus();
+      return;
+    }
+
+    // Show scraper log lines
+    if (r.logs && r.logs.length) {
+      logBox.innerHTML = r.logs.map(l => `<div class="log-out">${esc(l)}</div>`).join('');
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    if (r.error) {
+      res.style.color = 'var(--danger)';
+      res.innerHTML = '✗ ' + esc(r.error);
+    } else {
+      res.style.color = 'var(--success)';
+      res.innerHTML = `✓ <strong>${r.inserted} new CSE companies</strong> added, ${r.skipped} already existed`
+        + (r.errors.length ? `<br><span style="color:var(--danger);font-size:12px;">${r.errors.length} row error(s)</span>` : '');
+      toast(`CSE seed: ${r.inserted} new companies`, 'ok');
+    }
+    loadCseStatus();
+  } catch (e) {
+    res.style.color = 'var(--danger)';
+    res.textContent = '✗ ' + e.message;
+    logBox.style.display = 'none';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⬇ Seed CSE';
+  }
+}
+
+// ── ASX Seeder ──
+async function loadAsxStatus() {
+  try {
+    const s = await fetch(`${API}/api/seeder/asx/status`).then(r => r.json());
+    const btn = document.getElementById('seed-asx-btn');
+    const statusEl = document.getElementById('seed-asx-status');
+    if (!s.allowed) {
+      btn.disabled = true;
+      btn.title = `Next seed available at ${new Date(s.nextSeed).toLocaleString()}`;
+      const hrs = Math.floor(s.minutesLeft / 60);
+      const mins = s.minutesLeft % 60;
+      statusEl.textContent = `⏳ Cooldown: ${hrs}h ${mins}m left`;
+      statusEl.style.color = 'var(--watch)';
+    } else {
+      btn.disabled = false;
+      btn.title = '';
+      if (s.lastSeed) {
+        const ago = Math.round((Date.now() - new Date(s.lastSeed).getTime()) / 3600000);
+        statusEl.textContent = `Last seeded ${ago}h ago`;
+        statusEl.style.color = 'var(--muted)';
+      } else {
+        statusEl.textContent = 'Never seeded';
+        statusEl.style.color = 'var(--muted)';
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+async function seedAsx() {
+  const btn    = document.getElementById('seed-asx-btn');
+  const res    = document.getElementById('seed-asx-result');
+  const logBox = document.getElementById('seed-asx-logs');
+  btn.disabled = true;
+  btn.textContent = 'Running browser…';
+  res.textContent = '';
+  logBox.innerHTML = '';
+  logBox.style.display = 'block';
+
+  try {
+    const resp = await fetch(`${API}/api/seeder/asx`, { method: 'POST' });
+    const r = await resp.json();
+
+    if (!resp.ok && resp.status === 429) {
+      res.style.color = 'var(--watch)';
+      res.innerHTML = '⏳ ' + esc(r.error);
+      loadAsxStatus();
+      return;
+    }
+
+    if (r.logs && r.logs.length) {
+      logBox.innerHTML = r.logs.map(l => `<div class="log-out">${esc(l)}</div>`).join('');
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    if (r.error) {
+      res.style.color = 'var(--danger)';
+      res.innerHTML = '✗ ' + esc(r.error);
+    } else {
+      res.style.color = 'var(--success)';
+      res.innerHTML = `✓ <strong>${r.inserted} new ASX companies</strong> added, ${r.skipped} already existed`
+        + (r.errors && r.errors.length ? `<br><span style="color:var(--danger);font-size:12px;">${r.errors.length} row error(s)</span>` : '');
+      toast(`ASX seed: ${r.inserted} new companies`, 'ok');
+    }
+    loadAsxStatus();
+  } catch (e) {
+    res.style.color = 'var(--danger)';
+    res.textContent = '✗ ' + e.message;
+    logBox.style.display = 'none';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⬇ Seed ASX';
+  }
+}
+
+// ── Companies pagination ──
+let _coPage = 1;
+
+// ── Scraper ──
+let _pollId = null;
+let _asxSelectedTicker = '';
+
+function updateScraperPlaceholder() {
+  const exch     = document.getElementById('scrape-exchange').value;
+  const sedarWrap = document.getElementById('scrape-company-wrap');
+  const asxWrap  = document.getElementById('scrape-asx-wrap');
+  const runBtn   = document.getElementById('run-btn');
+  if (exch === 'ASX') {
+    sedarWrap.style.display = 'none';
+    asxWrap.style.display   = 'block';
+    runBtn.textContent      = '▶ Run ASX Scraper';
+  } else {
+    sedarWrap.style.display = 'block';
+    asxWrap.style.display   = 'none';
+    runBtn.textContent      = '▶ Run Scraper';
+  }
+}
+
+async function asxCompanySearch() {
+  const q = document.getElementById('scrape-asx-company').value.trim();
+  _asxSelectedTicker = '';
+  document.getElementById('asx-ticker-badge').style.display = 'none';
+
+  const ac = document.getElementById('asx-autocomplete');
+  if (q.length < 2) { ac.style.display = 'none'; return; }
+
+  try {
+    const companies = await fetch(`${API}/api/companies?search=${encodeURIComponent(q)}&exchange=ASX`).then(r => r.json());
+    if (!companies.length) { ac.style.display = 'none'; return; }
+    ac.innerHTML = companies.slice(0, 10).map(c =>
+      `<div class="asx-ac-item" onclick="asxSelectCompany('${esc(c.ticker)}','${esc(c.name).replace(/'/g,'\\&apos;')}')">
+        <span>${esc(c.name)}</span><span class="ac-ticker">${esc(c.ticker)}</span>
+      </div>`
+    ).join('');
+    ac.style.display = 'block';
+  } catch {}
+}
+
+function asxSelectCompany(ticker, name) {
+  _asxSelectedTicker = ticker;
+  document.getElementById('scrape-asx-company').value = name;
+  document.getElementById('asx-autocomplete').style.display = 'none';
+  document.getElementById('asx-ticker-label').textContent = ticker;
+  document.getElementById('asx-ticker-badge').style.display = 'block';
+}
+
+// Close autocomplete when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('#scrape-asx-wrap')) {
+    const ac = document.getElementById('asx-autocomplete');
+    if (ac) ac.style.display = 'none';
+  }
+});
+
+async function runScraper() {
+  const exchange = document.getElementById('scrape-exchange').value;
+  const mode     = document.getElementById('scrape-mode').value;
+  const isASX    = exchange === 'ASX';
+
+  let company;
+  if (isASX) {
+    if (!_asxSelectedTicker) { toast('Select an ASX company from the dropdown', 'err'); return; }
+    company = _asxSelectedTicker;
+  } else {
+    company = document.getElementById('scrape-company').value.trim();
+    if (!company) { toast('Enter a company name', 'err'); return; }
+  }
+
+  const btn = document.getElementById('run-btn');
+  btn.disabled    = true;
+  btn.textContent = 'Starting…';
+
+  try {
+    const body = { company, mode, exchange: exchange || undefined };
+    const r = await fetch(`${API}/api/scraper/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(r => r.json());
+
+    if (r.error) { toast(r.error, 'err'); return; }
+
+    const label = isASX
+      ? `${document.getElementById('scrape-asx-company').value} (${_asxSelectedTicker})`
+      : company;
+    toast(`Scraper started for "${label}"`, 'ok');
+    showLog(r.id, label);
+    loadRuns();
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = isASX ? '▶ Run ASX Scraper' : '▶ Run Scraper';
+  }
+}
+
+function showLog(id, company) {
+  const section = document.getElementById('log-section');
+  section.style.display = 'block';
+  document.getElementById('log-company').textContent = company;
+
+  if (_pollId) clearInterval(_pollId);
+  const box = document.getElementById('log-box');
+  box.innerHTML = '';
+  let lastLen = 0;
+
+  _pollId = setInterval(async () => {
+    try {
+      const r = await fetch(`${API}/api/scraper/status/${id}`).then(r => r.json());
+      const badge = document.getElementById('log-status');
+      badge.textContent  = r.status.toUpperCase();
+      badge.className    = 'badge ' + (r.status === 'done' ? 'badge-analyzed' : r.status === 'error' ? 'badge-noteworthy' : 'badge-pending');
+
+      const newLogs = r.logs.slice(lastLen);
+      lastLen = r.logs.length;
+      for (const l of newLogs) {
+        const div = document.createElement('div');
+        div.className = l.t === 'err' ? 'log-err' : 'log-out';
+        div.textContent = l.msg;
+        box.appendChild(div);
+      }
+      box.scrollTop = box.scrollHeight;
+
+      if (r.status === 'done' || r.status === 'error') {
+        clearInterval(_pollId);
+        _pollId = null;
+        loadRuns();
+      }
+    } catch { /* ignore */ }
+  }, 1500);
+}
+
+async function loadRuns() {
+  try {
+    const runs = await fetch(`${API}/api/scraper/runs`).then(r => r.json());
+    const list = document.getElementById('runs-list');
+    if (!runs.length) { list.textContent = 'No runs yet.'; return; }
+    list.innerHTML = runs.slice(0, 10).map(r => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+        <span>${esc(r.company)} <span style="color:var(--muted);font-size:11px;">(${r.mode})</span></span>
+        <span class="badge ${r.status==='done'?'badge-analyzed':r.status==='error'?'badge-noteworthy':'badge-pending'}">${r.status}</span>
+      </div>`).join('');
+  } catch { /* ignore */ }
+}
+
+// ── Helpers ──
+function esc(str) {
+  if (str == null) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function verdictBadge(v) {
+  if (!v) return '<span class="badge badge-pending">—</span>';
+  const cls = v === 'noteworthy' ? 'badge-noteworthy' : v === 'watch' ? 'badge-watch' : 'badge-routine';
+  return `<span class="badge ${cls}">${esc(v)}</span>`;
+}
+
+// ── Init ──
+loadDashboard();
+
+// ════════════════════════════════════════════════════════════════════════════
+// ── Pipeline ──
+// ════════════════════════════════════════════════════════════════════════════
+
+let _plPollId    = null;
+let _plLogOffset = 0;
+let _plLogClear  = false;  // flag: user pressed "Clear view"
+
+async function pipelineInit() {
+  _plLogOffset = 0;
+  await pipelineLoadConfig();
+  await pipelinePollStatus();
+  if (!_plPollId) {
+    _plPollId = setInterval(pipelinePollStatus, 2500);
+  }
+}
+
+async function pipelineLoadConfig() {
+  try {
+    const cfg = await fetch(`${API}/api/pipeline/config`).then(r => r.json());
+    document.getElementById('pl-schedule').value        = cfg.schedule    || '';
+    document.getElementById('pl-concurrency').value     = cfg.concurrency || 5;
+    document.getElementById('pl-ai-concurrency').value  = cfg.analysisConcurrency || 2;
+    document.getElementById('pl-daysback').value        = cfg.daysBack    || 30;
+    document.getElementById('pl-seed-on-start').checked = !!cfg.seedOnStart;
+    document.getElementById('pl-analyze').checked       = !!cfg.analyze;
+    document.getElementById('pl-enabled').checked       = !!cfg.enabled;
+    document.getElementById('pl-asx-schedule').value    = cfg.asxSchedule || '';
+    document.getElementById('pl-asx-enabled').checked   = !!cfg.asxEnabled;
+  } catch { /* ignore */ }
+}
+
+async function pipelinePollStatus() {
+  try {
+    const s = await fetch(`${API}/api/pipeline/status`).then(r => r.json());
+    renderPipelineStatus(s);
+    await pipelineFetchLogs();
+  } catch { /* ignore */ }
+}
+
+function renderPipelineStatus(s) {
+  const dot    = document.getElementById('pl-dot');
+  const label  = document.getElementById('pl-status-label');
+  const sub    = document.getElementById('pl-status-sub');
+  const wrap   = document.getElementById('pl-progress-wrap');
+  const fill   = document.getElementById('pl-progress-fill');
+  const startB = document.getElementById('pl-start-btn');
+  const stopB  = document.getElementById('pl-stop-btn');
+
+  dot.className = `status-dot ${s.status}`;
+  label.textContent = s.status === 'running' ? (s.currentPhase ? `Running — ${s.currentPhase}` : 'Running') : 'Idle';
+
+  if (s.status === 'running') {
+    const p = s.progress || {};
+    const ap = s.analysisProgress || {};
+    const done  = p.done  || 0;
+    const total = p.total || 0;
+    const pct   = total > 0 ? Math.round(done / total * 100) : 0;
+    const aiDone  = ap.done  || 0;
+    const aiTotal = ap.total || 0;
+    const aiPct   = aiTotal > 0 ? Math.round(aiDone / aiTotal * 100) : 0;
+    let statusText = '';
+    if (total > 0) statusText += `${done}/${total} downloads (${pct}%)`;
+    if (aiTotal > 0) statusText += `${total > 0 ? ' · ' : ''}${aiDone}/${aiTotal} analyzed (${aiPct}%)`;
+    if (p.errors || ap.errors) statusText += `${total > 0 || aiTotal > 0 ? ' · ' : ''}${(p.errors || 0) + (ap.errors || 0)} errors`;
+    sub.textContent = statusText || (s.currentPhase === 'seeding' ? 'Seeding company lists…' : 'Initializing…');
+    wrap.style.display = total > 0 ? 'block' : 'none';
+    fill.style.width   = `${pct}%`;
+    startB.style.display = 'none';
+    stopB.style.display  = 'inline-flex';
+  } else {
+    const when = s.stoppedAt ? `Last run: ${new Date(s.stoppedAt).toLocaleString()}` : 'Never run';
+    sub.textContent = when;
+    wrap.style.display   = 'none';
+    startB.style.display = 'inline-flex';
+    stopB.style.display  = 'none';
+  }
+
+  // Stats
+  const p = s.progress || {};
+  document.getElementById('pl-stat-total').textContent = p.total  ?? '—';
+  document.getElementById('pl-stat-done').textContent  = p.done   ?? '—';
+  document.getElementById('pl-stat-err').textContent   = p.errors ?? '—';
+  document.getElementById('pl-stat-phase').textContent = s.currentPhase || '—';
+
+  // AI stats
+  const ap = s.analysisProgress || {};
+  const aiTotal = ap.total || 0;
+  const aiDone  = ap.done  || 0;
+  const aiErr   = ap.errors || 0;
+  const aiPct   = aiTotal > 0 ? Math.round(aiDone / aiTotal * 100) : 0;
+  document.getElementById('pl-stat-ai-total').textContent = aiTotal || '—';
+  document.getElementById('pl-stat-ai-done').textContent  = aiDone  || '—';
+  document.getElementById('pl-stat-ai-err').textContent   = aiErr   || '—';
+  document.getElementById('pl-stat-ai-pct').textContent  = aiTotal > 0 ? `${aiPct}%` : '—';
+
+  // Cron status
+  const cronEl = document.getElementById('pl-cron-status');
+  if (s.cronEnabled) {
+    cronEl.innerHTML = `<span style="color:var(--success);">● Enabled</span> — <span style="color:var(--muted);">${esc(s.schedule)}</span>`;
+  } else {
+    cronEl.innerHTML = `<span style="color:var(--muted);">Disabled</span>`;
+  }
+
+  const asxCronEl = document.getElementById('pl-asx-cron-status');
+  if (s.cronAsxEnabled) {
+    asxCronEl.innerHTML = `<span style="color:var(--success);">● Enabled</span> — <span style="color:var(--muted);">${esc(s.asxSchedule)}</span>`;
+  } else {
+    asxCronEl.innerHTML = `<span style="color:var(--muted);">Disabled</span>`;
+  }
+}
+
+async function pipelineFetchLogs() {
+  try {
+    if (_plLogClear) return;  // user cleared — don't append until next natural reset
+    const data = await fetch(`${API}/api/pipeline/logs?offset=${_plLogOffset}`).then(r => r.json());
+    if (!data.logs || data.logs.length === 0) return;
+
+    const box      = document.getElementById('pl-log-box');
+    const autoscrl = document.getElementById('pl-autoscroll').checked;
+
+    for (const entry of data.logs) {
+      const div = document.createElement('div');
+      div.className = `ll-${entry.level || 'log'}`;
+      const ts = new Date(entry.t).toLocaleTimeString();
+      div.textContent = `[${ts}] ${entry.msg}`;
+      box.appendChild(div);
+    }
+    _plLogOffset = data.total;
+
+    if (autoscrl) box.scrollTop = box.scrollHeight;
+  } catch { /* ignore */ }
+}
+
+function pipelineClearLogs() {
+  document.getElementById('pl-log-box').innerHTML = '';
+  _plLogClear  = false;   // allow fresh logs to stream in from current offset
+}
+
+async function pipelineStart() {
+  try {
+    const r = await fetch(`${API}/api/pipeline/start`, { method: 'POST' }).then(r => r.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    toast('Pipeline started');
+    _plLogOffset = 0;
+    document.getElementById('pl-log-box').innerHTML = '';
+    await pipelinePollStatus();
+  } catch (err) { toast(err.message, 'err'); }
+}
+
+async function pipelineStop() {
+  try {
+    const r = await fetch(`${API}/api/pipeline/stop`, { method: 'POST' }).then(r => r.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    toast('Stop signal sent');
+  } catch (err) { toast(err.message, 'err'); }
+}
+
+async function pipelineSaveConfig() {
+  const cfg = {
+    schedule:    document.getElementById('pl-schedule').value.trim(),
+    concurrency: parseInt(document.getElementById('pl-concurrency').value),
+    analysisConcurrency: parseInt(document.getElementById('pl-ai-concurrency').value),
+    daysBack:    parseInt(document.getElementById('pl-daysback').value),
+    seedOnStart: document.getElementById('pl-seed-on-start').checked,
+    analyze:     document.getElementById('pl-analyze').checked,
+    enabled:     document.getElementById('pl-enabled').checked,
+    asxSchedule: document.getElementById('pl-asx-schedule').value.trim(),
+    asxEnabled:  document.getElementById('pl-asx-enabled').checked,
+  };
+  try {
+    const r = await fetch(`${API}/api/pipeline/config`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cfg),
+    }).then(r => r.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    const msg = document.getElementById('pl-config-msg');
+    msg.style.display = 'inline';
+    setTimeout(() => { msg.style.display = 'none'; }, 2000);
+    toast('Config saved');
+    renderPipelineStatus({ ...r, status: 'idle', progress: {} });
+  } catch (err) { toast(err.message, 'err'); }
+}
+
+async function pipelineCronToggle(enabled, which = 'main') {
+  const body = which === 'asx' ? { asxEnabled: enabled } : { enabled };
+  const label = which === 'asx' ? 'ASX cron' : 'Main cron';
+  try {
+    await fetch(`${API}/api/pipeline/config`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    toast(enabled ? `${label} enabled` : `${label} disabled`);
+  } catch { /* ignore */ }
+}
+
+async function pipelineStartAsx() {
+  try {
+    const r = await fetch(`${API}/api/pipeline/asx/start`, { method: 'POST' }).then(r => r.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    toast('ASX pipeline started');
+    _plLogOffset = 0;
+    document.getElementById('pl-log-box').innerHTML = '';
+    await pipelinePollStatus();
+  } catch (err) { toast(err.message, 'err'); }
+}
+</script>
+</body>
+</html>
