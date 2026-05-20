@@ -190,7 +190,15 @@ function spawnAnalysisWorker(item, cfg) {
 
     if (code === 0 && stdout.trim()) {
       try {
-        const result = JSON.parse(stdout.trim());
+        // Filter out dotenvx injection messages and other non-JSON lines
+        const jsonLine = stdout.trim().split('\n').find(line => {
+          const trimmed = line.trim();
+          return trimmed.startsWith('{') && trimmed.endsWith('}');
+        });
+        if (!jsonLine) {
+          throw new Error('No JSON found in output');
+        }
+        const result = JSON.parse(jsonLine);
         if (result.ok) {
           addLog('out', `${tag} ✓ verdict: ${result.verdict}`);
           // Save to DB immediately
