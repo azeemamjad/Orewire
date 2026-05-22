@@ -13,17 +13,16 @@ app.use(express.json());
 // Auth JSON API is always open (login/register/check/logout endpoints)
 app.use('/api/auth', auth.router);
 
-// Protected API routes — accept either an admin cookie session or x-auth-token header
-const protectedApi = express.Router();
-protectedApi.use(auth.requireAdminApi);
-protectedApi.use('/companies', require('./routes/companies'));
-protectedApi.use('/filings',   require('./routes/filings'));
-protectedApi.use('/upload',    require('./routes/upload'));
-protectedApi.use('/scraper',   require('./routes/scraper'));
-protectedApi.use('/seeder',    require('./routes/seeder'));
-protectedApi.use('/pipeline',  require('./routes/pipeline'));
-protectedApi.use('/market',    require('./routes/market'));
-app.use('/api', protectedApi);
+// JSON API routes — open (admin password only protects /admin/* pages)
+const apiRouter = express.Router();
+apiRouter.use('/companies', require('./routes/companies'));
+apiRouter.use('/filings',   require('./routes/filings'));
+apiRouter.use('/upload',    require('./routes/upload'));
+apiRouter.use('/scraper',   require('./routes/scraper'));
+apiRouter.use('/seeder',    require('./routes/seeder'));
+apiRouter.use('/pipeline',  require('./routes/pipeline'));
+apiRouter.use('/market',    require('./routes/market'));
+app.use('/api', apiRouter);
 
 // ── Admin panel auth (cookie session) ──────────────────────────────────────
 // Login page is the only /admin path that is open without a cookie.
