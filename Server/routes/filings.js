@@ -27,7 +27,7 @@ router.get('/stats', async (req, res) => {
 });
 
 router.get('/', async (req, res) => {
-  const { company_id, verdict, search, commodity, exchange } = req.query;
+  const { company_id, verdict, search, commodity, exchange, limit } = req.query;
   let query = `
     SELECT f.id, f.company_name, f.filing_type, f.pdf_filename,
            f.analyzed, f.status, f.created_at, f.commodity,
@@ -57,7 +57,8 @@ router.get('/', async (req, res) => {
     params.push(`%${search}%`);
   }
 
-  query += ' ORDER BY f.created_at DESC LIMIT 500';
+  const parsedLimit = Math.max(1, Math.min(500, parseInt(limit, 10) || 500));
+  query += ` ORDER BY f.created_at DESC LIMIT ${parsedLimit}`;
   const result = await db.query(query, params);
   const rows = result.rows;
 

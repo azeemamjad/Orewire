@@ -123,26 +123,69 @@ router.get('/batch', async (req, res) => {
   res.json(results);
 });
 
+// Aggregated movers cache (30 minutes) — keyed by exchange query
+const MOVERS_CACHE_TTL_MS = 30 * 60 * 1000;
+const moversCache = new Map();
+
+function getMoversCached(key) {
+  const entry = moversCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > MOVERS_CACHE_TTL_MS) {
+    moversCache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+function setMoversCached(key, data) {
+  moversCache.set(key, { ts: Date.now(), data });
+}
+
 // GET /api/market/movers?exchange=TSXV&limit=10
+// exchange=ALL  -> aggregate across TSXV/TSX/CSE/ASX (sampled by market cap)
 router.get('/movers', async (req, res) => {
-  const exchange = req.query.exchange || 'TSXV';
-  const limit = Math.min(parseInt(req.query.limit || '20', 10), 50);
+  const exchange = (req.query.exchange || 'ALL').toUpperCase();
+  const limit = Math.min(parseInt(req.query.limit || '10', 10), 50);
+  const cacheKey = `${exchange}:${limit}`;
+  const cached = getMoversCached(cacheKey);
+  if (cached) return res.json(cached);
 
-  // Get distinct tickers for that exchange from our companies DB
-  const companiesResult = await db.query(
-    'SELECT DISTINCT ticker, name, exchange FROM companies WHERE exchange = $1 AND ticker IS NOT NULL LIMIT $2',
-    [exchange, limit * 2]
-  );
-  const companies = companiesResult.rows;
+  // Pick the company sample
+  let companies;
+  if (exchange === 'ALL') {
+    const sampleSize = Math.max(40, limit * 6);
+    const r = await db.query(
+      `SELECT DISTINCT ON (ticker, exchange) ticker, name, exchange, market_cap
+         FROM companies
+        WHERE ticker IS NOT NULL
+          AND exchange IN ('TSXV','TSX','CSE','ASX')
+        ORDER BY ticker, exchange, market_cap DESC NULLS LAST
+        LIMIT $1`,
+      [sampleSize]
+    );
+    companies = r.rows;
+    // Re-order the sample to favor higher market cap names overall
+    companies.sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0));
+    companies = companies.slice(0, sampleSize);
+  } else {
+    const r = await db.query(
+      `SELECT DISTINCT ticker, name, exchange
+         FROM companies
+        WHERE ticker IS NOT NULL AND exchange = $1
+        ORDER BY ticker
+        LIMIT $2`,
+      [exchange, Math.max(20, limit * 4)]
+    );
+    companies = r.rows;
+  }
 
-  const results = { gainers: [], losers: [] };
+  const gainers = [];
+  const losers = [];
 
   await Promise.all(companies.map(async (c) => {
     try {
       const data = await fetchTradingView(c.exchange, c.ticker);
       const norm = normalizePrice(data);
       if (norm.price === null || norm.change_pct === null) return;
-
       const item = {
         ticker: c.ticker,
         name: c.name,
@@ -152,20 +195,70 @@ router.get('/movers', async (req, res) => {
         volume: norm.volume,
         perf_ytd: norm.perf_ytd,
       };
-
-      if (norm.change_pct > 0) results.gainers.push(item);
-      else if (norm.change_pct < 0) results.losers.push(item);
+      if (norm.change_pct > 0) gainers.push(item);
+      else if (norm.change_pct < 0) losers.push(item);
     } catch { /* ignore failed lookups */ }
   }));
 
-  results.gainers.sort((a, b) => b.change_pct - a.change_pct);
-  results.losers.sort((a, b) => a.change_pct - b.change_pct);
+  gainers.sort((a, b) => b.change_pct - a.change_pct);
+  losers.sort((a, b) => a.change_pct - b.change_pct);
 
-  res.json({
+  const result = {
     exchange,
-    gainers: results.gainers.slice(0, limit),
-    losers: results.losers.slice(0, limit),
-  });
+    updatedAt: new Date().toISOString(),
+    gainers: gainers.slice(0, limit),
+    losers: losers.slice(0, limit),
+  };
+  setMoversCached(cacheKey, result);
+  res.json(result);
+});
+
+// ---------------------------------------------------------------------------
+// Commodities (TradingView spot / front-month futures)
+// ---------------------------------------------------------------------------
+// Each commodity has fallback symbols tried in order until one returns data.
+const COMMODITY_SYMBOLS = [
+  { key: 'gold',    label: 'Gold',     unit: 'oz', tv: ['TVC:GOLD', 'OANDA:XAUUSD'] },
+  { key: 'silver',  label: 'Silver',   unit: 'oz', tv: ['TVC:SILVER', 'OANDA:XAGUSD'] },
+  { key: 'copper',  label: 'Copper',   unit: 'lb', tv: ['COMEX:HG1!', 'TVC:COPPER', 'CAPITALCOM:COPPER'] },
+  { key: 'lithium', label: 'Lithium',  unit: 'ETF', tv: ['AMEX:LIT', 'NASDAQ:LIT', 'NYSEARCA:LIT'] },
+  { key: 'uranium', label: 'U₃O₈', unit: 'lb', tv: ['AMEX:URA', 'NYSEARCA:URA'] },
+  { key: 'nickel',  label: 'Nickel',   unit: 't',  tv: ['SHFE:NI1!', 'NYMEX:LN1!', 'AMEX:NIKL', 'LME_DLY:N1!', 'TVC:NICKEL'] },
+];
+
+const COMMODITY_CACHE_TTL_MS = 30 * 60 * 1000;
+let commoditiesCache = null;
+let commoditiesCacheTs = 0;
+
+router.get('/commodities', async (_req, res) => {
+  if (commoditiesCache && Date.now() - commoditiesCacheTs < COMMODITY_CACHE_TTL_MS) {
+    return res.json(commoditiesCache);
+  }
+  const items = await Promise.all(COMMODITY_SYMBOLS.map(async (c) => {
+    for (const sym of c.tv) {
+      try {
+        const [ex, tick] = sym.split(':');
+        const data = await fetchTradingView(ex, tick);
+        const norm = normalizePrice(data);
+        if (norm.price == null) continue;
+        return {
+          key: c.key,
+          label: c.label,
+          unit: c.unit,
+          price: norm.price,
+          change_pct: norm.change_pct,
+          source: sym,
+        };
+      } catch {
+        // try next fallback
+      }
+    }
+    return { key: c.key, label: c.label, unit: c.unit, price: null, change_pct: null, source: null };
+  }));
+  const payload = { updatedAt: new Date().toISOString(), items };
+  commoditiesCache = payload;
+  commoditiesCacheTs = Date.now();
+  res.json(payload);
 });
 
 module.exports = router;

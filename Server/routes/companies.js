@@ -36,42 +36,199 @@ async function fetchTvSymbol(exchange, ticker) {
   return data;
 }
 
-// GET /api/companies?page=1&limit=20&search=&exchange=
+// ---------------------------------------------------------------------------
+// raw_data parsing / derived fields
+// ---------------------------------------------------------------------------
+
+// Commodity keys we surface (label → list of raw_data keys to OR together)
+const COMMODITY_KEYS = {
+  Gold:        ['Gold'],
+  Silver:      ['Silver'],
+  Copper:      ['Copper'],
+  Lithium:     ['Lithium'],
+  Nickel:      ['Nickel'],
+  Uranium:     ['Uranium'],
+  Zinc:        ['Zinc'],
+  Cobalt:      ['Cobalt'],
+  'Rare Earths': ['Rare Earths'],
+};
+
+// Continent label → raw_data column name
+const CONTINENT_KEYS = {
+  Africa:          'AFRICA',
+  'North America': null,           // OR of CANADA / USA
+  'South America': 'LATIN AMERICA',
+  Australia:       'AUS/NZ/PNG',
+  Asia:            'ASIA',
+  Europe:          'UK/EUROPE',
+};
+
+function safeParse(json) {
+  if (!json) return null;
+  try { return typeof json === 'string' ? JSON.parse(json) : json; } catch { return null; }
+}
+
+function deriveCommodities(row, raw) {
+  const out = [];
+  if (row.has_gold)    out.push('Gold');
+  if (row.has_silver)  out.push('Silver');
+  if (row.has_copper)  out.push('Copper');
+  if (raw) {
+    for (const [label, keys] of Object.entries(COMMODITY_KEYS)) {
+      if (out.includes(label)) continue;
+      for (const k of keys) {
+        if (raw[k] && String(raw[k]).toUpperCase() === 'Y') { out.push(label); break; }
+      }
+    }
+  }
+  return Array.from(new Set(out));
+}
+
+function deriveContinents(raw) {
+  if (!raw) return [];
+  const out = [];
+  if (raw['AFRICA'])         out.push('Africa');
+  if (raw['ASIA'])           out.push('Asia');
+  if (raw['AUS/NZ/PNG'])     out.push('Australia');
+  if (raw['LATIN AMERICA'])  out.push('South America');
+  if (raw['UK/EUROPE'])      out.push('Europe');
+  if (raw['USA'] || raw['CANADA']) out.push('North America');
+  return Array.from(new Set(out));
+}
+
+function deriveCountry(raw) {
+  if (!raw) return null;
+  // Specific country columns first
+  const pieces = [];
+  for (const col of ['AFRICA','ASIA','AUS/NZ/PNG','LATIN AMERICA','UK/EUROPE','OTHER']) {
+    if (raw[col]) pieces.push(String(raw[col]));
+  }
+  if (raw['CANADA']) pieces.push('Canada');
+  if (raw['USA'])    pieces.push('USA');
+  // De-dupe + truncate
+  const set = Array.from(new Set(pieces.flatMap(s => s.split(/[,;]/).map(x => x.trim()).filter(Boolean))));
+  return set.length ? set.slice(0, 2).join(', ') : null;
+}
+
+function deriveStatus(row) {
+  // We don't have explicit status; default Trading if market_cap > 0, else 'Listed'
+  if (row.market_cap && row.market_cap > 0) return 'Trading';
+  return 'Listed';
+}
+
+function enrichCompany(row) {
+  const raw = safeParse(row.raw_data);
+  return {
+    ...row,
+    commodities: deriveCommodities(row, raw),
+    continents:  deriveContinents(raw),
+    country:     deriveCountry(raw),
+    status:      deriveStatus(row),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// SQL helpers
+// ---------------------------------------------------------------------------
+
+// Build a WHERE clause that filters by commodity (matches either has_X column or raw_data JSON key)
+function commodityClause(commodity, paramIdx) {
+  if (!commodity || !COMMODITY_KEYS[commodity]) return null;
+  const keys = COMMODITY_KEYS[commodity];
+  const flagMap = { Gold: 'has_gold', Silver: 'has_silver', Copper: 'has_copper' };
+  const flagCol = flagMap[commodity];
+  const jsonChecks = keys.map(() => `(raw_data::jsonb->>$${paramIdx}) IN ('Y','y','TRUE','true','1')`).join(' OR ');
+  const params = keys.map(k => k);
+  const flagPart = flagCol ? `${flagCol} = 1 OR ` : '';
+  return { sql: `(${flagPart}${jsonChecks})`, params };
+}
+
+function continentClause(continent, paramIdx) {
+  if (!continent) return null;
+  if (continent === 'North America') {
+    return { sql: `( (raw_data::jsonb->>'CANADA') IS NOT NULL OR (raw_data::jsonb->>'USA') IS NOT NULL )`, params: [] };
+  }
+  const col = CONTINENT_KEYS[continent];
+  if (!col) return null;
+  return { sql: `(raw_data::jsonb->>$${paramIdx}) IS NOT NULL`, params: [col] };
+}
+
+function countryClause(country, paramIdx) {
+  if (!country) return null;
+  if (country === 'Canada') {
+    return { sql: `(raw_data::jsonb->>'CANADA') IS NOT NULL`, params: [] };
+  }
+  if (country === 'USA') {
+    return { sql: `(raw_data::jsonb->>'USA') IS NOT NULL`, params: [] };
+  }
+  const cols = ['AFRICA','ASIA','AUS/NZ/PNG','LATIN AMERICA','UK/EUROPE','OTHER'];
+  const parts = cols.map(() => `(raw_data::jsonb->>$${paramIdx}) ILIKE $${paramIdx + 1}`);
+  // PG doesn't let us reuse params per OR branch without repeating placeholders; build manually:
+  // Simpler: use one $pat param and array_position approach via jsonb_each_text
+  // But simplest portable: just expand all column→ILIKE pairs in JS
+  const params = [];
+  const sqlParts = [];
+  let idx = paramIdx;
+  for (const c of cols) {
+    sqlParts.push(`(raw_data::jsonb->>$${idx}) ILIKE $${idx + 1}`);
+    params.push(c, `%${country}%`);
+    idx += 2;
+  }
+  return { sql: `(${sqlParts.join(' OR ')})`, params };
+}
+
+// ---------------------------------------------------------------------------
+// Routes
+// ---------------------------------------------------------------------------
+
+// GET /api/companies?page=1&limit=20&search=&exchange=&commodity=&continent=&country=
 router.get('/', async (req, res) => {
-  const { search, exchange, page = '1', limit = '20' } = req.query;
+  const { search, exchange, commodity, continent, country, page = '1', limit = '20' } = req.query;
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
   const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
   const offset = (pageNum - 1) * limitNum;
 
-  let countQuery = 'SELECT COUNT(*) as c FROM companies WHERE 1=1';
-  let dataQuery = 'SELECT * FROM companies WHERE 1=1';
+  const where = [];
   const params = [];
-  const countParams = [];
 
   if (search) {
-    const clause = ' AND (name ILIKE $1 OR ticker ILIKE $1 OR sedar_ticker ILIKE $1)';
-    countQuery += clause;
-    dataQuery += clause;
-    const sp = `%${search}%`;
-    params.push(sp);
-    countParams.push(sp);
+    params.push(`%${search}%`);
+    where.push(`(name ILIKE $${params.length} OR ticker ILIKE $${params.length} OR sedar_ticker ILIKE $${params.length})`);
   }
   const normExchange = exchange ? normalizeExchange(exchange) : null;
   if (normExchange) {
-    const clause = ` AND exchange = $${params.length + 1}`;
-    countQuery += clause;
-    dataQuery += clause;
     params.push(normExchange);
-    countParams.push(normExchange);
+    where.push(`exchange = $${params.length}`);
   }
 
-  dataQuery += ` ORDER BY name ASC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-  params.push(limitNum, offset);
+  const commCl = commodityClause(commodity, params.length + 1);
+  if (commCl) { where.push(commCl.sql); params.push(...commCl.params); }
 
-  const countResult = await db.query(countQuery, countParams);
+  const contCl = continentClause(continent, params.length + 1);
+  if (contCl) { where.push(contCl.sql); params.push(...contCl.params); }
+
+  const cntryCl = countryClause(country, params.length + 1);
+  if (cntryCl) { where.push(cntryCl.sql); params.push(...cntryCl.params); }
+
+  const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+
+  const countQuery = `SELECT COUNT(*) as c FROM companies ${whereSql}`;
+  const countResult = await db.query(countQuery, params);
   const total = parseInt(countResult.rows[0].c, 10);
-  const rowsResult = await db.query(dataQuery, params);
-  const rows = rowsResult.rows;
+
+  const dataParams = [...params, limitNum, offset];
+  const dataQuery = `
+    SELECT * FROM companies
+    ${whereSql}
+    ORDER BY market_cap DESC NULLS LAST, name ASC
+    LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+  `;
+  const rowsResult = await db.query(dataQuery, dataParams);
+  const rows = rowsResult.rows.map(enrichCompany).map(r => {
+    // Strip raw_data from response to keep it small
+    const { raw_data, ...rest } = r;
+    return rest;
+  });
 
   res.json({
     data: rows,
@@ -86,11 +243,26 @@ router.get('/', async (req, res) => {
   });
 });
 
-router.get('/exchanges', async (req, res) => {
+router.get('/exchanges', async (_req, res) => {
   const result = await db.query(
     'SELECT DISTINCT exchange FROM companies WHERE exchange IS NOT NULL ORDER BY exchange'
   );
   res.json(result.rows.map(r => r.exchange));
+});
+
+// Available filter options derived from the data — used to render the sidebar.
+router.get('/filters', async (_req, res) => {
+  res.json({
+    markets:    ['TSX-V', 'CSE', 'ASX', 'TSX'],
+    commodities: Object.keys(COMMODITY_KEYS),
+    continents: ['Africa', 'North America', 'South America', 'Australia', 'Asia', 'Europe'],
+    countries: [
+      'Argentina','Australia','Bolivia','Brazil','Burkina Faso','Canada','Chile','DRC','Guinea',
+      'Mali','Mexico','Namibia','Papua New Guinea','Senegal','South Africa','Turkey','USA',
+      'Zambia','Zimbabwe',
+    ],
+    statuses:   ['Trading', 'Halted', 'Upcoming', 'Delisted'],
+  });
 });
 
 // GET /api/companies/:id
@@ -129,7 +301,6 @@ router.get('/:id', async (req, res) => {
     }
   }
 
-  // Get recent filings — match by company_id OR fuzzy company_name
   const filingsResult = await db.query(`
     SELECT f.id, f.filing_type, f.commodity, f.created_at, a.verdict, a.summary
     FROM filings f
@@ -140,7 +311,10 @@ router.get('/:id', async (req, res) => {
     LIMIT 10
   `, [req.params.id, row.name]);
 
-  res.json({ ...row, marketData, filings: filingsResult.rows });
+  const enriched = enrichCompany(row);
+  // eslint-disable-next-line no-unused-vars
+  const { raw_data, ...clean } = enriched;
+  res.json({ ...clean, marketData, filings: filingsResult.rows });
 });
 
 router.delete('/:id', async (req, res) => {

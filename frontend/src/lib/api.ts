@@ -94,6 +94,7 @@ export async function fetchFilings(filters?: {
   exchange?: string;
   verdict?: string;
   commodity?: string;
+  limit?: number;
 }): Promise<Filing[]> {
   const params = new URLSearchParams();
   if (filters?.verdict && filters.verdict !== 'All') {
@@ -101,6 +102,9 @@ export async function fetchFilings(filters?: {
   }
   if (filters?.exchange && filters.exchange !== 'All') {
     params.set('exchange', filters.exchange);
+  }
+  if (filters?.limit) {
+    params.set('limit', String(filters.limit));
   }
 
   const res = await fetch(`${API_BASE}/filings?${params.toString()}`);
@@ -140,6 +144,24 @@ export interface Company {
   sector: string | null;
   listing_date: string | null;
   region: string | null;
+  commodities?: string[];
+  continents?: string[];
+  country?: string | null;
+  status?: string | null;
+}
+
+export interface CompanyFilters {
+  markets: string[];
+  commodities: string[];
+  continents: string[];
+  countries: string[];
+  statuses: string[];
+}
+
+export async function fetchCompanyFilters(): Promise<CompanyFilters> {
+  const res = await fetch(`${API_BASE}/companies/filters`);
+  if (!res.ok) throw new Error(`Failed to fetch filters: ${res.status}`);
+  return res.json();
 }
 
 export interface MarketData {
@@ -186,12 +208,20 @@ export async function fetchCompanies(params: {
   limit?: number;
   search?: string;
   exchange?: string;
+  commodity?: string;
+  continent?: string;
+  country?: string;
+  status?: string;
 }): Promise<PaginatedCompanies> {
   const qs = new URLSearchParams();
   if (params.page) qs.set('page', String(params.page));
   if (params.limit) qs.set('limit', String(params.limit));
   if (params.search) qs.set('search', params.search);
   if (params.exchange && params.exchange !== 'All') qs.set('exchange', params.exchange);
+  if (params.commodity) qs.set('commodity', params.commodity);
+  if (params.continent) qs.set('continent', params.continent);
+  if (params.country) qs.set('country', params.country);
+  if (params.status) qs.set('status', params.status);
 
   const res = await fetch(`${API_BASE}/companies?${qs.toString()}`);
   if (!res.ok) throw new Error(`Failed to fetch companies: ${res.status}`);
@@ -208,4 +238,150 @@ export async function fetchCompanyExchanges(): Promise<string[]> {
   const res = await fetch(`${API_BASE}/companies/exchanges`);
   if (!res.ok) throw new Error(`Failed to fetch exchanges: ${res.status}`);
   return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Market data
+// ---------------------------------------------------------------------------
+
+export interface MoverItem {
+  ticker: string;
+  name: string;
+  exchange: string;
+  price: number | null;
+  change_pct: number | null;
+  volume: number | null;
+  perf_ytd: number | null;
+}
+
+export interface MoversResponse {
+  exchange: string;
+  updatedAt: string;
+  gainers: MoverItem[];
+  losers: MoverItem[];
+}
+
+export async function fetchMovers(opts?: { exchange?: string; limit?: number }): Promise<MoversResponse> {
+  const qs = new URLSearchParams();
+  qs.set('exchange', opts?.exchange ?? 'ALL');
+  qs.set('limit', String(opts?.limit ?? 10));
+  const res = await fetch(`${API_BASE}/market/movers?${qs.toString()}`);
+  if (!res.ok) throw new Error(`Failed to fetch movers: ${res.status}`);
+  return res.json();
+}
+
+export interface CommoditySpot {
+  key: string;
+  label: string;
+  unit: string;
+  price: number | null;
+  change_pct: number | null;
+}
+
+export interface CommoditiesResponse {
+  updatedAt: string;
+  items: CommoditySpot[];
+}
+
+export async function fetchCommodities(): Promise<CommoditiesResponse> {
+  const res = await fetch(`${API_BASE}/market/commodities`);
+  if (!res.ok) throw new Error(`Failed to fetch commodities: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
+const TOKEN_KEY = 'orewire.auth.token';
+const USER_KEY = 'orewire.auth.user';
+
+export interface AuthUser {
+  id: number;
+  email: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  user?: AuthUser;
+}
+
+export function getAuthToken(): string | null {
+  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+}
+
+export function getAuthUser(): AuthUser | null {
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+const AUTH_EVENT = 'orewire-auth-change';
+
+function emitAuthChange() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(AUTH_EVENT));
+  }
+}
+
+export function onAuthChange(handler: () => void): () => void {
+  if (typeof window === 'undefined') return () => undefined;
+  window.addEventListener(AUTH_EVENT, handler);
+  window.addEventListener('storage', handler);
+  return () => {
+    window.removeEventListener(AUTH_EVENT, handler);
+    window.removeEventListener('storage', handler);
+  };
+}
+
+export function setAuth(resp: AuthResponse) {
+  try {
+    localStorage.setItem(TOKEN_KEY, resp.token);
+    if (resp.user) localStorage.setItem(USER_KEY, JSON.stringify(resp.user));
+  } catch { /* ignore */ }
+  emitAuthChange();
+}
+
+export function clearAuth() {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  } catch { /* ignore */ }
+  emitAuthChange();
+}
+
+async function authRequest(path: string, body: Record<string, unknown>): Promise<AuthResponse> {
+  const res = await fetch(`${API_BASE}/auth${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.error || `Request failed: ${res.status}`);
+  }
+  return data as AuthResponse;
+}
+
+export async function login(email: string, password: string): Promise<AuthResponse> {
+  const resp = await authRequest('/login', { email, password });
+  setAuth(resp);
+  return resp;
+}
+
+export async function register(email: string, password: string): Promise<AuthResponse> {
+  const resp = await authRequest('/register', { email, password });
+  setAuth(resp);
+  return resp;
+}
+
+export async function logout(): Promise<void> {
+  const token = getAuthToken();
+  clearAuth();
+  if (!token) return;
+  await fetch(`${API_BASE}/auth/logout`, {
+    method: 'POST',
+    headers: { 'x-auth-token': token },
+  }).catch(() => undefined);
 }

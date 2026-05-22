@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { ArrowUpRight, Clock, RefreshCw } from "lucide-react";
 import { fetchFilings, fetchStats, type Verdict, type Exchange, type Commodity } from "@/lib/api";
 
@@ -26,8 +27,8 @@ const LiveFeed = () => {
   const [commodity, setCommodity] = useState<"All" | Commodity>("All");
 
   const { data: filings = [], isLoading, error, refetch } = useQuery({
-    queryKey: ["filings", exchange, verdict],
-    queryFn: () => fetchFilings({ exchange, verdict, commodity }),
+    queryKey: ["filings", exchange, verdict, commodity],
+    queryFn: () => fetchFilings({ exchange, verdict, commodity, limit: 9 }),
     refetchInterval: 60000,
   });
 
@@ -138,12 +139,12 @@ const LiveFeed = () => {
 
             {filtered.length > 5 && (
               <div className="absolute inset-x-0 bottom-0 h-72 bg-gradient-to-t from-background via-background/90 to-transparent flex items-end justify-center pb-8">
-                <a
-                  href="#cta"
+                <Link
+                  to="/register"
                   className="inline-flex items-center gap-2 bg-accent text-accent-foreground px-6 h-11 text-sm font-semibold hover:opacity-90 transition-opacity shadow-lg"
                 >
                   Sign up free to see the full feed <ArrowUpRight className="w-4 h-4" />
-                </a>
+                </Link>
               </div>
             )}
           </div>
