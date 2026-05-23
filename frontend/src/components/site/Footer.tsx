@@ -1,4 +1,5 @@
 import { Twitter, Linkedin } from "lucide-react";
+import { Link } from "react-router-dom";
 
 const Footer = () => (
   <footer className="bg-background border-t border-border">
@@ -26,10 +27,10 @@ const Footer = () => (
       <div className="md:col-span-3 text-sm">
         <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-3">Product</div>
         <ul className="space-y-2 text-foreground/70">
-          <li><a href="#feed" className="hover:text-foreground">Feed</a></li>
-          <li><a href="#companies" className="hover:text-foreground">Companies</a></li>
-          <li><a href="#pricing" className="hover:text-foreground">Pricing</a></li>
-          <li><a href="#login" className="hover:text-foreground">Login</a></li>
+          <li><a href="/#feed" className="hover:text-foreground">Feed</a></li>
+          <li><Link to="/companies" className="hover:text-foreground">Companies</Link></li>
+          <li><a href="/#pricing" className="hover:text-foreground">Pricing</a></li>
+          <li><Link to="/login" className="hover:text-foreground">Login</Link></li>
         </ul>
       </div>
       <div className="md:col-span-4 text-sm">

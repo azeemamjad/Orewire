@@ -45,7 +45,7 @@ const Nav = () => {
             Open Watchlist
           </Link>
 
-          {isAuthenticated && (
+          {isAuthenticated ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -69,6 +69,13 @@ const Nav = () => {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+          ) : (
+            <Link
+              to="/login"
+              className="hidden sm:inline-flex items-center text-sm text-foreground/80 hover:text-primary transition-colors"
+            >
+              Account
+            </Link>
           )}
 
           <button className="md:hidden p-2"><Menu className="w-5 h-5" /></button>

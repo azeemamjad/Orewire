@@ -1,7 +1,10 @@
 import Nav from "@/components/site/Nav";
 import MarketStrip from "@/components/site/MarketStrip";
 import CommodityBar from "@/components/site/CommodityBar";
+import SearchHero from "@/components/site/SearchHero";
 import Movers from "@/components/site/Movers";
+import NewsFeed from "@/components/site/NewsFeed";
+import CommoditySidebar from "@/components/site/CommoditySidebar";
 import LiveFeed from "@/components/site/LiveFeed";
 import HowItWorks from "@/components/site/HowItWorks";
 import Pricing from "@/components/site/Pricing";
@@ -14,8 +17,29 @@ const Index = () => {
       <Nav />
       <MarketStrip />
       <CommodityBar />
+      <SearchHero />
+
+      {/* 3-column market overview */}
+      <section className="border-b border-border bg-background">
+        <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-8">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            {/* Left: Gainers & Losers */}
+            <div className="lg:col-span-5">
+              <Movers />
+            </div>
+            {/* Center: News Feed */}
+            <div className="lg:col-span-4">
+              <NewsFeed />
+            </div>
+            {/* Right: Commodities + Indexes */}
+            <div className="lg:col-span-3 space-y-4">
+              <CommoditySidebar />
+            </div>
+          </div>
+        </div>
+      </section>
+
       <main>
-        <Movers />
         <LiveFeed />
         <HowItWorks />
         <Pricing />
