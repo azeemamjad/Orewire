@@ -1,25 +1,28 @@
+import { useQuery } from "@tanstack/react-query";
 import { Clock, Newspaper } from "lucide-react";
-
-interface NewsItem {
-  id: number;
-  source: string;
-  time: string;
-  tag: string;
-  headline: string;
-}
+import { fetchNewsFeed, type NewsItem } from "@/lib/api";
 
 const placeholderNews: NewsItem[] = [
-  { id: 1, source: "Northern Miner", time: "8m", tag: "Gold", headline: "Gold above $2,400 lifts Canadian junior index 1.8% on the week" },
-  { id: 2, source: "Reuters", time: "22m", tag: "Copper", headline: "Ivanhoe restarts Kakula at higher throughput after grid stabilization" },
-  { id: 3, source: "Globe & Mail", time: "1h", tag: "Gold", headline: "De Grey Hemi feasibility supports 530koz/yr at AISC US$1,210" },
-  { id: 4, source: "Stockhouse", time: "1h", tag: "Lithium", headline: "Patriot Battery closes C$45M flow-through for Corvette program" },
-  { id: 5, source: "Kitco", time: "2h", tag: "Silver", headline: "Silver squeezes to $31.74 as LBMA inventory falls for 9th week" },
-  { id: 6, source: "Mining.com", time: "3h", tag: "Copper", headline: "Filo del Sol: 156m @ 1.4% CuEq from 412m — among year's best" },
-  { id: 7, source: "Bloomberg", time: "4h", tag: "Uranium", headline: "Uranium spot $92.10 as producers signal 2027 contract tightness" },
-  { id: 8, source: "Reuters", time: "5h", tag: "Africa", headline: "Mali revises mining code; Resolute restarts Syama after talks" },
+  { title: "Gold above $2,400 lifts Canadian junior index 1.8% on the week", source: "Northern Miner", timeAgo: "8m", commodity: "Gold", sentiment: "bullish", link: "#", pubDate: "", summary: "" },
+  { title: "Ivanhoe restarts Kakula at higher throughput after grid stabilization", source: "Reuters", timeAgo: "22m", commodity: "Copper", sentiment: "bullish", link: "#", pubDate: "", summary: "" },
+  { title: "De Grey Hemi feasibility supports 530koz/yr at AISC US$1,210", source: "Globe & Mail", timeAgo: "1h", commodity: "Gold", sentiment: "bullish", link: "#", pubDate: "", summary: "" },
+  { title: "Patriot Battery closes C$45M flow-through for Corvette program", source: "Stockhouse", timeAgo: "1h", commodity: "Lithium", sentiment: "neutral", link: "#", pubDate: "", summary: "" },
+  { title: "Silver squeezes to $31.74 as LBMA inventory falls for 9th week", source: "Kitco", timeAgo: "2h", commodity: "Silver", sentiment: "bullish", link: "#", pubDate: "", summary: "" },
+  { title: "Filo del Sol: 156m @ 1.4% CuEq from 412m — among year's best", source: "Mining.com", timeAgo: "3h", commodity: "Copper", sentiment: "bullish", link: "#", pubDate: "", summary: "" },
+  { title: "Uranium spot $92.10 as producers signal 2027 contract tightness", source: "Bloomberg", timeAgo: "4h", commodity: "Uranium", sentiment: "bullish", link: "#", pubDate: "", summary: "" },
+  { title: "Mali revises mining code; Resolute restarts Syama after talks", source: "Reuters", timeAgo: "5h", commodity: null, sentiment: "neutral", link: "#", pubDate: "", summary: "" },
 ];
 
 const NewsFeed = () => {
+  const { data } = useQuery({
+    queryKey: ["news-feed"],
+    queryFn: fetchNewsFeed,
+    staleTime: 30 * 60 * 1000,
+    refetchInterval: 30 * 60 * 1000,
+  });
+
+  const items = data && data.length > 0 ? data : placeholderNews;
+
   return (
     <div className="border border-border bg-surface h-full flex flex-col">
       <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border bg-muted/30">
@@ -33,17 +36,26 @@ const NewsFeed = () => {
         </a>
       </div>
       <ul className="divide-y divide-border flex-1">
-        {placeholderNews.map((item) => (
-          <li key={item.id} className="px-3 py-2.5 hover:bg-background/60">
+        {items.slice(0, 8).map((item, i) => (
+          <li key={i} className="px-3 py-2.5 hover:bg-background/60">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">{item.source}</span>
               <span className="font-mono text-[9px] text-muted-foreground inline-flex items-center gap-1">
                 <Clock className="w-2.5 h-2.5" />
-                {item.time}
+                {item.timeAgo}
               </span>
-              <span className="ml-auto font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 border border-border">{item.tag}</span>
+              {item.commodity && (
+                <span className="ml-auto font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 border border-border">{item.commodity}</span>
+              )}
             </div>
-            <a href="#" className="text-[13px] leading-snug font-medium hover:underline">{item.headline}</a>
+            <a
+              href={item.link !== "#" ? item.link : undefined}
+              target={item.link !== "#" ? "_blank" : undefined}
+              rel="noopener noreferrer"
+              className="text-[13px] leading-snug font-medium hover:underline"
+            >
+              {item.title}
+            </a>
           </li>
         ))}
       </ul>

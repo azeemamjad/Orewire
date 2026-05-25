@@ -231,6 +231,29 @@ function adminAuth(req, res, next) {
   next();
 }
 
+// Attach req.user = { id, email } if valid user token present, otherwise null.
+function attachUser(req, _res, next) {
+  req.user = null;
+  const token = req.headers['x-auth-token'];
+  if (token) {
+    const session = validateSession(token);
+    if (session && session.userId) {
+      req.user = { id: session.userId, email: session.email };
+    }
+  }
+  next();
+}
+
+// Require a valid user token — 401 if missing.
+function requireUser(req, res, next) {
+  const token = req.headers['x-auth-token'];
+  if (!token) return res.status(401).json({ error: 'Login required' });
+  const session = validateSession(token);
+  if (!session || !session.userId) return res.status(401).json({ error: 'Session expired — please log in again' });
+  req.user = { id: session.userId, email: session.email };
+  next();
+}
+
 module.exports = {
   router,
   adminAuth,
@@ -238,4 +261,6 @@ module.exports = {
   requireAdminApi,
   adminLoginSubmit,
   adminLogout,
+  attachUser,
+  requireUser,
 };

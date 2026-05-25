@@ -76,7 +76,7 @@ const CommoditySidebar = () => {
             <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">· Spot</span>
           </div>
         </div>
-        <div className="max-h-[360px] overflow-auto">
+        <div className="max-h-[480px] overflow-auto">
           {items.map((c) => {
             const up = (c.change_pct ?? 0) >= 0;
             return (
@@ -109,7 +109,7 @@ const CommoditySidebar = () => {
             <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">· Mining &amp; Markets</span>
           </div>
         </div>
-        <div className="max-h-[360px] overflow-auto">
+        <div className="max-h-[480px] overflow-auto">
           {placeholderIndexes.map((idx) => (
             <div key={idx.label} className="flex items-center justify-between px-3 py-2 border-b border-border last:border-0 hover:bg-background/60">
               <div className="min-w-0">

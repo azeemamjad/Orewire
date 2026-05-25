@@ -5,7 +5,8 @@ import { ChevronDown, ChevronUp, Plus, Search, Trash2, ArrowUpRight, ArrowDownRi
 import Nav from "@/components/site/Nav";
 import MarketStrip from "@/components/site/MarketStrip";
 import Footer from "@/components/site/Footer";
-import { fetchCompanies, type Company } from "@/lib/api";
+import { fetchCompanies, companySlug, type Company } from "@/lib/api";
+import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 
 interface WatchlistItem {
@@ -288,16 +289,16 @@ const WatchlistRow = ({ item, isFirst, isLast, onUp, onDown, onRemove }: RowProp
         </button>
       </div>
 
-      <div>
+      <Link to={`/company/${companySlug(item.exchange, item.ticker)}`} className="hover:opacity-80">
         <div className="font-mono font-bold text-sm">{item.ticker || "—"}</div>
         {item.exchange && (
           <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
             {item.exchange}
           </div>
         )}
-      </div>
+      </Link>
 
-      <div className="font-display text-[15px] font-semibold truncate">{item.name}</div>
+      <Link to={`/company/${companySlug(item.exchange, item.ticker)}`} className="font-display text-[15px] font-semibold truncate hover:underline">{item.name}</Link>
 
       <div className="text-right font-mono text-sm">{fmtPrice(data?.price)}</div>
 

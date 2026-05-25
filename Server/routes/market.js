@@ -143,6 +143,7 @@ function setMoversCached(key, data) {
 // GET /api/market/movers?exchange=TSXV&limit=10
 // exchange=ALL  -> aggregate across TSXV/TSX/CSE/ASX (sampled by market cap)
 router.get('/movers', async (req, res) => {
+  try {
   const exchange = (req.query.exchange || 'ALL').toUpperCase();
   const limit = Math.min(parseInt(req.query.limit || '10', 10), 50);
   const cacheKey = `${exchange}:${limit}`;
@@ -211,6 +212,10 @@ router.get('/movers', async (req, res) => {
   };
   setMoversCached(cacheKey, result);
   res.json(result);
+  } catch (err) {
+    console.error('Movers query failed:', err?.message || err);
+    res.status(503).json({ exchange: 'ALL', updatedAt: new Date().toISOString(), gainers: [], losers: [] });
+  }
 });
 
 // ---------------------------------------------------------------------------

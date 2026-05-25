@@ -183,6 +183,7 @@ function countryClause(country, paramIdx) {
 
 // GET /api/companies?page=1&limit=20&search=&exchange=&commodity=&continent=&country=
 router.get('/', async (req, res) => {
+  try {
   const { search, exchange, commodity, continent, country, page = '1', limit = '20' } = req.query;
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
   const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
@@ -241,13 +242,22 @@ router.get('/', async (req, res) => {
       hasPrev: pageNum > 1,
     }
   });
+  } catch (err) {
+    console.error('Companies list query failed:', err?.message || err);
+    res.status(503).json({ data: [], pagination: { page: 1, limit: 20, total: 0, totalPages: 0, hasNext: false, hasPrev: false } });
+  }
 });
 
 router.get('/exchanges', async (_req, res) => {
-  const result = await db.query(
-    'SELECT DISTINCT exchange FROM companies WHERE exchange IS NOT NULL ORDER BY exchange'
-  );
-  res.json(result.rows.map(r => r.exchange));
+  try {
+    const result = await db.query(
+      'SELECT DISTINCT exchange FROM companies WHERE exchange IS NOT NULL ORDER BY exchange'
+    );
+    res.json(result.rows.map(r => r.exchange));
+  } catch (err) {
+    console.error('Exchanges query failed:', err?.message || err);
+    res.status(503).json([]);
+  }
 });
 
 // Available filter options derived from the data — used to render the sidebar.
@@ -265,9 +275,37 @@ router.get('/filters', async (_req, res) => {
   });
 });
 
-// GET /api/companies/:id
-router.get('/:id', async (req, res) => {
-  const result = await db.query('SELECT * FROM companies WHERE id = $1', [req.params.id]);
+// GET /api/companies/:idOrSlug  — accepts numeric ID or "EXCHANGE-TICKER" slug (e.g. "TSXV-SCZ")
+router.get('/:idOrSlug', async (req, res) => {
+  try {
+  const param = req.params.idOrSlug;
+  let result;
+
+  if (/^\d+$/.test(param)) {
+    result = await db.query('SELECT * FROM companies WHERE id = $1', [param]);
+  } else {
+    const dashIdx = param.indexOf('-');
+    if (dashIdx > 0) {
+      const exchange = normalizeExchange(param.slice(0, dashIdx));
+      const ticker = param.slice(dashIdx + 1).toUpperCase();
+      result = await db.query(
+        'SELECT * FROM companies WHERE exchange = $1 AND UPPER(ticker) = $2 LIMIT 1',
+        [exchange, ticker]
+      );
+      if (result.rows.length === 0) {
+        result = await db.query(
+          'SELECT * FROM companies WHERE UPPER(ticker) = $1 LIMIT 1',
+          [ticker]
+        );
+      }
+    } else {
+      result = await db.query(
+        'SELECT * FROM companies WHERE UPPER(ticker) = $1 LIMIT 1',
+        [param.toUpperCase()]
+      );
+    }
+  }
+
   const row = result.rows[0];
   if (!row) return res.status(404).json({ error: 'Not found' });
 
@@ -309,17 +347,26 @@ router.get('/:id', async (req, res) => {
        OR TRIM(REPLACE(REPLACE(f.company_name, '.', ''), ',', '')) = TRIM(REPLACE(REPLACE($2, '.', ''), ',', ''))
     ORDER BY f.created_at DESC
     LIMIT 10
-  `, [req.params.id, row.name]);
+  `, [row.id, row.name]);
 
   const enriched = enrichCompany(row);
   // eslint-disable-next-line no-unused-vars
   const { raw_data, ...clean } = enriched;
   res.json({ ...clean, marketData, filings: filingsResult.rows });
+  } catch (err) {
+    console.error('Company detail query failed:', err?.message || err);
+    res.status(503).json({ error: 'Database unavailable' });
+  }
 });
 
 router.delete('/:id', async (req, res) => {
-  await db.query('DELETE FROM companies WHERE id = $1', [req.params.id]);
-  res.json({ ok: true });
+  try {
+    await db.query('DELETE FROM companies WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Company delete failed:', err?.message || err);
+    res.status(503).json({ error: 'Database unavailable' });
+  }
 });
 
 module.exports = router;

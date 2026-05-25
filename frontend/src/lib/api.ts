@@ -228,10 +228,17 @@ export async function fetchCompanies(params: {
   return res.json();
 }
 
-export async function fetchCompany(id: number): Promise<CompanyDetail> {
-  const res = await fetch(`${API_BASE}/companies/${id}`);
+export async function fetchCompany(idOrSlug: number | string): Promise<CompanyDetail> {
+  const res = await fetch(`${API_BASE}/companies/${idOrSlug}`);
   if (!res.ok) throw new Error(`Failed to fetch company: ${res.status}`);
   return res.json();
+}
+
+export function companySlug(exchange: string | null, ticker: string | null): string {
+  const ex = (exchange || "").toUpperCase().replace("-", "");
+  const tk = (ticker || "").toUpperCase();
+  if (ex && tk) return `${ex}-${tk}`;
+  return tk || "unknown";
 }
 
 export async function fetchCompanyExchanges(): Promise<string[]> {
@@ -384,4 +391,94 @@ export async function logout(): Promise<void> {
     method: 'POST',
     headers: { 'x-auth-token': token },
   }).catch(() => undefined);
+}
+
+// ---------------------------------------------------------------------------
+// Discussions
+// ---------------------------------------------------------------------------
+
+export interface Discussion {
+  id: number;
+  companyId: number;
+  userId: number;
+  userEmail: string;
+  body: string;
+  score: number;
+  userVote: number;
+  createdAt: string;
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getAuthToken();
+  const h: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) h['x-auth-token'] = token;
+  return h;
+}
+
+export async function fetchDiscussions(companyId: number): Promise<Discussion[]> {
+  const res = await fetch(`${API_BASE}/discussions/${companyId}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(`Failed to fetch discussions: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// News
+// ---------------------------------------------------------------------------
+
+export interface NewsItem {
+  title: string;
+  summary: string;
+  source: string;
+  link: string;
+  pubDate: string;
+  timeAgo: string;
+  commodity: string | null;
+  sentiment: 'bullish' | 'bearish' | 'neutral';
+}
+
+export async function fetchNewsFeed(): Promise<NewsItem[]> {
+  const res = await fetch(`${API_BASE}/news/feed`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.items || [];
+}
+
+export async function fetchCompanyNews(name: string, ticker?: string, exchange?: string): Promise<NewsItem[]> {
+  const params = new URLSearchParams();
+  if (ticker) params.set('ticker', ticker);
+  if (exchange) params.set('exchange', exchange);
+  const res = await fetch(`${API_BASE}/news/company/${encodeURIComponent(name)}?${params.toString()}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.items || [];
+}
+
+export async function postDiscussion(companyId: number, body: string): Promise<Discussion> {
+  const res = await fetch(`${API_BASE}/discussions/${companyId}`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ body }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (res.status === 401) clearAuth();
+    throw new Error(data?.error || `Failed to post: ${res.status}`);
+  }
+  return data as Discussion;
+}
+
+export async function voteDiscussion(companyId: number, commentId: number, vote: number): Promise<{ score: number; userVote: number }> {
+  const res = await fetch(`${API_BASE}/discussions/${companyId}/${commentId}/vote`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ vote }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (res.status === 401) clearAuth();
+    throw new Error(data?.error || `Failed to vote: ${res.status}`);
+  }
+  return data;
 }

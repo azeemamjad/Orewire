@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDownRight, ArrowUpRight, TrendingUp, TrendingDown } from "lucide-react";
 import { Link } from "react-router-dom";
-import { fetchMovers, type MoverItem } from "@/lib/api";
+import { fetchMovers, companySlug, type MoverItem } from "@/lib/api";
 
 const REFETCH_MS = 30 * 60 * 1000;
 
@@ -65,7 +65,7 @@ const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up:
           rows.map((r) => (
             <tr key={`${r.exchange}-${r.ticker}`} className="hover:bg-background/60 transition-colors">
               <td className="px-3 py-2">
-                <Link to={`/company/${r.ticker}`} className="flex items-center gap-2 group">
+                <Link to={`/company/${companySlug(r.exchange, r.ticker)}`} className="flex items-center gap-2 group">
                   <span className="font-mono font-bold group-hover:underline">{r.ticker}</span>
                   <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5">
                     {normExLabel(r.exchange)}

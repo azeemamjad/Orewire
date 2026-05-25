@@ -4,6 +4,10 @@ const cors       = require('cors');
 const path       = require('path');
 const auth       = require('./routes/auth');
 
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled rejection (non-fatal):', err?.message || err);
+});
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -22,6 +26,8 @@ apiRouter.use('/scraper',   require('./routes/scraper'));
 apiRouter.use('/seeder',    require('./routes/seeder'));
 apiRouter.use('/pipeline',  require('./routes/pipeline'));
 apiRouter.use('/market',    require('./routes/market'));
+apiRouter.use('/discussions', require('./routes/discussions'));
+apiRouter.use('/news',        require('./routes/news'));
 app.use('/api', apiRouter);
 
 // ── Admin panel auth (cookie session) ──────────────────────────────────────

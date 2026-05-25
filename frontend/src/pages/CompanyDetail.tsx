@@ -15,13 +15,47 @@ import {
   Bell,
   ThumbsUp,
   ThumbsDown,
+  X,
+  Check,
+  ChevronDown,
+  Activity,
+  ChartLine,
+  ChartCandlestick,
 } from "lucide-react";
-import { fetchCompany } from "@/lib/api";
-import { useState, useMemo } from "react";
+import { fetchCompany, fetchDiscussions, postDiscussion, voteDiscussion, fetchCompanyNews, login as apiLogin, register as apiRegister, companySlug, type Discussion, type NewsItem } from "@/lib/api";
+import { useAuth } from "@/hooks/use-auth";
+import { useState, useMemo, useEffect } from "react";
 import Nav from "@/components/site/Nav";
 import MarketStrip from "@/components/site/MarketStrip";
 import Footer from "@/components/site/Footer";
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ComposedChart, Bar, Cell } from "recharts";
+
+const WL_KEY = "orewire.watchlist.v1";
+
+function isInWatchlist(companyId: number): boolean {
+  try {
+    const raw = localStorage.getItem(WL_KEY);
+    if (!raw) return false;
+    const items = JSON.parse(raw);
+    return Array.isArray(items) && items.some((i: any) => i.id === companyId);
+  } catch { return false; }
+}
+
+function toggleWatchlist(company: { id: number; ticker: string | null; exchange: string | null; name: string; market_cap: number | null }): boolean {
+  try {
+    const raw = localStorage.getItem(WL_KEY);
+    const items: any[] = raw ? JSON.parse(raw) : [];
+    const idx = items.findIndex((i: any) => i.id === company.id);
+    if (idx >= 0) {
+      items.splice(idx, 1);
+      localStorage.setItem(WL_KEY, JSON.stringify(items));
+      return false;
+    }
+    items.push({ id: company.id, ticker: company.ticker, exchange: company.exchange, name: company.name, market_cap: company.market_cap });
+    localStorage.setItem(WL_KEY, JSON.stringify(items));
+    return true;
+  } catch { return false; }
+}
 
 const verdictPill: Record<string, string> = {
   Noteworthy: "bg-noteworthy text-noteworthy-foreground",
@@ -36,154 +70,350 @@ const periodDays: Record<ChartPeriod, number> = {
   "1D": 1, "1W": 7, "1M": 30, "3M": 90, "6M": 180, "YTD": 150, "1Y": 365, "5Y": 1825, "All": 2500,
 };
 
-function generateChartData(price: number, period: ChartPeriod) {
-  const points: { date: string; price: number }[] = [];
+interface ChartPoint {
+  date: string;
+  price: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  isUp: boolean;
+  wickRange: [number, number];
+  bodyRange: [number, number];
+}
+
+function formatDateLabel(t: Date, period: ChartPeriod): string {
+  const isIntraday = ["1m", "5m", "15m", "30m", "1h", "4h"].includes(period);
+  if (isIntraday) {
+    return `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+  }
+  if (periodDays[period] <= 7) {
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    return `${dayNames[t.getDay()]} ${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+  }
+  if (periodDays[period] <= 365) {
+    return `${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+  }
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${monthNames[t.getMonth()]} '${String(t.getFullYear()).slice(2)}`;
+}
+
+function generateChartData(price: number, period: ChartPeriod): ChartPoint[] {
+  const points: ChartPoint[] = [];
   const now = new Date();
   const isIntraday = ["1m", "5m", "15m", "30m", "1h", "4h"].includes(period);
-
-  const intervalMinutes: Record<string, number> = {
-    "1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240,
-  };
+  const intervalMinutes: Record<string, number> = { "1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240 };
 
   let count: number;
   let stepMs: number;
 
   if (isIntraday) {
     const mins = intervalMinutes[period] || 60;
-    const totalMins = period === "4h" ? 6.5 * 60 : 6.5 * 60;
-    count = Math.floor(totalMins / mins);
+    count = Math.floor((6.5 * 60) / mins);
     stepMs = mins * 60 * 1000;
   } else {
     const days = periodDays[period];
-    count = Math.min(days, 120);
-    count = Math.max(count, 30);
+    count = Math.max(30, Math.min(days, 90));
     stepMs = (days / count) * 24 * 60 * 60 * 1000;
   }
 
   let p = price * (0.65 + Math.random() * 0.2);
   const drift = (price - p) / count;
+  const volatility = price * 0.025;
 
   for (let i = 0; i < count; i++) {
     const t = new Date(now.getTime() - (count - i) * stepMs);
     const noise = (Math.random() - 0.45) * price * 0.04;
+    const open = p;
     p += drift + noise;
     p = Math.max(p, price * 0.4);
+    const close = p;
+    const high = Math.max(open, close) + Math.random() * volatility;
+    const low = Math.min(open, close) - Math.random() * volatility;
+    const isUp = close >= open;
 
-    let label: string;
-    if (isIntraday) {
-      label = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
-    } else if (periodDays[period] <= 7) {
-      const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-      label = `${dayNames[t.getDay()]} ${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
-    } else if (periodDays[period] <= 365) {
-      label = `${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
-    } else {
-      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      label = `${monthNames[t.getMonth()]} '${String(t.getFullYear()).slice(2)}`;
-    }
-
-    points.push({ date: label, price: parseFloat(p.toFixed(3)) });
+    points.push({
+      date: formatDateLabel(t, period),
+      price: parseFloat(close.toFixed(3)),
+      open: parseFloat(open.toFixed(3)),
+      high: parseFloat(high.toFixed(3)),
+      low: parseFloat(Math.max(low, 0).toFixed(3)),
+      close: parseFloat(close.toFixed(3)),
+      isUp,
+      wickRange: [parseFloat(Math.max(low, 0).toFixed(3)), parseFloat(high.toFixed(3))],
+      bodyRange: isUp ? [parseFloat(open.toFixed(3)), parseFloat(close.toFixed(3))] : [parseFloat(close.toFixed(3)), parseFloat(open.toFixed(3))],
+    });
   }
 
-  const nowLabel = isIntraday
-    ? `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
-    : `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  points.push({ date: nowLabel, price });
+  const lastOpen = p;
+  const isUp = price >= lastOpen;
+  const high = Math.max(lastOpen, price) + Math.random() * volatility;
+  const low = Math.max(Math.min(lastOpen, price) - Math.random() * volatility, 0);
+  points.push({
+    date: formatDateLabel(now, period),
+    price,
+    open: parseFloat(lastOpen.toFixed(3)),
+    high: parseFloat(high.toFixed(3)),
+    low: parseFloat(low.toFixed(3)),
+    close: price,
+    isUp,
+    wickRange: [parseFloat(low.toFixed(3)), parseFloat(high.toFixed(3))],
+    bodyRange: isUp ? [parseFloat(lastOpen.toFixed(3)), price] : [price, parseFloat(lastOpen.toFixed(3))],
+  });
   return points;
 }
 
+const CandlestickBar = (props: any) => {
+  const { x, width, payload } = props;
+  if (!payload) return null;
+  const { wickRange, bodyRange, isUp } = payload;
+  const yScale = props.yAxis?.scale || props.background?.yAxis?.scale;
+  if (!yScale) return null;
+
+  const color = isUp ? "hsl(var(--up))" : "hsl(var(--down))";
+  const wickX = x + width / 2;
+  const wickTop = yScale(wickRange[1]);
+  const wickBottom = yScale(wickRange[0]);
+  const bodyTop = yScale(bodyRange[1]);
+  const bodyBottom = yScale(bodyRange[0]);
+  const bodyH = Math.max(bodyBottom - bodyTop, 1);
+
+  return (
+    <g>
+      <line x1={wickX} y1={wickTop} x2={wickX} y2={wickBottom} stroke={color} strokeWidth={1} />
+      <rect x={x} y={bodyTop} width={width} height={bodyH} fill={color} />
+    </g>
+  );
+};
+
+type ChartStyle = "area" | "line" | "candles";
+
+const mainPeriods: ChartPeriod[] = ["1D", "1W", "1M", "3M", "1Y", "All"];
+
 const PriceChart = ({ price }: { price: number }) => {
   const [period, setPeriod] = useState<ChartPeriod>("3M");
+  const [chartStyle, setChartStyle] = useState<ChartStyle>("area");
+  const [showMore, setShowMore] = useState(false);
 
   const chartData = useMemo(
     () => generateChartData(price, period),
     [price, period],
   );
 
-  const minPrice = Math.min(...chartData.map((d) => d.price));
-  const maxPrice = Math.max(...chartData.map((d) => d.price));
+  const minPrice = Math.min(...chartData.map((d) => d.low));
+  const maxPrice = Math.max(...chartData.map((d) => d.high));
   const padding = (maxPrice - minPrice) * 0.1 || 0.01;
 
-  const periods: ChartPeriod[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1D", "1W", "1M", "3M", "6M", "YTD", "1Y", "5Y", "All"];
+  const isMainPeriod = mainPeriods.includes(period);
+
+  const selectPeriod = (p: ChartPeriod) => {
+    setPeriod(p);
+    setShowMore(false);
+  };
 
   return (
-    <div className="border border-border bg-surface overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3">
-        <span className="font-display text-sm font-semibold">Price</span>
-        <div className="flex gap-1 flex-wrap">
-          {periods.map((p) => (
+    <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
+      <div className="space-y-1.5 p-6 pb-3 flex flex-row items-center justify-between gap-3 flex-wrap">
+        <h3 className="font-semibold tracking-tight font-display text-xl">Price</h3>
+        <div className="flex items-center gap-2">
+          {/* Period selector */}
+          <div className="inline-flex items-center rounded-md border border-border bg-muted/40 p-0.5 relative">
+            {mainPeriods.map((p) => (
+              <button
+                key={p}
+                onClick={() => selectPeriod(p)}
+                className={`text-[11px] font-mono px-2.5 py-1 rounded-sm transition-colors ${
+                  period === p
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {p}
+              </button>
+            ))}
             <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              className={`px-2.5 py-1 text-[11px] font-mono font-medium transition-colors ${
-                period === p
-                  ? "bg-primary text-primary-foreground"
+              onClick={() => setShowMore(!showMore)}
+              className={`text-[11px] font-mono px-2 py-1 rounded-sm flex items-center gap-0.5 transition-colors ${
+                !isMainPeriod
+                  ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              {p}
+              {!isMainPeriod ? period : "More"}
+              <ChevronDown className="h-3 w-3" />
             </button>
-          ))}
+
+            {showMore && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowMore(false)} />
+                <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-md shadow-lg p-3 w-48">
+                  <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Intraday</div>
+                  <div className="grid grid-cols-3 gap-1 mb-3">
+                    {(["1m", "5m", "15m", "30m", "1h", "4h"] as ChartPeriod[]).map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => selectPeriod(p)}
+                        className={`text-[11px] font-mono px-2 py-1.5 rounded-sm transition-colors text-center ${
+                          period === p
+                            ? "bg-background text-foreground shadow-sm border border-border"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Extended</div>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(["6M", "YTD", "5Y"] as ChartPeriod[]).map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => selectPeriod(p)}
+                        className={`text-[11px] font-mono px-2 py-1.5 rounded-sm transition-colors text-center ${
+                          period === p
+                            ? "bg-background text-foreground shadow-sm border border-border"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Chart style selector */}
+          <div className="inline-flex items-center rounded-md border border-border bg-muted/40 p-0.5">
+            <button
+              title="Area"
+              aria-label="Area"
+              onClick={() => setChartStyle("area")}
+              className={`p-1.5 rounded-sm transition-colors ${chartStyle === "area" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              <Activity className="h-3.5 w-3.5" />
+            </button>
+            <button
+              title="Line"
+              aria-label="Line"
+              onClick={() => setChartStyle("line")}
+              className={`p-1.5 rounded-sm transition-colors ${chartStyle === "line" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              <ChartLine className="h-3.5 w-3.5" />
+            </button>
+            <button
+              title="Candles"
+              aria-label="Candles"
+              onClick={() => setChartStyle("candles")}
+              className={`p-1.5 rounded-sm transition-colors ${chartStyle === "candles" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              <ChartCandlestick className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
       </div>
-      <div className="h-[320px] w-full px-1 pb-4">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-            <defs>
-              <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="hsl(152, 60%, 36%)" stopOpacity={0.25} />
-                <stop offset="100%" stopColor="hsl(152, 60%, 36%)" stopOpacity={0.02} />
-              </linearGradient>
-            </defs>
-            <XAxis
-              dataKey="date"
-              tick={{ fontSize: 10, fontFamily: "JetBrains Mono, monospace", fill: "hsl(220, 12%, 50%)" }}
-              tickLine={false}
-              axisLine={false}
-              interval="preserveStartEnd"
-              minTickGap={50}
-            />
-            <YAxis
-              domain={[minPrice - padding, maxPrice + padding]}
-              tick={{ fontSize: 10, fontFamily: "JetBrains Mono, monospace", fill: "hsl(152, 50%, 32%)" }}
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={(v: number) => `$${v.toFixed(2)}`}
-              width={52}
-            />
-            <Tooltip
-              contentStyle={{
-                background: "hsl(0, 0%, 100%)",
-                border: "1px solid hsl(220, 14%, 86%)",
-                borderRadius: 0,
-                fontSize: 12,
-                fontFamily: "JetBrains Mono, monospace",
-              }}
-              formatter={(value: number) => [`$${value.toFixed(3)}`, "Price"]}
-              labelStyle={{ color: "hsl(220, 12%, 38%)", fontSize: 10 }}
-            />
-            <Area
-              type="monotone"
-              dataKey="price"
-              stroke="hsl(152, 60%, 36%)"
-              strokeWidth={1.5}
-              fill="url(#priceGrad)"
-              dot={false}
-              activeDot={{ r: 3, fill: "hsl(152, 60%, 36%)", strokeWidth: 0 }}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+      <div className="p-6 pt-0">
+        <div className="h-72">
+          <ResponsiveContainer width="100%" height="100%">
+            {chartStyle === "candles" ? (
+              <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 11, fontFamily: "JetBrains Mono", fill: "hsl(var(--muted-foreground))" }}
+                  tickLine={{ stroke: "hsl(var(--muted-foreground))" }}
+                  axisLine={{ stroke: "hsl(var(--muted-foreground))" }}
+                  interval="preserveStartEnd"
+                  minTickGap={50}
+                />
+                <YAxis
+                  domain={[minPrice - padding, maxPrice + padding]}
+                  tick={{ fontSize: 11, fontFamily: "JetBrains Mono", fill: "hsl(var(--muted-foreground))" }}
+                  tickLine={{ stroke: "hsl(var(--muted-foreground))" }}
+                  axisLine={{ stroke: "hsl(var(--muted-foreground))" }}
+                  tickFormatter={(v: number) => `$${v.toFixed(2)}`}
+                  width={48}
+                  yAxisId="price"
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: "hsl(var(--popover))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: 4,
+                    fontSize: 12,
+                    fontFamily: "JetBrains Mono",
+                  }}
+                  formatter={(_v: any, name: string, props: any) => {
+                    const d = props.payload;
+                    if (name === "wickRange") return [`O: $${d.open.toFixed(3)} H: $${d.high.toFixed(3)} L: $${d.low.toFixed(3)} C: $${d.close.toFixed(3)}`, "OHLC"];
+                    return null;
+                  }}
+                  labelStyle={{ color: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                />
+                <Bar dataKey="wickRange" yAxisId="price" barSize={1}>
+                  {chartData.map((d, i) => (
+                    <Cell key={i} fill={d.isUp ? "hsl(var(--up))" : "hsl(var(--down))"} />
+                  ))}
+                </Bar>
+                <Bar dataKey="bodyRange" yAxisId="price" barSize={6}>
+                  {chartData.map((d, i) => (
+                    <Cell key={i} fill={d.isUp ? "hsl(var(--up))" : "hsl(var(--down))"} />
+                  ))}
+                </Bar>
+              </ComposedChart>
+            ) : (
+              <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="hsl(152, 60%, 36%)" stopOpacity={chartStyle === "line" ? 0 : 0.25} />
+                    <stop offset="100%" stopColor="hsl(152, 60%, 36%)" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 11, fontFamily: "JetBrains Mono", fill: "hsl(var(--muted-foreground))" }}
+                  tickLine={{ stroke: "hsl(var(--muted-foreground))" }}
+                  axisLine={{ stroke: "hsl(var(--muted-foreground))" }}
+                  interval="preserveStartEnd"
+                  minTickGap={50}
+                />
+                <YAxis
+                  domain={[minPrice - padding, maxPrice + padding]}
+                  tick={{ fontSize: 11, fontFamily: "JetBrains Mono", fill: "hsl(var(--muted-foreground))" }}
+                  tickLine={{ stroke: "hsl(var(--muted-foreground))" }}
+                  axisLine={{ stroke: "hsl(var(--muted-foreground))" }}
+                  tickFormatter={(v: number) => `$${v.toFixed(2)}`}
+                  width={48}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: "hsl(var(--popover))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: 4,
+                    fontSize: 12,
+                    fontFamily: "JetBrains Mono",
+                  }}
+                  formatter={(value: number) => [`$${value.toFixed(3)}`, "Price"]}
+                  labelStyle={{ color: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="price"
+                  stroke="hsl(152, 60%, 36%)"
+                  strokeWidth={1.5}
+                  fill={chartStyle === "line" ? "none" : "url(#priceGrad)"}
+                  dot={false}
+                  activeDot={{ r: 3, fill: "hsl(152, 60%, 36%)", strokeWidth: 0 }}
+                />
+              </AreaChart>
+            )}
+          </ResponsiveContainer>
+        </div>
       </div>
     </div>
   );
 };
 
-const placeholderNews = [
-  { source: "Globe & Mail", time: "2h ago", headline: "Scorpio Gold extends Hercules drill program after 12.4m @ 3.2 g/t Au hit" },
-  { source: "Northern Miner", time: "1d ago", headline: "Junior gold M&A pace accelerates in Ontario greenstone belt" },
-  { source: "Stockhouse", time: "2d ago", headline: "SCZ closes C$8.5M bought-deal financing at C$0.38" },
-  { source: "Kitco", time: "4d ago", headline: "Gold above $2,800 lifts Canadian explorer index 6.2% on the week" },
-];
 
 const placeholderOwnership = [
   { holder: "Management & Directors", shares: "74.0M", pct: "14.2%", bar: 14.2 },
@@ -200,21 +430,36 @@ const placeholderInsiders = [
   { insider: "R. Patel", role: "VP Exploration", date: "2026-04-15", shares: "40K", price: "C$0.29", value: "C$12K" },
 ];
 
-const placeholderComments = [
-  { user: "@ore_hunter", time: "12m", votes: 24, text: "12.4m @ 3.2 anywhere else in the camp would be a 30% day. Float is the only reason this isn't moving harder." },
-  { user: "@yyz_geo", time: "1h", votes: 17, text: "Section 4200E is interesting — looks like they're chasing a high-grade shoot pluging SE. Watch the 25-12 follow-up holes." },
-  { user: "@smallcap_dan", time: "3h", votes: 8, text: "Financing closes 22nd. Anyone know if Sprott took the lead order again?" },
-];
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d`;
+}
+
+function emailToHandle(email: string): string {
+  return "@" + email.split("@")[0];
+}
 
 const CompanyDetail = () => {
-  const { id } = useParams();
-  const companyId = parseInt(id || "0", 10);
+  const { slug } = useParams();
+  const [inWatchlist, setInWatchlist] = useState(false);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["company", companyId],
-    queryFn: () => fetchCompany(companyId),
-    enabled: companyId > 0,
+    queryKey: ["company", slug],
+    queryFn: () => fetchCompany(slug!),
+    enabled: !!slug,
   });
+
+  const companyId = data?.id ?? 0;
+
+  useEffect(() => {
+    if (companyId) setInWatchlist(isInWatchlist(companyId));
+  }, [companyId]);
 
   if (isLoading || !data) {
     return (
@@ -271,8 +516,19 @@ const CompanyDetail = () => {
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <button className="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-medium border border-border bg-surface hover:bg-muted transition-colors">
-                <Plus className="w-3 h-3" /> Watchlist
+              <button
+                onClick={() => {
+                  const added = toggleWatchlist({ id: data.id, ticker: data.ticker, exchange: data.exchange, name: data.name, market_cap: data.market_cap });
+                  setInWatchlist(added);
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 h-8 text-xs font-medium border transition-colors ${
+                  inWatchlist
+                    ? "border-[hsl(var(--up))] bg-[hsl(var(--up))]/10 text-[hsl(var(--up))]"
+                    : "border-border bg-surface hover:bg-muted"
+                }`}
+              >
+                {inWatchlist ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+                {inWatchlist ? "Watching" : "Watchlist"}
               </button>
               <button className="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-medium bg-accent text-accent-foreground hover:bg-accent/90 transition-colors">
                 <Bell className="w-3 h-3" /> Set alert
@@ -349,18 +605,7 @@ const CompanyDetail = () => {
         </div>
 
         {/* News */}
-        <Section icon={<Newspaper className="w-4 h-4" />} title="News">
-          <ul className="divide-y divide-border">
-            {placeholderNews.map((n, i) => (
-              <li key={i} className="px-5 py-3.5">
-                <div className="font-mono text-[10px] text-muted-foreground mb-1">
-                  {n.source} · {n.time}
-                </div>
-                <p className="text-sm font-medium">{n.headline}</p>
-              </li>
-            ))}
-          </ul>
-        </Section>
+        <CompanyNewsSection name={data.name} ticker={data.ticker || undefined} exchange={data.exchange || undefined} />
 
         {/* Filings */}
         {data.filings.length > 0 && (
@@ -416,8 +661,8 @@ const CompanyDetail = () => {
           </table>
         </Section>
 
-        {/* Recent Insider Buying */}
-        <Section icon={<UserCheck className="w-4 h-4" />} title="Recent Insider Buying">
+        {/* Recent Insider Transactions */}
+        <Section icon={<UserCheck className="w-4 h-4" />} title="Recent Insider Transactions">
           <table className="w-full text-sm">
             <thead>
               <tr className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border-b border-border">
@@ -448,37 +693,7 @@ const CompanyDetail = () => {
         </Section>
 
         {/* Discussion */}
-        <Section icon={<MessageSquare className="w-4 h-4" />} title="Discussion">
-          <div className="px-5 py-3 border-b border-border">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder={`Discuss ${data.ticker || data.name}...`}
-                className="flex-1 bg-background border border-border px-3 h-9 text-sm outline-none focus:border-accent"
-                disabled
-              />
-              <button className="px-4 h-9 bg-accent text-accent-foreground text-sm font-semibold hover:bg-accent/90 transition-colors">
-                Post
-              </button>
-            </div>
-          </div>
-          <ul className="divide-y divide-border">
-            {placeholderComments.map((c, i) => (
-              <li key={i} className="px-5 py-3.5">
-                <div className="flex items-center gap-3 mb-1.5">
-                  <div className="flex items-center gap-1 text-muted-foreground">
-                    <button className="hover:text-foreground"><ThumbsUp className="w-3 h-3" /></button>
-                    <span className="font-mono text-[11px] font-bold">{c.votes}</span>
-                    <button className="hover:text-foreground"><ThumbsDown className="w-3 h-3" /></button>
-                  </div>
-                  <span className="font-mono text-[11px] font-bold">{c.user}</span>
-                  <span className="font-mono text-[10px] text-muted-foreground">· {c.time}</span>
-                </div>
-                <p className="text-sm text-foreground/80">{c.text}</p>
-              </li>
-            ))}
-          </ul>
-        </Section>
+        <DiscussionSection companyId={companyId} ticker={data.ticker || data.name} />
 
         {/* About */}
         <div className="border border-border bg-surface mb-10">
@@ -528,6 +743,58 @@ const IdRow = ({ label, value }: { label: string; value: string }) => (
   </tr>
 );
 
+const CompanyNewsSection = ({ name, ticker, exchange }: { name: string; ticker?: string; exchange?: string }) => {
+  const { data: newsItems = [], isLoading } = useQuery({
+    queryKey: ["company-news", name, ticker],
+    queryFn: () => fetchCompanyNews(name, ticker, exchange),
+    staleTime: 30 * 60 * 1000,
+  });
+
+  const sentimentColor: Record<string, string> = {
+    bullish: "text-[hsl(var(--up))]",
+    bearish: "text-[hsl(var(--down))]",
+    neutral: "text-muted-foreground",
+  };
+
+  return (
+    <Section icon={<Newspaper className="w-4 h-4" />} title="News">
+      {isLoading ? (
+        <div className="px-5 py-6 text-center text-sm text-muted-foreground">Loading news...</div>
+      ) : newsItems.length === 0 ? (
+        <div className="px-5 py-6 text-center text-sm text-muted-foreground">No recent news found.</div>
+      ) : (
+        <ul className="divide-y divide-border">
+          {newsItems.map((n, i) => (
+            <li key={i} className="px-5 py-3.5">
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <span className="font-mono text-[10px] text-muted-foreground">{n.source}</span>
+                <span className="font-mono text-[10px] text-muted-foreground">· {n.timeAgo}</span>
+                {n.commodity && (
+                  <span className="font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 border border-border">{n.commodity}</span>
+                )}
+                <span className={`ml-auto font-mono text-[9px] uppercase tracking-widest font-bold ${sentimentColor[n.sentiment] || ""}`}>
+                  {n.sentiment}
+                </span>
+              </div>
+              <a
+                href={n.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-medium hover:underline"
+              >
+                {n.title}
+              </a>
+              {n.summary && (
+                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{n.summary}</p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
+  );
+};
+
 const Section = ({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) => (
   <div className="border border-border bg-surface mb-6">
     <div className="px-5 py-3 border-b border-border flex items-center gap-2">
@@ -537,5 +804,243 @@ const Section = ({ icon, title, children }: { icon: React.ReactNode; title: stri
     {children}
   </div>
 );
+
+const DiscussionSection = ({ companyId, ticker }: { companyId: number; ticker: string }) => {
+  const { isAuthenticated } = useAuth();
+  const [commentText, setCommentText] = useState("");
+  const [posting, setPosting] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [pendingPost, setPendingPost] = useState(false);
+
+  const { data: comments = [], refetch } = useQuery({
+    queryKey: ["discussions", companyId],
+    queryFn: () => fetchDiscussions(companyId),
+    enabled: companyId > 0,
+  });
+
+  const submitComment = async () => {
+    if (!commentText.trim() || posting) return;
+    setPosting(true);
+    try {
+      await postDiscussion(companyId, commentText.trim());
+      setCommentText("");
+      setPendingPost(false);
+      refetch();
+    } catch (err: any) {
+      if (err.message?.includes("401") || err.message?.includes("Login") || err.message?.includes("Session expired")) {
+        setPendingPost(true);
+        setShowAuthModal(true);
+      }
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const handlePost = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!commentText.trim()) return;
+    if (!isAuthenticated) {
+      setPendingPost(true);
+      setShowAuthModal(true);
+      return;
+    }
+    submitComment();
+  };
+
+  const handleAuthSuccess = () => {
+    setShowAuthModal(false);
+    if (pendingPost && commentText.trim()) {
+      setTimeout(() => submitComment(), 100);
+    }
+  };
+
+  const handleVote = async (comment: Discussion, vote: number) => {
+    if (!isAuthenticated) {
+      setShowAuthModal(true);
+      return;
+    }
+    const newVote = comment.userVote === vote ? 0 : vote;
+    try {
+      await voteDiscussion(companyId, comment.id, newVote);
+      refetch();
+    } catch (err: any) {
+      if (err.message?.includes("401") || err.message?.includes("Login") || err.message?.includes("Session expired")) {
+        setShowAuthModal(true);
+      }
+    }
+  };
+
+  return (
+    <>
+      <Section icon={<MessageSquare className="w-4 h-4" />} title="Discussion">
+        <div className="px-5 py-3 border-b border-border">
+          <form onSubmit={handlePost} className="flex gap-2">
+            <input
+              type="text"
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              placeholder={`Discuss ${ticker}...`}
+              className="flex-1 bg-background border border-border px-3 h-9 text-sm outline-none focus:border-accent"
+              maxLength={2000}
+            />
+            <button
+              type="submit"
+              disabled={posting || !commentText.trim()}
+              className="px-4 h-9 bg-accent text-accent-foreground text-sm font-semibold hover:bg-accent/90 transition-colors disabled:opacity-50"
+            >
+              Post
+            </button>
+          </form>
+        </div>
+        {comments.length === 0 ? (
+          <div className="px-5 py-6 text-center text-sm text-muted-foreground">
+            No comments yet. Be the first to discuss {ticker}.
+          </div>
+        ) : (
+          <ul className="divide-y divide-border">
+            {comments.map((c) => (
+              <li key={c.id} className="px-5 py-3.5">
+                <div className="flex items-center gap-3 mb-1.5">
+                  <div className="flex items-center gap-1 text-muted-foreground">
+                    <button
+                      onClick={() => handleVote(c, 1)}
+                      className={`hover:text-foreground ${c.userVote === 1 ? "text-[hsl(var(--up))]" : ""}`}
+                    >
+                      <ThumbsUp className="w-3 h-3" />
+                    </button>
+                    <span className="font-mono text-[11px] font-bold">{c.score}</span>
+                    <button
+                      onClick={() => handleVote(c, -1)}
+                      className={`hover:text-foreground ${c.userVote === -1 ? "text-[hsl(var(--down))]" : ""}`}
+                    >
+                      <ThumbsDown className="w-3 h-3" />
+                    </button>
+                  </div>
+                  <span className="font-mono text-[11px] font-bold">{emailToHandle(c.userEmail)}</span>
+                  <span className="font-mono text-[10px] text-muted-foreground">· {timeAgo(c.createdAt)}</span>
+                </div>
+                <p className="text-sm text-foreground/80">{c.body}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
+      {showAuthModal && (
+        <AuthModal
+          onSuccess={handleAuthSuccess}
+          onClose={() => { setShowAuthModal(false); setPendingPost(false); }}
+          pendingComment={pendingPost ? commentText : undefined}
+        />
+      )}
+    </>
+  );
+};
+
+const AuthModal = ({
+  onSuccess,
+  onClose,
+  pendingComment,
+}: {
+  onSuccess: () => void;
+  onClose: () => void;
+  pendingComment?: string;
+}) => {
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) return;
+    setError("");
+    setLoading(true);
+    try {
+      if (mode === "login") {
+        await apiLogin(email, password);
+      } else {
+        await apiRegister(email, password);
+      }
+      onSuccess();
+    } catch (err: any) {
+      setError(err.message || "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-surface border border-border w-full max-w-sm mx-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+          <h3 className="font-display text-base font-bold">
+            {mode === "login" ? "Log in" : "Create account"}
+          </h3>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="px-5 py-4">
+          {pendingComment && (
+            <div className="mb-4 p-2.5 bg-muted/50 border border-border text-xs text-muted-foreground">
+              Your comment will be posted after you {mode === "login" ? "log in" : "sign up"}:
+              <p className="mt-1 text-foreground font-medium truncate">"{pendingComment}"</p>
+            </div>
+          )}
+
+          {error && (
+            <div className="mb-3 p-2.5 bg-destructive/10 text-destructive text-xs">{error}</div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email"
+              required
+              className="w-full bg-background border border-border px-3 h-9 text-sm outline-none focus:border-accent"
+            />
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
+              required
+              minLength={6}
+              className="w-full bg-background border border-border px-3 h-9 text-sm outline-none focus:border-accent"
+            />
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full h-9 bg-accent text-accent-foreground text-sm font-semibold hover:bg-accent/90 transition-colors disabled:opacity-50"
+            >
+              {loading ? "..." : mode === "login" ? "Log in" : "Create account"}
+            </button>
+          </form>
+
+          <div className="mt-3 text-center text-xs text-muted-foreground">
+            {mode === "login" ? (
+              <>Don't have an account?{" "}
+                <button onClick={() => { setMode("register"); setError(""); }} className="text-accent hover:underline font-medium">
+                  Sign up
+                </button>
+              </>
+            ) : (
+              <>Already have an account?{" "}
+                <button onClick={() => { setMode("login"); setError(""); }} className="text-accent hover:underline font-medium">
+                  Log in
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default CompanyDetail;

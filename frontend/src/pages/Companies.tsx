@@ -9,6 +9,7 @@ import Footer from "@/components/site/Footer";
 import {
   fetchCompanies,
   fetchCompanyFilters,
+  companySlug,
   type Company,
 } from "@/lib/api";
 
@@ -240,7 +241,7 @@ const Companies = () => {
                 </div>
               ) : (
                 companies.map((c) => (
-                  <CompanyRow key={c.id} c={c} onOpen={() => navigate(`/company/${c.id}`)} />
+                  <CompanyRow key={c.id} c={c} onOpen={() => navigate(`/company/${companySlug(c.exchange, c.ticker)}`)} />
                 ))
               )}
             </div>
