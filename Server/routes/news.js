@@ -18,6 +18,7 @@ async function ensureTables() {
       summary     TEXT,
       commodity   TEXT,
       sentiment   TEXT DEFAULT 'neutral',
+      relevant    BOOLEAN DEFAULT TRUE,
       ai_processed BOOLEAN DEFAULT FALSE,
       category    TEXT DEFAULT 'general',
       created_at  TIMESTAMPTZ DEFAULT NOW()
@@ -26,6 +27,7 @@ async function ensureTables() {
   await db.query(`CREATE INDEX IF NOT EXISTS idx_news_pub_date ON news(pub_date DESC)`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_news_category ON news(category)`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_news_link ON news(link)`);
+  await db.query(`ALTER TABLE news ADD COLUMN IF NOT EXISTS relevant BOOLEAN DEFAULT TRUE`);
 }
 
 // ---------------------------------------------------------------------------
@@ -86,7 +88,7 @@ async function callOllama(prompt) {
       messages: [
         {
           role: 'system',
-          content: 'You are a mining news analyst. Given raw news headlines and descriptions, produce a JSON array of enriched news items. Each item must have: "title" (clean headline), "summary" (1-2 sentence plain-English summary of what happened and why it matters for investors), "commodity" (primary commodity mentioned: Gold, Silver, Copper, Lithium, Uranium, Nickel, Zinc, or null), "sentiment" (one of: "bullish", "bearish", "neutral"). Return ONLY valid JSON array, no markdown fences, no extra text.'
+          content: 'You are a mining investment news analyst for a platform that tracks junior mining stocks on TSX-V, CSE, and ASX exchanges. Given raw news headlines and descriptions, produce a JSON array of enriched news items. Each item must have: "title" (clean headline — remove source suffix like "- Reuters"), "summary" (1-2 sentence plain-English summary of what happened and why it matters for mining investors), "commodity" (primary commodity: Gold, Silver, Copper, Lithium, Uranium, Nickel, Zinc, or null), "sentiment" (one of: "bullish", "bearish", "neutral"), "relevant" (boolean — TRUE if the article is about mining companies, mineral exploration, drill results, mining stocks, commodity prices, mining financing, or mining market analysis. FALSE if it is about mining accidents, illegal mining, environmental disasters, politics, general world news, or is unrelated to the mining investment industry). Return ONLY valid JSON array, no markdown fences, no extra text.'
         },
         { role: 'user', content: prompt },
       ],
@@ -108,13 +110,15 @@ function parseJson(raw) {
 // ---------------------------------------------------------------------------
 
 const FEED_QUERIES = [
-  'mining stocks today',
-  'gold mining news',
-  'copper lithium mining news',
-  'TSX mining companies',
-  'ASX mining stocks',
-  'uranium mining news',
-  'silver mining news',
+  'gold mining company drill results',
+  'TSX-V mining stock news',
+  'ASX junior mining explorer',
+  'lithium mining company financing',
+  'copper mining drill results feasibility',
+  'uranium mining stock market',
+  'silver mining company quarterly',
+  'mining IPO TSX venture exchange',
+  'mineral exploration company update',
 ];
 
 let fetchRunning = false;
@@ -184,15 +188,25 @@ async function enrichUnprocessedNews() {
     for (let i = 0; i < unprocessed.rows.length; i++) {
       const row = unprocessed.rows[i];
       const ai = aiItems[i] || {};
+      const isRelevant = ai.relevant !== false;
       try {
         await db.query(
-          `UPDATE news SET summary = $1, commodity = $2, sentiment = $3, ai_processed = TRUE WHERE id = $4`,
-          [ai.summary || null, ai.commodity || null, ai.sentiment || 'neutral', row.id]
+          `UPDATE news SET summary = $1, commodity = $2, sentiment = $3, relevant = $4, ai_processed = TRUE WHERE id = $5`,
+          [ai.summary || null, ai.commodity || null, ai.sentiment || 'neutral', isRelevant, row.id]
         );
       } catch { /* skip */ }
     }
 
-    console.log(`[News] AI enriched ${unprocessed.rows.length} items`);
+    const irrelevantIds = unprocessed.rows
+      .map((row, i) => (aiItems[i]?.relevant === false ? row.id : null))
+      .filter(Boolean);
+
+    if (irrelevantIds.length > 0) {
+      await db.query(`DELETE FROM news WHERE id = ANY($1)`, [irrelevantIds]);
+      console.log(`[News] AI enriched ${unprocessed.rows.length} items, deleted ${irrelevantIds.length} irrelevant`);
+    } else {
+      console.log(`[News] AI enriched ${unprocessed.rows.length} items, all relevant`);
+    }
   } catch (err) {
     console.error('[News] AI enrichment failed:', err?.message || err);
   }
@@ -292,7 +306,7 @@ router.get('/feed', async (req, res) => {
   try {
     await tablesReady;
     const result = await db.query(
-      `SELECT * FROM news WHERE category = 'general' ORDER BY pub_date DESC LIMIT 12`
+      `SELECT * FROM news WHERE category = 'general' AND relevant = TRUE ORDER BY pub_date DESC LIMIT 12`
     );
     res.json({ items: result.rows.map(formatRow) });
   } catch (err) {
@@ -310,7 +324,7 @@ router.get('/company/:name', async (req, res) => {
     const category = `company:${ticker || companyName}`;
 
     let result = await db.query(
-      `SELECT * FROM news WHERE category = $1 ORDER BY pub_date DESC LIMIT 10`,
+      `SELECT * FROM news WHERE category = $1 AND relevant = TRUE ORDER BY pub_date DESC LIMIT 10`,
       [category]
     );
 
