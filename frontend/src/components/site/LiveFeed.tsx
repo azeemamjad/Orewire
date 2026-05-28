@@ -1,55 +1,64 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, Clock, RefreshCw } from "lucide-react";
-import { fetchFilings, fetchStats, type Verdict, type Exchange, type Commodity } from "@/lib/api";
+import { ArrowUpRight, ChevronDown, Clock, Sparkles } from "lucide-react";
+import { fetchFilings, fetchStats, type Exchange, type Filing, type Verdict } from "@/lib/api";
 
-const exchanges: ("All" | Exchange)[] = ["All", "TSX", "TSX-V", "CSE", "ASX"];
-const verdicts: ("All" | Verdict)[] = ["All", "Noteworthy", "Watch", "Routine"];
-const commodities: ("All" | Commodity)[] = ["All", "Gold", "Copper", "Silver", "Lithium", "Uranium"];
+const exchanges: ("All" | Exchange)[] = ["All", "TSX-V", "CSE", "ASX", "TSX"];
+const importances = ["All", "Critical", "High", "Medium", "Low"] as const;
+const types = [
+  "All",
+  "Drill Result",
+  "Resource Update",
+  "Private Placement",
+  "Technical Report",
+  "Quarterly",
+  "MD&A",
+  "Material Change",
+  "Assay",
+  "Corporate Update",
+] as const;
 
-const verdictPill: Record<Verdict, string> = {
-  Noteworthy: "bg-noteworthy text-noteworthy-foreground",
-  Watch: "bg-watch text-watch-foreground",
-  Routine: "bg-routine text-routine-foreground",
+const severityStyle: Record<"Critical" | "High" | "Medium" | "Low", string> = {
+  Critical: "bg-destructive text-destructive-foreground",
+  High: "bg-noteworthy text-noteworthy-foreground",
+  Medium: "bg-watch text-watch-foreground",
+  Low: "bg-routine text-routine-foreground",
 };
 
-const exchangePill: Record<Exchange, string> = {
-  TSX: "border-foreground/30 text-foreground",
-  "TSX-V": "border-foreground/30 text-foreground",
-  CSE: "border-foreground/30 text-foreground",
-  ASX: "border-foreground/30 text-foreground",
-};
+function verdictToImportance(v: Verdict | null): "Critical" | "High" | "Medium" | "Low" {
+  if (v === "Noteworthy") return "High";
+  if (v === "Watch") return "Medium";
+  if (v === "Routine") return "Low";
+  return "Low";
+}
 
 const LiveFeed = () => {
   const [exchange, setExchange] = useState<"All" | Exchange>("All");
-  const [verdict, setVerdict] = useState<"All" | Verdict>("All");
-  const [commodity, setCommodity] = useState<"All" | Commodity>("All");
-
-  const { data: filings = [], isLoading, error, refetch } = useQuery({
-    queryKey: ["filings", exchange, verdict, commodity],
-    queryFn: () => fetchFilings({ exchange, verdict, commodity, limit: 9 }),
-    refetchInterval: 60000,
+  const [importance, setImportance] = useState<(typeof importances)[number]>("All");
+  const [type, setType] = useState<(typeof types)[number]>("All");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const { data: filings = [], isLoading } = useQuery({
+    queryKey: ["filings-live-feed", exchange],
+    queryFn: () => fetchFilings({ exchange, limit: 50 }),
+    refetchInterval: 60_000,
   });
-
   const { data: stats } = useQuery({
-    queryKey: ["stats"],
+    queryKey: ["filings-stats-live-feed"],
     queryFn: fetchStats,
-    refetchInterval: 60000,
+    refetchInterval: 60_000,
   });
 
-  const filtered = useMemo(
-    () =>
-      filings.filter(
-        (f) =>
-          (exchange === "All" || f.exchange === exchange) &&
-          (verdict === "All" || f.verdict === verdict) &&
-          (commodity === "All" || f.commodity === commodity),
-      ),
-    [filings, exchange, verdict, commodity],
-  );
-
-  const todayCount = stats ? stats.analyzed : 0;
+  const filtered = useMemo(() => {
+    return filings.filter((f) => {
+      const itemImportance = verdictToImportance(f.verdict || null);
+      const itemType = (types.includes(f.filingType as (typeof types)[number]) ? f.filingType : "Corporate Update") as (typeof types)[number];
+      return (
+        (importance === "All" || itemImportance === importance) &&
+        (type === "All" || itemType === type)
+      );
+    });
+  }, [filings, importance, type]);
 
   return (
     <section id="feed" className="border-b border-border bg-background">
@@ -57,97 +66,96 @@ const LiveFeed = () => {
         <div className="flex items-end justify-between flex-wrap gap-4 mb-6">
           <div>
             <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-2 flex items-center gap-2">
-              <span className="w-1.5 h-1.5 bg-noteworthy animate-pulse-dot" /> Live filing feed
+              <span className="w-1.5 h-1.5 bg-noteworthy animate-pulse-dot" /> Live filing releases
             </div>
             <h2 className="font-display text-3xl lg:text-4xl font-extrabold leading-tight">
-              The latest filings, decoded.
+              Filing releases, AI-summarized.
             </h2>
+            <p className="text-sm text-muted-foreground mt-2 max-w-xl">
+              Every filing in one or two lines. Click any filing to expand and view more details.
+            </p>
           </div>
-          <div className="font-mono text-[11px] text-muted-foreground flex items-center gap-3">
-            <span>{todayCount} filings translated today · Updated live</span>
-            <button
-              onClick={() => refetch()}
-              className="hover:text-foreground transition-colors"
-              title="Refresh"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-            </button>
+          <div className="font-mono text-[11px] text-muted-foreground">
+            {stats?.analyzed || 0} releases translated today · Updated live
           </div>
         </div>
 
-        {error && (
-          <div className="mb-4 p-3 bg-destructive/10 text-destructive text-sm rounded">
-            Failed to load filings. Backend may be offline.
-          </div>
-        )}
-
         <div className="flex flex-wrap gap-3 mb-6 pb-6 border-b border-border">
-          <Filter label="Exchange" value={exchange} options={exchanges} onChange={(v) => setExchange(v as never)} />
-          <Filter label="Verdict" value={verdict} options={verdicts} onChange={(v) => setVerdict(v as never)} />
-          <Filter label="Commodity" value={commodity} options={commodities} onChange={(v) => setCommodity(v as never)} />
+          <Filter label="Exchange" value={exchange} options={exchanges} onChange={(v) => setExchange(v as "All" | Exchange)} />
+          <Filter label="Importance" value={importance} options={importances} onChange={(v) => setImportance(v as (typeof importances)[number])} />
+          <Filter label="Type" value={type} options={types} onChange={(v) => setType(v as (typeof types)[number])} />
         </div>
 
         {isLoading ? (
-          <div className="py-12 text-center text-muted-foreground">
-            <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />
-            Loading filings...
-          </div>
+          <div className="py-12 text-center text-muted-foreground">Loading filing releases...</div>
         ) : (
-          <div className="relative">
+          <>
             <ul className="divide-y divide-border border-y border-border">
               {filtered.length === 0 ? (
-                <li className="py-12 text-center text-muted-foreground">
-                  No filings match your filters. Try adjusting or run the scraper pipeline.
-                </li>
+                <li className="py-12 text-center text-muted-foreground">No releases match your filters.</li>
               ) : (
-                filtered.map((f, i) => (
-                  <li
-                    key={f.id}
-                    className={`group bg-surface ${i >= 5 ? "pointer-events-none select-none" : ""}`}
-                    style={i >= 5 ? { filter: `blur(${Math.min(2 + (i - 5) * 1.2, 6)}px)`, opacity: 0.7 - (i - 5) * 0.08 } : undefined}
-                  >
-                    <div className="px-4 lg:px-5 py-4 flex flex-col lg:flex-row lg:items-start gap-3 lg:gap-5">
-                      <div className="flex items-center gap-3 lg:w-56 shrink-0">
-                        <span className="font-mono text-base font-bold tracking-tight">{f.ticker}</span>
-                        <span className={`font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 border ${exchangePill[f.exchange as Exchange] || "border-foreground/30 text-foreground"}`}>
-                          {f.exchange}
-                        </span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                          <span className="font-display text-[15px] font-semibold">{f.company}</span>
-                          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">· {f.filingType}</span>
-                        </div>
-                        <p className="text-[13.5px] leading-snug text-foreground/75 line-clamp-2">{f.summary}</p>
-                      </div>
-                      <div className="flex lg:flex-col items-center lg:items-end gap-3 lg:gap-2 lg:w-32 shrink-0">
-                        {f.verdict && (
-                          <span className={`px-2.5 py-1 text-[10px] font-mono uppercase tracking-widest font-bold rounded-full ${verdictPill[f.verdict]}`}>
-                            {f.verdict}
+                filtered.slice(0, 9).map((item: Filing, i) => {
+                  const itemImportance = verdictToImportance(item.verdict || null);
+                  const itemType = (types.includes(item.filingType as (typeof types)[number]) ? item.filingType : "Corporate Update") as (typeof types)[number];
+                  const ticker = item.ticker || "—";
+                  const isExpanded = expandedId === item.id;
+                  return (
+                    <li key={`${item.id}-${i}`} className="bg-surface hover:bg-background/60 transition-colors">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedId((prev) => (prev === item.id ? null : item.id))}
+                        className="w-full text-left block px-4 lg:px-5 py-4"
+                      >
+                        <div className="flex items-center gap-2 flex-wrap mb-2">
+                          <span className={`px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest font-bold ${severityStyle[itemImportance]}`}>
+                            {itemImportance}
                           </span>
+                          <span className="font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 border border-border">{itemType}</span>
+                          <span className="font-mono text-[11px] font-bold">{ticker}</span>
+                          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5">{item.exchange}</span>
+                          <span className="text-[12px] text-muted-foreground truncate">· {item.company}</span>
+                          <span className="ml-auto font-mono text-[10px] text-muted-foreground flex items-center gap-1 shrink-0">
+                            <Clock className="w-2.5 h-2.5" />
+                            {item.time}
+                          </span>
+                          <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                        </div>
+                        <p className="text-[14px] leading-snug font-medium text-foreground/90 mb-2">
+                          <Sparkles className="inline w-3 h-3 text-accent mr-1 -mt-0.5" />
+                          {item.summary}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5 mb-1">
+                          {item.commodity && (
+                            <span className="font-mono text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-muted/40 border border-border text-muted-foreground">
+                              {item.commodity}
+                            </span>
+                          )}
+                          <span className="font-mono text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-muted/40 border border-border text-muted-foreground">
+                            Filing
+                          </span>
+                        </div>
+                        {isExpanded && (
+                          <div className="mt-3 pt-3 border-t border-border text-sm text-foreground/80 space-y-1">
+                            <div><span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mr-2">Company</span>{item.company}</div>
+                            <div><span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mr-2">Ticker</span>{ticker}</div>
+                            <div><span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mr-2">Exchange</span>{item.exchange}</div>
+                            <div><span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mr-2">Type</span>{itemType}</div>
+                            <div><span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mr-2">Importance</span>{itemImportance}</div>
+                          </div>
                         )}
-                        <span className="font-mono text-[10px] text-muted-foreground flex items-center gap-1">
-                          <Clock className="w-2.5 h-2.5" />
-                          {f.time}
-                        </span>
-                      </div>
-                    </div>
-                  </li>
-                ))
+                      </button>
+                    </li>
+                  );
+                })
               )}
             </ul>
 
-            {filtered.length > 5 && (
-              <div className="absolute inset-x-0 bottom-0 h-72 bg-gradient-to-t from-background via-background/90 to-transparent flex items-end justify-center pb-8">
-                <Link
-                  to="/register"
-                  className="inline-flex items-center gap-2 bg-accent text-accent-foreground px-6 h-11 text-sm font-semibold hover:opacity-90 transition-opacity shadow-lg"
-                >
-                  Sign up free to see the full feed <ArrowUpRight className="w-4 h-4" />
-                </Link>
-              </div>
-            )}
-          </div>
+            <div className="flex justify-center pt-8">
+              <Link to="/register" className="inline-flex items-center gap-2 bg-accent text-accent-foreground px-6 h-11 text-sm font-semibold hover:opacity-90 transition-opacity">
+                Get email alerts on new releases <ArrowUpRight className="w-4 h-4" />
+              </Link>
+            </div>
+          </>
         )}
       </div>
     </section>

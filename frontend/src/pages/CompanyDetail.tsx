@@ -22,7 +22,7 @@ import {
   ChartLine,
   ChartCandlestick,
 } from "lucide-react";
-import { fetchCompany, fetchDiscussions, postDiscussion, voteDiscussion, fetchCompanyNews, login as apiLogin, register as apiRegister, companySlug, type Discussion, type NewsItem } from "@/lib/api";
+import { fetchCompany, fetchDiscussions, postDiscussion, voteDiscussion, fetchCompanyNews, fetchMarketHistory, login as apiLogin, register as apiRegister, companySlug, type Discussion, type NewsItem, type MarketHistoryPoint } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 import { useState, useMemo, useEffect } from "react";
 import Nav from "@/components/site/Nav";
@@ -30,32 +30,7 @@ import MarketStrip from "@/components/site/MarketStrip";
 import Footer from "@/components/site/Footer";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ComposedChart, Bar, Cell } from "recharts";
 
-const WL_KEY = "orewire.watchlist.v1";
-
-function isInWatchlist(companyId: number): boolean {
-  try {
-    const raw = localStorage.getItem(WL_KEY);
-    if (!raw) return false;
-    const items = JSON.parse(raw);
-    return Array.isArray(items) && items.some((i: any) => i.id === companyId);
-  } catch { return false; }
-}
-
-function toggleWatchlist(company: { id: number; ticker: string | null; exchange: string | null; name: string; market_cap: number | null }): boolean {
-  try {
-    const raw = localStorage.getItem(WL_KEY);
-    const items: any[] = raw ? JSON.parse(raw) : [];
-    const idx = items.findIndex((i: any) => i.id === company.id);
-    if (idx >= 0) {
-      items.splice(idx, 1);
-      localStorage.setItem(WL_KEY, JSON.stringify(items));
-      return false;
-    }
-    items.push({ id: company.id, ticker: company.ticker, exchange: company.exchange, name: company.name, market_cap: company.market_cap });
-    localStorage.setItem(WL_KEY, JSON.stringify(items));
-    return true;
-  } catch { return false; }
-}
+import { checkWatchlist, addToWatchlist, removeFromWatchlist } from "@/lib/api";
 
 const verdictPill: Record<string, string> = {
   Noteworthy: "bg-noteworthy text-noteworthy-foreground",
@@ -190,15 +165,37 @@ type ChartStyle = "area" | "line" | "candles";
 
 const mainPeriods: ChartPeriod[] = ["1D", "1W", "1M", "3M", "1Y", "All"];
 
-const PriceChart = ({ price }: { price: number }) => {
+const PriceChart = ({ price, historyPoints }: { price: number; historyPoints?: MarketHistoryPoint[] }) => {
   const [period, setPeriod] = useState<ChartPeriod>("3M");
   const [chartStyle, setChartStyle] = useState<ChartStyle>("area");
   const [showMore, setShowMore] = useState(false);
 
-  const chartData = useMemo(
-    () => generateChartData(price, period),
-    [price, period],
-  );
+  const chartData = useMemo(() => {
+    const points = historyPoints || [];
+    const mapped = points
+      .map((p) => {
+        if (p.close == null || p.open == null || p.high == null || p.low == null) return null;
+        const t = new Date(p.ts);
+        const label = formatDateLabel(t, period);
+        const isUp = p.close >= p.open;
+        return {
+          date: label,
+          price: parseFloat(p.close.toFixed(3)),
+          open: parseFloat(p.open.toFixed(3)),
+          high: parseFloat(p.high.toFixed(3)),
+          low: parseFloat(Math.max(p.low, 0).toFixed(3)),
+          close: parseFloat(p.close.toFixed(3)),
+          isUp,
+          wickRange: [parseFloat(Math.max(p.low, 0).toFixed(3)), parseFloat(p.high.toFixed(3))] as [number, number],
+          bodyRange: (isUp
+            ? [parseFloat(p.open.toFixed(3)), parseFloat(p.close.toFixed(3))]
+            : [parseFloat(p.close.toFixed(3)), parseFloat(p.open.toFixed(3))]) as [number, number],
+        };
+      })
+      .filter(Boolean) as ChartPoint[];
+    if (mapped.length > 1) return mapped;
+    return generateChartData(price, period);
+  }, [price, period, historyPoints]);
 
   const minPrice = Math.min(...chartData.map((d) => d.low));
   const maxPrice = Math.max(...chartData.map((d) => d.high));
@@ -448,6 +445,7 @@ function emailToHandle(email: string): string {
 const CompanyDetail = () => {
   const { slug } = useParams();
   const [inWatchlist, setInWatchlist] = useState(false);
+  const [expandedFilingId, setExpandedFilingId] = useState<number | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["company", slug],
@@ -455,10 +453,19 @@ const CompanyDetail = () => {
     enabled: !!slug,
   });
 
+  const { data: companyHistory } = useQuery({
+    queryKey: ["market-history", "company", data?.ticker, data?.exchange],
+    queryFn: () => fetchMarketHistory("company", data?.ticker || "", { exchange: (data?.exchange || "").toUpperCase().replace("-", "") }),
+    enabled: !!data?.ticker && !!data?.exchange,
+    refetchInterval: 30 * 60 * 1000,
+  });
+
   const companyId = data?.id ?? 0;
 
   useEffect(() => {
-    if (companyId) setInWatchlist(isInWatchlist(companyId));
+    if (companyId) {
+      checkWatchlist("company", String(companyId)).then(setInWatchlist);
+    }
   }, [companyId]);
 
   if (isLoading || !data) {
@@ -475,6 +482,7 @@ const CompanyDetail = () => {
   }
 
   const md = data.marketData;
+
   const isUp = md && md.change_pct !== null && md.change_pct >= 0;
   const isDown = md && md.change_pct !== null && md.change_pct < 0;
   const now = new Date();
@@ -517,9 +525,11 @@ const CompanyDetail = () => {
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <button
-                onClick={() => {
-                  const added = toggleWatchlist({ id: data.id, ticker: data.ticker, exchange: data.exchange, name: data.name, market_cap: data.market_cap });
-                  setInWatchlist(added);
+                onClick={async () => {
+                  try {
+                    if (inWatchlist) { await removeFromWatchlist("company", String(data.id)); setInWatchlist(false); }
+                    else { await addToWatchlist("company", String(data.id), data.id); setInWatchlist(true); }
+                  } catch { /* skip */ }
                 }}
                 className={`inline-flex items-center gap-1.5 px-3 h-8 text-xs font-medium border transition-colors ${
                   inWatchlist
@@ -557,7 +567,7 @@ const CompanyDetail = () => {
         {/* Chart + Stats */}
         <div className="grid lg:grid-cols-[1fr_320px] gap-6 mb-10">
           {md && md.price !== null && (
-            <PriceChart price={md.price} />
+            <PriceChart price={md.price} historyPoints={companyHistory?.points} />
           )}
 
           <div className="space-y-4">
@@ -612,21 +622,30 @@ const CompanyDetail = () => {
           <Section icon={<Globe className="w-4 h-4" />} title="Filings">
             <ul className="divide-y divide-border">
               {data.filings.map((f) => (
-                <li key={f.id} className="px-5 py-3.5">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    {f.verdict && (
-                      <span className={`px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest font-bold rounded-full ${verdictPill[f.verdict] || "bg-surface text-muted-foreground"}`}>
-                        {f.verdict}
+                <li key={f.id}>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedFilingId((prev) => (prev === f.id ? null : f.id))}
+                    className="w-full text-left px-5 py-3.5 hover:bg-background/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      {f.verdict && (
+                        <span className={`px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest font-bold rounded-full ${verdictPill[f.verdict] || "bg-surface text-muted-foreground"}`}>
+                          {f.verdict}
+                        </span>
+                      )}
+                      <span className="font-mono text-[10px] text-muted-foreground">
+                        {new Date(f.created_at).toLocaleDateString("en-CA")}
                       </span>
-                    )}
-                    <span className="font-mono text-[10px] text-muted-foreground">
-                      {new Date(f.created_at).toLocaleDateString("en-CA")}
-                    </span>
-                    <span className="font-mono text-xs font-bold text-foreground/80 uppercase">
-                      {f.filing_type || "Filing"}
-                    </span>
-                  </div>
-                  <p className="text-sm text-foreground/70 line-clamp-2">{f.summary || "No summary available"}</p>
+                      <span className="font-mono text-xs font-bold text-foreground/80 uppercase">
+                        {f.filing_type || "Filing"}
+                      </span>
+                      <ChevronDown className={`ml-auto w-3.5 h-3.5 text-muted-foreground transition-transform ${expandedFilingId === f.id ? "rotate-180" : ""}`} />
+                    </div>
+                    <p className={`text-sm text-foreground/70 ${expandedFilingId === f.id ? "" : "line-clamp-2"}`}>
+                      {f.summary || "No summary available"}
+                    </p>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -744,6 +763,7 @@ const IdRow = ({ label, value }: { label: string; value: string }) => (
 );
 
 const CompanyNewsSection = ({ name, ticker, exchange }: { name: string; ticker?: string; exchange?: string }) => {
+  const [expandedNewsKey, setExpandedNewsKey] = useState<string | null>(null);
   const { data: newsItems = [], isLoading } = useQuery({
     queryKey: ["company-news", name, ticker],
     queryFn: () => fetchCompanyNews(name, ticker, exchange),
@@ -765,28 +785,39 @@ const CompanyNewsSection = ({ name, ticker, exchange }: { name: string; ticker?:
       ) : (
         <ul className="divide-y divide-border">
           {newsItems.map((n, i) => (
-            <li key={i} className="px-5 py-3.5">
-              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <span className="font-mono text-[10px] text-muted-foreground">{n.source}</span>
-                <span className="font-mono text-[10px] text-muted-foreground">· {n.timeAgo}</span>
-                {n.commodity && (
-                  <span className="font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 border border-border">{n.commodity}</span>
-                )}
-                <span className={`ml-auto font-mono text-[9px] uppercase tracking-widest font-bold ${sentimentColor[n.sentiment] || ""}`}>
-                  {n.sentiment}
-                </span>
-              </div>
-              <a
-                href={n.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm font-medium hover:underline"
+            <li key={i}>
+              <button
+                type="button"
+                onClick={() => setExpandedNewsKey((prev) => (prev === n.link ? null : n.link))}
+                className="w-full text-left px-5 py-3.5 hover:bg-background/50 transition-colors"
               >
-                {n.title}
-              </a>
-              {n.summary && (
-                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{n.summary}</p>
-              )}
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className="font-mono text-[10px] text-muted-foreground">{n.source}</span>
+                  <span className="font-mono text-[10px] text-muted-foreground">· {n.timeAgo}</span>
+                  {n.commodity && (
+                    <span className="font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 border border-border">{n.commodity}</span>
+                  )}
+                  <span className={`ml-auto font-mono text-[9px] uppercase tracking-widest font-bold ${sentimentColor[n.sentiment] || ""}`}>
+                    {n.sentiment}
+                  </span>
+                  <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${expandedNewsKey === n.link ? "rotate-180" : ""}`} />
+                </div>
+                <p className="text-sm font-medium">{n.title}</p>
+                {n.summary && (
+                  <p className={`text-xs text-muted-foreground mt-1 ${expandedNewsKey === n.link ? "" : "line-clamp-2"}`}>{n.summary}</p>
+                )}
+                {expandedNewsKey === n.link && (
+                  <a
+                    href={n.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex mt-2 text-xs text-accent hover:underline"
+                  >
+                    Read source →
+                  </a>
+                )}
+              </button>
             </li>
           ))}
         </ul>

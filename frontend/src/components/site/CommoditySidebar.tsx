@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDownRight, ArrowUpRight, Flame, TrendingUp } from "lucide-react";
-import { fetchCommodities, type CommoditySpot } from "@/lib/api";
+import { ArrowDownRight, ArrowUpRight, DollarSign, Flame, TrendingUp } from "lucide-react";
+import { Link } from "react-router-dom";
+import { fetchCommodities, fetchCurrencies, fetchIndexes, type CommoditySpot } from "@/lib/api";
 
 const REFETCH_MS = 30 * 60 * 1000;
 
@@ -15,6 +16,12 @@ function fmtPct(n: number | null): string {
   if (n == null) return "—";
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 }
+
+const commoditySlugMap: Record<string, string> = {
+  gold: "GOLD", silver: "SLVR", copper: "COPR", platinum: "PLAT", palladium: "PALL",
+  lithium: "LITH", nickel: "NICK", cobalt: "COBALT", uranium: "URAN", iron_ore: "IRON",
+  zinc: "ZINC", wti: "WTI", brent: "BRENT", natgas: "NATGAS",
+};
 
 const FALLBACK: CommoditySpot[] = [
   { key: "gold", label: "Gold", unit: "oz", price: null, change_pct: null },
@@ -34,25 +41,23 @@ const FALLBACK: CommoditySpot[] = [
 ];
 
 interface IndexItem {
+  key: string;
   label: string;
-  price: string;
-  change: string;
-  up: boolean;
+  price: number | null;
+  change_pct: number | null;
 }
 
 const placeholderIndexes: IndexItem[] = [
-  { label: "S&P/TSX Composite", price: "23,184.20", change: "+0.42%", up: true },
-  { label: "S&P/TSX Venture", price: "608.74", change: "+1.18%", up: true },
-  { label: "S&P/TSX Global Mining", price: "412.30", change: "+0.86%", up: true },
-  { label: "ASX 200", price: "8,142.10", change: "+0.31%", up: true },
-  { label: "ASX All Ords Gold", price: "9,418.50", change: "+2.14%", up: true },
-  { label: "ASX Resources 300", price: "6,284.40", change: "-0.42%", up: false },
-  { label: "NYSE Arca Gold BUGS (HUI)", price: "318.74", change: "+1.62%", up: true },
-  { label: "Philadelphia Gold & Silver (XAU)", price: "164.20", change: "+1.41%", up: true },
-  { label: "Solactive Junior Gold", price: "284.10", change: "+0.92%", up: true },
-  { label: "MVIS Junior Gold Miners", price: "46.18", change: "+1.04%", up: true },
-  { label: "Bloomberg Industrial Metals", price: "182.40", change: "-0.18%", up: false },
-  { label: "Solactive Global Lithium", price: "72.84", change: "-1.42%", up: false },
+  { key: "TSX",     label: "S&P/TSX Composite",          price: null, change_pct: null },
+  { key: "TSXV",    label: "TSX Venture Composite",      price: null, change_pct: null },
+  { key: "TSXMINE", label: "S&P/TSX Global Mining",      price: null, change_pct: null },
+  { key: "XAU",     label: "Philadelphia Gold & Silver", price: null, change_pct: null },
+  { key: "HUI",     label: "NYSE Arca Gold BUGS",        price: null, change_pct: null },
+  { key: "GDX",     label: "VanEck Gold Miners ETF",     price: null, change_pct: null },
+  { key: "GDXJ",    label: "VanEck Junior Gold Miners",  price: null, change_pct: null },
+  { key: "COPX",    label: "Global X Copper Miners",     price: null, change_pct: null },
+  { key: "URA",     label: "Global X Uranium ETF",       price: null, change_pct: null },
+  { key: "LIT",     label: "Global X Lithium ETF",       price: null, change_pct: null },
 ];
 
 const CommoditySidebar = () => {
@@ -63,7 +68,22 @@ const CommoditySidebar = () => {
     staleTime: REFETCH_MS,
   });
 
+  const { data: indexData } = useQuery({
+    queryKey: ["indexes"],
+    queryFn: fetchIndexes,
+    refetchInterval: REFETCH_MS,
+    staleTime: REFETCH_MS,
+  });
+
+  const { data: currencyData } = useQuery({
+    queryKey: ["currencies"],
+    queryFn: fetchCurrencies,
+    refetchInterval: REFETCH_MS,
+    staleTime: REFETCH_MS,
+  });
+
   const items = data?.items?.length ? data.items : FALLBACK;
+  const currencies = currencyData?.items ?? [];
 
   return (
     <div className="space-y-4">
@@ -76,11 +96,12 @@ const CommoditySidebar = () => {
             <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">· Spot</span>
           </div>
         </div>
-        <div className="max-h-[480px] overflow-auto">
+        <div className="max-h-[238px] overflow-auto">
           {items.map((c) => {
             const up = (c.change_pct ?? 0) >= 0;
+            const slug = commoditySlugMap[c.key] || c.key.toUpperCase();
             return (
-              <div key={c.key} className="flex items-center justify-between px-3 py-2 border-b border-border last:border-0 hover:bg-background/60">
+              <Link key={c.key} to={`/market/commodity/${slug}`} className="flex items-center justify-between px-3 py-2 border-b border-border last:border-0 hover:bg-background/60 transition-colors cursor-pointer">
                 <div className="min-w-0">
                   <div className="text-[12.5px] font-medium truncate">{c.label}</div>
                   <div className="font-mono text-[10px] text-muted-foreground">/ {c.unit}</div>
@@ -94,7 +115,7 @@ const CommoditySidebar = () => {
                     </div>
                   )}
                 </div>
-              </div>
+              </Link>
             );
           })}
         </div>
@@ -109,21 +130,83 @@ const CommoditySidebar = () => {
             <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">· Mining &amp; Markets</span>
           </div>
         </div>
-        <div className="max-h-[480px] overflow-auto">
-          {placeholderIndexes.map((idx) => (
-            <div key={idx.label} className="flex items-center justify-between px-3 py-2 border-b border-border last:border-0 hover:bg-background/60">
-              <div className="min-w-0">
-                <div className="text-[12.5px] font-medium truncate">{idx.label}</div>
-              </div>
-              <div className="text-right shrink-0 ml-3">
-                <div className="font-mono font-bold text-[12.5px]">{idx.price}</div>
-                <div className={`font-mono text-[10.5px] font-semibold inline-flex items-center gap-0.5 ${idx.up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]"}`}>
-                  {idx.up ? <ArrowUpRight className="w-2.5 h-2.5" /> : <ArrowDownRight className="w-2.5 h-2.5" />}
-                  {idx.change}
+        <div className="max-h-[295px] overflow-auto">
+          {(indexData?.items?.length ? indexData.items : placeholderIndexes).map((idx) => {
+            const up = (idx.change_pct ?? 0) >= 0;
+            const priceStr = idx.price != null ? idx.price.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—";
+            const changeStr = idx.change_pct != null ? `${idx.change_pct >= 0 ? "+" : ""}${idx.change_pct.toFixed(2)}%` : "—";
+            return (
+              <a key={idx.key} href={`/market/index/${idx.key}`} className="flex items-center justify-between px-3 py-2 border-b border-border last:border-0 hover:bg-background/60 transition-colors cursor-pointer">
+                <div className="min-w-0">
+                  <div className="text-[12.5px] font-medium truncate">{idx.label}</div>
+                </div>
+                <div className="text-right shrink-0 ml-3">
+                  <div className="font-mono font-bold text-[12.5px]">{priceStr}</div>
+                  {idx.change_pct != null && (
+                    <div className={`font-mono text-[10.5px] font-semibold inline-flex items-center gap-0.5 ${up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]"}`}>
+                      {up ? <ArrowUpRight className="w-2.5 h-2.5" /> : <ArrowDownRight className="w-2.5 h-2.5" />}
+                      {changeStr}
+                    </div>
+                  )}
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Currencies */}
+      <div className="border border-border bg-surface">
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border bg-muted/30">
+          <div className="flex items-center gap-2">
+            <DollarSign className="w-3.5 h-3.5 text-accent" />
+            <h3 className="font-display text-sm font-bold tracking-tight">Currencies</h3>
+            <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">· FX · Spot</span>
+          </div>
+        </div>
+        <div>
+          {currencies.length === 0 ? (
+            [
+              { key: "USDCAD", label: "USD / CAD", subtitle: null, price: null, change_pct: null },
+              { key: "AUDUSD", label: "AUD / USD", subtitle: null, price: null, change_pct: null },
+              { key: "CADAUD", label: "CAD / AUD", subtitle: null, price: null, change_pct: null },
+              { key: "DXY", label: "DXY", subtitle: "US Dollar Index", price: null, change_pct: null },
+            ].map((c) => (
+              <div key={c.key} className="flex items-center justify-between px-3 py-2 border-b border-border last:border-0 hover:bg-background/60 transition-colors cursor-pointer">
+                <div className="min-w-0">
+                  <div className="text-[12.5px] font-medium truncate">{c.label}</div>
+                  {c.subtitle && <div className="font-mono text-[10px] text-muted-foreground">{c.subtitle}</div>}
+                </div>
+                <div className="text-right shrink-0 ml-3">
+                  <div className="font-mono font-bold text-[12.5px]">—</div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))
+          ) : (
+            currencies.map((c) => {
+              const up = (c.change_pct ?? 0) >= 0;
+              const slug = c.key;
+              return (
+                <a key={c.key} className="block" href={`/market/currency/${slug}`}>
+                  <div className="flex items-center justify-between px-3 py-2 border-b border-border last:border-0 hover:bg-background/60 transition-colors cursor-pointer">
+                    <div className="min-w-0">
+                      <div className="text-[12.5px] font-medium truncate">{c.label}</div>
+                      {c.subtitle && <div className="font-mono text-[10px] text-muted-foreground">{c.subtitle}</div>}
+                    </div>
+                    <div className="text-right shrink-0 ml-3">
+                      <div className="font-mono font-bold text-[12.5px]">{c.price != null ? c.price.toFixed(4) : "—"}</div>
+                      {c.change_pct != null && (
+                        <div className={`font-mono text-[10.5px] font-semibold inline-flex items-center gap-0.5 ${up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]"}`}>
+                          {up ? <ArrowUpRight className="w-2.5 h-2.5" /> : <ArrowDownRight className="w-2.5 h-2.5" />}
+                          {up ? "+" : ""}{c.change_pct.toFixed(2)}%
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </a>
+              );
+            })
+          )}
         </div>
       </div>
     </div>

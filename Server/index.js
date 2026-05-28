@@ -28,6 +28,9 @@ apiRouter.use('/pipeline',  require('./routes/pipeline'));
 apiRouter.use('/market',    require('./routes/market'));
 apiRouter.use('/discussions', require('./routes/discussions'));
 apiRouter.use('/news',        require('./routes/news'));
+apiRouter.use('/jobs',        require('./routes/jobs'));
+apiRouter.use('/applications', require('./routes/applications'));
+apiRouter.use('/watchlist',    require('./routes/watchlist'));
 app.use('/api', apiRouter);
 
 // ── Admin panel auth (cookie session) ──────────────────────────────────────
@@ -49,6 +52,17 @@ app.use('/admin', express.static(path.join(__dirname, 'public')));
 
 app.get('/', (_req, res) => res.redirect('/admin'));
 
-app.listen(PORT, () => {
-  console.log(`Mining Intel server running → http://localhost:${PORT}`);
-});
+const migrate = require('./db/migrate');
+
+async function start() {
+  try {
+    await migrate();
+  } catch (err) {
+    console.error('[DB] Migration failed (non-fatal):', err?.message || err);
+  }
+  app.listen(PORT, () => {
+    console.log(`Mining Intel server running → http://localhost:${PORT}`);
+  });
+}
+
+start();

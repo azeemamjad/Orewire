@@ -2,39 +2,23 @@ const express = require('express');
 const router  = express.Router();
 const db      = require('../db');
 
-let tablesReady = ensureTables().catch(err => {
-  console.error('Failed to create news tables:', err?.message || err);
-});
+// Tables created by db/migrate.js
 
-async function ensureTables() {
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS news (
-      id          SERIAL PRIMARY KEY,
-      title       TEXT NOT NULL,
-      link        TEXT UNIQUE NOT NULL,
-      source      TEXT,
-      pub_date    TIMESTAMPTZ,
-      description TEXT,
-      summary     TEXT,
-      commodity   TEXT,
-      sentiment   TEXT DEFAULT 'neutral',
-      relevant    BOOLEAN DEFAULT TRUE,
-      ai_processed BOOLEAN DEFAULT FALSE,
-      category    TEXT DEFAULT 'general',
-      created_at  TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_news_pub_date ON news(pub_date DESC)`);
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_news_category ON news(category)`);
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_news_link ON news(link)`);
-  await db.query(`ALTER TABLE news ADD COLUMN IF NOT EXISTS relevant BOOLEAN DEFAULT TRUE`);
-}
+// ---------------------------------------------------------------------------
+// RSS sources
+// ---------------------------------------------------------------------------
+
+const RSS_FEEDS = [
+  { name: 'Newsfile Mining', url: 'https://feeds.newsfilecorp.com/industry/mining-metals', source: 'TMX Newsfile' },
+  { name: 'Newsfile Energy Metals', url: 'https://feeds.newsfilecorp.com/industry/energy-metals', source: 'TMX Newsfile' },
+  { name: 'GlobeNewsWire Mining', url: 'https://www.globenewswire.com/RssFeed/industry/1775-General+Mining/feedTitle/GlobeNewsWire+-+Industry+Tag+-+General+Mining', source: 'GlobeNewsWire' },
+];
 
 // ---------------------------------------------------------------------------
 // RSS parser
 // ---------------------------------------------------------------------------
 
-function parseRssItems(xml) {
+function parseRssItems(xml, defaultSource) {
   const items = [];
   const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
   let match;
@@ -43,28 +27,79 @@ function parseRssItems(xml) {
     const title = (block.match(/<title>([\s\S]*?)<\/title>/) || [])[1]?.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/, '$1')?.trim() || '';
     const link = (block.match(/<link>([\s\S]*?)<\/link>/) || [])[1]?.trim() || '';
     const pubDate = (block.match(/<pubDate>([\s\S]*?)<\/pubDate>/) || [])[1]?.trim() || '';
-    const source = (block.match(/<source[^>]*>([\s\S]*?)<\/source>/) || [])[1]?.trim() || '';
+    const source = (block.match(/<source[^>]*>([\s\S]*?)<\/source>/) || [])[1]?.trim() || defaultSource || '';
     const description = (block.match(/<description>([\s\S]*?)<\/description>/) || [])[1]
       ?.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/, '$1')
       ?.replace(/<[^>]+>/g, '')
       ?.trim() || '';
 
     if (title && link) {
-      items.push({ title, link, pubDate, source, description: description.slice(0, 500) });
+      items.push({ title, link, pubDate, source: source || defaultSource, description: description.slice(0, 500) });
     }
   }
   return items;
 }
 
-async function fetchGoogleNews(query, limit = 10) {
-  const encoded = encodeURIComponent(query);
-  const url = `https://news.google.com/rss/search?q=${encoded}&hl=en&gl=US&ceid=US:en`;
+async function fetchRssFeed(url) {
   const res = await fetch(url, {
     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
   });
-  if (!res.ok) throw new Error(`Google News RSS ${res.status}`);
-  const xml = await res.text();
-  return parseRssItems(xml).slice(0, limit);
+  if (!res.ok) throw new Error(`RSS ${res.status} for ${url}`);
+  return res.text();
+}
+
+// ---------------------------------------------------------------------------
+// Company matching — only keep news about companies we cover
+// ---------------------------------------------------------------------------
+
+let companyLookup = { byTicker: new Map(), byName: [] };
+let lookupLoadedAt = 0;
+const LOOKUP_TTL = 10 * 60 * 1000;
+
+async function loadCompanyLookup() {
+  if (Date.now() - lookupLoadedAt < LOOKUP_TTL) return;
+  try {
+    const result = await db.query(`SELECT id, name, ticker, exchange FROM companies WHERE ticker IS NOT NULL`);
+    const byTicker = new Map();
+    const byName = [];
+
+    for (const row of result.rows) {
+      if (row.ticker) {
+        byTicker.set(row.ticker.toUpperCase(), row);
+        const variants = [
+          `${row.ticker}.V`, `${row.ticker}.TO`, `${row.ticker}.CN`,
+          `${row.ticker}:TSXV`, `${row.ticker}:TSX`, `${row.ticker}:CSE`, `${row.ticker}:ASX`,
+        ];
+        for (const v of variants) byTicker.set(v.toUpperCase(), row);
+      }
+      if (row.name) {
+        byName.push({ id: row.id, name: row.name.toLowerCase(), ticker: row.ticker, exchange: row.exchange });
+      }
+    }
+
+    companyLookup = { byTicker, byName };
+    lookupLoadedAt = Date.now();
+  } catch (err) {
+    console.error('[News] Failed to load company lookup:', err?.message || err);
+  }
+}
+
+function matchCompany(title, description) {
+  const text = `${title} ${description || ''}`.toUpperCase();
+
+  for (const [ticker, company] of companyLookup.byTicker) {
+    if (ticker.length < 2) continue;
+    const regex = new RegExp(`\\b${ticker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+    if (regex.test(text)) return company;
+  }
+
+  const lowerText = `${title} ${description || ''}`.toLowerCase();
+  for (const entry of companyLookup.byName) {
+    if (entry.name.length < 5) continue;
+    if (lowerText.includes(entry.name)) return { id: entry.id, ticker: entry.ticker, exchange: entry.exchange };
+  }
+
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -88,7 +123,7 @@ async function callOllama(prompt) {
       messages: [
         {
           role: 'system',
-          content: 'You are a mining investment news analyst for a platform that tracks junior mining stocks on TSX-V, CSE, and ASX exchanges. Given raw news headlines and descriptions, produce a JSON array of enriched news items. Each item must have: "title" (clean headline — remove source suffix like "- Reuters"), "summary" (1-2 sentence plain-English summary of what happened and why it matters for mining investors), "commodity" (primary commodity: Gold, Silver, Copper, Lithium, Uranium, Nickel, Zinc, or null), "sentiment" (one of: "bullish", "bearish", "neutral"), "relevant" (boolean — TRUE if the article is about mining companies, mineral exploration, drill results, mining stocks, commodity prices, mining financing, or mining market analysis. FALSE if it is about mining accidents, illegal mining, environmental disasters, politics, general world news, or is unrelated to the mining investment industry). Return ONLY valid JSON array, no markdown fences, no extra text.'
+          content: 'You are a mining investment news analyst for a platform tracking junior mining stocks on TSX-V, CSE, and ASX. Given news headlines and descriptions, produce a JSON array. Each item: "title" (clean headline — remove source suffix), "summary" (1-2 sentence summary for mining investors), "commodity" (Gold, Silver, Copper, Lithium, Uranium, Nickel, Zinc, or null), "sentiment" ("bullish", "bearish", or "neutral"). Return ONLY a valid JSON array.'
         },
         { role: 'user', content: prompt },
       ],
@@ -105,77 +140,11 @@ function parseJson(raw) {
   return JSON.parse(cleaned);
 }
 
-// ---------------------------------------------------------------------------
-// Background fetcher — runs every 5 minutes
-// ---------------------------------------------------------------------------
-
-const FEED_QUERIES = [
-  'gold mining company drill results',
-  'TSX-V mining stock news',
-  'ASX junior mining explorer',
-  'lithium mining company financing',
-  'copper mining drill results feasibility',
-  'uranium mining stock market',
-  'silver mining company quarterly',
-  'mining IPO TSX venture exchange',
-  'mineral exploration company update',
-];
-
-let fetchRunning = false;
-
-async function fetchAndStoreNews() {
-  if (fetchRunning) return;
-  fetchRunning = true;
-
-  try {
-    await tablesReady;
-
-    let allItems = [];
-    for (const q of FEED_QUERIES) {
-      try {
-        const items = await fetchGoogleNews(q, 8);
-        allItems.push(...items);
-      } catch { /* skip */ }
-    }
-
-    const seen = new Set();
-    allItems = allItems.filter(item => {
-      if (seen.has(item.link)) return false;
-      seen.add(item.link);
-      return true;
-    });
-
-    let inserted = 0;
-    for (const item of allItems) {
-      try {
-        const result = await db.query(
-          `INSERT INTO news (title, link, source, pub_date, description, category)
-           VALUES ($1, $2, $3, $4, $5, 'general')
-           ON CONFLICT (link) DO NOTHING
-           RETURNING id`,
-          [item.title, item.link, item.source || 'News', item.pubDate ? new Date(item.pubDate) : new Date(), item.description]
-        );
-        if (result.rows.length > 0) inserted++;
-      } catch { /* skip duplicate or error */ }
-    }
-
-    if (inserted > 0) {
-      console.log(`[News] Fetched ${allItems.length} items, inserted ${inserted} new, running AI enrichment`);
-      await enrichUnprocessedNews();
-    }
-  } catch (err) {
-    console.error('[News] Fetch cycle failed:', err?.message || err);
-  } finally {
-    fetchRunning = false;
-  }
-}
-
 async function enrichUnprocessedNews() {
   try {
     const unprocessed = await db.query(
       `SELECT id, title, description FROM news WHERE ai_processed = FALSE ORDER BY pub_date DESC LIMIT 10`
     );
-
     if (unprocessed.rows.length === 0) return;
 
     const prompt = unprocessed.rows.map((r, i) =>
@@ -188,48 +157,109 @@ async function enrichUnprocessedNews() {
     for (let i = 0; i < unprocessed.rows.length; i++) {
       const row = unprocessed.rows[i];
       const ai = aiItems[i] || {};
-      const isRelevant = ai.relevant !== false;
       try {
         await db.query(
-          `UPDATE news SET summary = $1, commodity = $2, sentiment = $3, relevant = $4, ai_processed = TRUE WHERE id = $5`,
-          [ai.summary || null, ai.commodity || null, ai.sentiment || 'neutral', isRelevant, row.id]
+          `UPDATE news SET summary = $1, commodity = $2, sentiment = $3, ai_processed = TRUE WHERE id = $4`,
+          [ai.summary || null, ai.commodity || null, ai.sentiment || 'neutral', row.id]
         );
       } catch { /* skip */ }
     }
 
-    const irrelevantIds = unprocessed.rows
-      .map((row, i) => (aiItems[i]?.relevant === false ? row.id : null))
-      .filter(Boolean);
-
-    if (irrelevantIds.length > 0) {
-      await db.query(`DELETE FROM news WHERE id = ANY($1)`, [irrelevantIds]);
-      console.log(`[News] AI enriched ${unprocessed.rows.length} items, deleted ${irrelevantIds.length} irrelevant`);
-    } else {
-      console.log(`[News] AI enriched ${unprocessed.rows.length} items, all relevant`);
-    }
+    console.log(`[News] AI enriched ${unprocessed.rows.length} items`);
   } catch (err) {
     console.error('[News] AI enrichment failed:', err?.message || err);
   }
 }
 
-// Start background fetching
+// ---------------------------------------------------------------------------
+// Background fetcher
+// ---------------------------------------------------------------------------
+
+let fetchRunning = false;
+
+async function fetchAndStoreNews() {
+  if (fetchRunning) return;
+  fetchRunning = true;
+
+  try {
+    await loadCompanyLookup();
+
+    let allItems = [];
+    for (const feed of RSS_FEEDS) {
+      try {
+        const xml = await fetchRssFeed(feed.url);
+        const items = parseRssItems(xml, feed.source);
+        allItems.push(...items);
+      } catch (err) {
+        console.error(`[News] Failed to fetch ${feed.name}:`, err?.message || err);
+      }
+    }
+
+    const seen = new Set();
+    allItems = allItems.filter(item => {
+      if (seen.has(item.link)) return false;
+      seen.add(item.link);
+      return true;
+    });
+
+    let inserted = 0;
+    let matched = 0;
+
+    for (const item of allItems) {
+      const company = matchCompany(item.title, item.description);
+
+      try {
+        const result = await db.query(
+          `INSERT INTO news (title, link, source, pub_date, description, category, company_id, ticker)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (link) DO NOTHING
+           RETURNING id`,
+          [
+            item.title,
+            item.link,
+            item.source || 'News',
+            item.pubDate ? new Date(item.pubDate) : new Date(),
+            item.description,
+            company ? `company:${company.ticker || company.id}` : 'general',
+            company?.id || null,
+            company?.ticker || null,
+          ]
+        );
+        if (result.rows.length > 0) {
+          inserted++;
+          if (company) matched++;
+        }
+      } catch { /* skip */ }
+    }
+
+    if (inserted > 0) {
+      console.log(`[News] Fetched ${allItems.length} items, inserted ${inserted} new (${matched} matched to companies), running AI enrichment`);
+      await enrichUnprocessedNews();
+    }
+  } catch (err) {
+    console.error('[News] Fetch cycle failed:', err?.message || err);
+  } finally {
+    fetchRunning = false;
+  }
+}
+
+// Start background fetching — every 5 minutes
 const FETCH_INTERVAL = 5 * 60 * 1000;
 setTimeout(() => fetchAndStoreNews(), 5000);
 setInterval(() => fetchAndStoreNews(), FETCH_INTERVAL);
 
 // ---------------------------------------------------------------------------
-// Company-specific news fetcher — 1 hour cooldown, AI only if new articles
+// Company-specific news — on-demand fetch with 1-hour cooldown
 // ---------------------------------------------------------------------------
 
 const companyFetchTimestamps = new Map();
 const COMPANY_FETCH_COOLDOWN = 60 * 60 * 1000;
 
-async function fetchAndStoreCompanyNews(companyName, ticker) {
-  const category = `company:${ticker || companyName}`;
-
-  const lastFetch = companyFetchTimestamps.get(category) || 0;
+async function fetchCompanyNewsOnDemand(companyName, ticker) {
+  const key = `company:${ticker || companyName}`;
+  const lastFetch = companyFetchTimestamps.get(key) || 0;
   if (Date.now() - lastFetch < COMPANY_FETCH_COOLDOWN) return;
-  companyFetchTimestamps.set(category, Date.now());
+  companyFetchTimestamps.set(key, Date.now());
 
   const queries = [];
   if (ticker) queries.push(`"${ticker}" mining stock`);
@@ -238,8 +268,15 @@ async function fetchAndStoreCompanyNews(companyName, ticker) {
   let allItems = [];
   for (const q of queries) {
     try {
-      const items = await fetchGoogleNews(q, 8);
-      allItems.push(...items);
+      const encoded = encodeURIComponent(q);
+      const url = `https://news.google.com/rss/search?q=${encoded}&hl=en&gl=US&ceid=US:en`;
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      });
+      if (res.ok) {
+        const xml = await res.text();
+        allItems.push(...parseRssItems(xml, 'Google News'));
+      }
     } catch { /* skip */ }
     if (allItems.length >= 6) break;
   }
@@ -251,28 +288,30 @@ async function fetchAndStoreCompanyNews(companyName, ticker) {
     return true;
   }).slice(0, 10);
 
+  const category = `company:${ticker || companyName}`;
+
   let newCount = 0;
   for (const item of allItems) {
     try {
       const result = await db.query(
-        `INSERT INTO news (title, link, source, pub_date, description, category)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO news (title, link, source, pub_date, description, category, ticker)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (link) DO NOTHING
          RETURNING id`,
-        [item.title, item.link, item.source || 'News', item.pubDate ? new Date(item.pubDate) : new Date(), item.description, category]
+        [item.title, item.link, item.source || 'News', item.pubDate ? new Date(item.pubDate) : new Date(), item.description, category, ticker]
       );
       if (result.rows.length > 0) newCount++;
     } catch { /* skip */ }
   }
 
   if (newCount > 0) {
-    console.log(`[News] Company ${category}: ${newCount} new articles, running AI enrichment`);
+    console.log(`[News] Company ${key}: ${newCount} new articles, running AI enrichment`);
     await enrichUnprocessedNews();
   }
 }
 
 // ---------------------------------------------------------------------------
-// API routes — read from DB
+// API routes
 // ---------------------------------------------------------------------------
 
 function timeAgo(dateStr) {
@@ -298,41 +337,67 @@ function formatRow(row) {
     timeAgo: timeAgo(row.pub_date),
     commodity: row.commodity || null,
     sentiment: row.sentiment || 'neutral',
+    ticker: row.ticker || null,
   };
 }
 
-// GET /api/news/feed — homepage news from DB
+// GET /api/news/feed — homepage: latest news from all sources
 router.get('/feed', async (req, res) => {
   try {
-    await tablesReady;
-    const result = await db.query(
-      `SELECT * FROM news WHERE category = 'general' AND relevant = TRUE ORDER BY pub_date DESC LIMIT 12`
-    );
-    res.json({ items: result.rows.map(formatRow) });
+    const pageRaw = parseInt(req.query.page, 10);
+    const limitRaw = parseInt(req.query.limit, 10);
+    const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 50) : 12;
+    const offset = (page - 1) * limit;
+
+    const [itemsResult, countResult] = await Promise.all([
+      db.query(
+        `SELECT * FROM news WHERE relevant = TRUE ORDER BY pub_date DESC LIMIT $1 OFFSET $2`,
+        [limit, offset]
+      ),
+      db.query(`SELECT COUNT(*)::int AS total FROM news WHERE relevant = TRUE`),
+    ]);
+
+    const total = countResult.rows[0]?.total || 0;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+
+    res.json({
+      items: itemsResult.rows.map(formatRow),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrev: page > 1,
+      },
+    });
   } catch (err) {
     console.error('News feed query failed:', err?.message || err);
-    res.status(503).json({ items: [] });
+    res.status(503).json({
+      items: [],
+      pagination: { page: 1, limit: 12, total: 0, totalPages: 1, hasNext: false, hasPrev: false },
+    });
   }
 });
 
 // GET /api/news/company/:name?ticker=SCZ&exchange=TSXV
 router.get('/company/:name', async (req, res) => {
   try {
-    await tablesReady;
     const companyName = decodeURIComponent(req.params.name);
     const ticker = req.query.ticker || '';
     const category = `company:${ticker || companyName}`;
 
     let result = await db.query(
-      `SELECT * FROM news WHERE category = $1 AND relevant = TRUE ORDER BY pub_date DESC LIMIT 10`,
-      [category]
+      `SELECT * FROM news WHERE (category = $1 OR ticker = $2) AND relevant = TRUE ORDER BY pub_date DESC LIMIT 10`,
+      [category, ticker]
     );
 
     if (result.rows.length === 0) {
-      await fetchAndStoreCompanyNews(companyName, ticker);
+      await fetchCompanyNewsOnDemand(companyName, ticker);
       result = await db.query(
-        `SELECT * FROM news WHERE category = $1 ORDER BY pub_date DESC LIMIT 10`,
-        [category]
+        `SELECT * FROM news WHERE (category = $1 OR ticker = $2) AND relevant = TRUE ORDER BY pub_date DESC LIMIT 10`,
+        [category, ticker]
       );
     }
 

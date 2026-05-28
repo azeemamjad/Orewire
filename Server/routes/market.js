@@ -266,4 +266,203 @@ router.get('/commodities', async (_req, res) => {
   res.json(payload);
 });
 
+// ---------------------------------------------------------------------------
+// Indexes (Mining & Markets via TradingView)
+// ---------------------------------------------------------------------------
+
+const INDEX_SYMBOLS = [
+  { key: 'TSX',     label: 'S&P/TSX Composite',          tv: ['TSX:TSX', 'INDEX:TSX'], about: 'S&P/TSX Composite Index — the benchmark for the Toronto Stock Exchange covering large-cap Canadian equities.' },
+  { key: 'TSXV',    label: 'TSX Venture Composite',      tv: ['TSX:TSXV', 'INDEX:JX'],   about: 'Composite benchmark of TSX Venture Exchange listings — heavily weighted to junior mining and exploration issuers in Canada.' },
+  { key: 'TSXMINE', label: 'S&P/TSX Global Mining',      tv: ['TSX:TXGM', 'INDEX:TXGM'], about: 'S&P/TSX Global Mining Index tracks Canadian-listed and global mining producers across precious, base and industrial metals.' },
+  { key: 'XAU',     label: 'Philadelphia Gold & Silver', tv: ['NASDAQ:XAU', 'INDEX:XAU'], about: 'PHLX Gold/Silver Index (XAU) — basket of US-listed precious metals producers.' },
+  { key: 'HUI',     label: 'NYSE Arca Gold BUGS',        tv: ['NYSE:HUI', 'INDEX:HUI'], about: 'NYSE Arca Gold BUGS Index (HUI) — unhedged gold producers, more leveraged to gold price than XAU.' },
+  { key: 'GDX',     label: 'VanEck Gold Miners ETF',     tv: ['AMEX:GDX', 'NYSEARCA:GDX'], about: 'Large-cap gold miners ETF — tracks NYSE Arca Gold Miners Index.' },
+  { key: 'GDXJ',    label: 'VanEck Junior Gold Miners',  tv: ['AMEX:GDXJ', 'NYSEARCA:GDXJ'], about: 'Junior gold miners ETF — small and mid-cap gold producers and explorers.' },
+  { key: 'COPX',    label: 'Global X Copper Miners ETF', tv: ['AMEX:COPX', 'NYSEARCA:COPX'], about: 'Global copper miners ETF — pure-play exposure to copper producers worldwide.' },
+  { key: 'URA',     label: 'Global X Uranium ETF',       tv: ['AMEX:URA', 'NYSEARCA:URA'], about: 'Uranium miners and nuclear fuel ETF.' },
+  { key: 'LIT',     label: 'Global X Lithium ETF',       tv: ['AMEX:LIT', 'NYSEARCA:LIT'], about: 'Lithium miners and battery manufacturers ETF.' },
+];
+
+let indexesCache = null;
+let indexesCacheTs = 0;
+
+router.get('/indexes', async (_req, res) => {
+  try {
+    if (indexesCache && Date.now() - indexesCacheTs < COMMODITY_CACHE_TTL_MS) {
+      return res.json(indexesCache);
+    }
+    const items = await Promise.all(INDEX_SYMBOLS.map(async (c) => {
+      for (const sym of c.tv) {
+        try {
+          const [ex, tick] = sym.split(':');
+          const data = await fetchTradingView(ex, tick);
+          const norm = normalizePrice(data);
+          if (norm.price == null) continue;
+          return { key: c.key, label: c.label, about: c.about, price: norm.price, change_pct: norm.change_pct, currency: norm.currency };
+        } catch { /* try next */ }
+      }
+      return { key: c.key, label: c.label, about: c.about, price: null, change_pct: null, currency: null };
+    }));
+    const payload = { updatedAt: new Date().toISOString(), items };
+    indexesCache = payload;
+    indexesCacheTs = Date.now();
+    res.json(payload);
+  } catch (err) {
+    console.error('Indexes query failed:', err?.message || err);
+    res.status(503).json({ updatedAt: new Date().toISOString(), items: [] });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Currencies (FX spot via TradingView)
+// ---------------------------------------------------------------------------
+
+const CURRENCY_SYMBOLS = [
+  { key: 'USDCAD', label: 'USD / CAD', tv: ['FX_IDC:USDCAD', 'FX:USDCAD', 'OANDA:USDCAD'] },
+  { key: 'AUDUSD', label: 'AUD / USD', tv: ['FX_IDC:AUDUSD', 'FX:AUDUSD', 'OANDA:AUDUSD'] },
+  { key: 'CADAUD', label: 'CAD / AUD', tv: ['FX_IDC:CADAUD', 'FX:CADAUD'] },
+  { key: 'DXY',    label: 'DXY',       tv: ['TVC:DXY', 'INDEX:DXY'], subtitle: 'US Dollar Index' },
+];
+
+let currenciesCache = null;
+let currenciesCacheTs = 0;
+
+router.get('/currencies', async (_req, res) => {
+  try {
+    if (currenciesCache && Date.now() - currenciesCacheTs < COMMODITY_CACHE_TTL_MS) {
+      return res.json(currenciesCache);
+    }
+
+    const items = await Promise.all(CURRENCY_SYMBOLS.map(async (c) => {
+      for (const sym of c.tv) {
+        try {
+          const [ex, tick] = sym.split(':');
+          const data = await fetchTradingView(ex, tick);
+          const norm = normalizePrice(data);
+          if (norm.price == null) continue;
+          return {
+            key: c.key,
+            label: c.label,
+            subtitle: c.subtitle || null,
+            price: norm.price,
+            change_pct: norm.change_pct,
+          };
+        } catch {
+          // try next fallback
+        }
+      }
+      return { key: c.key, label: c.label, subtitle: c.subtitle || null, price: null, change_pct: null };
+    }));
+
+    const payload = { updatedAt: new Date().toISOString(), items };
+    currenciesCache = payload;
+    currenciesCacheTs = Date.now();
+    res.json(payload);
+  } catch (err) {
+    console.error('Currencies query failed:', err?.message || err);
+    res.status(503).json({ updatedAt: new Date().toISOString(), items: [] });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Lightweight intraday history (24h, 30m snapshots)
+// ---------------------------------------------------------------------------
+const HISTORY_INTERVAL_MS = 30 * 60 * 1000;
+const HISTORY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const historyCache = new Map();
+
+function historyKey(exchange, ticker) {
+  return `${exchange.toUpperCase()}:${ticker.toUpperCase()}`;
+}
+
+function pushHistoryPoint(exchange, ticker, norm) {
+  const key = historyKey(exchange, ticker);
+  const now = Date.now();
+  const existing = historyCache.get(key) || { points: [], lastFetchTs: 0 };
+  const point = {
+    ts: now,
+    open: norm.open ?? norm.price ?? null,
+    high: norm.high ?? norm.price ?? null,
+    low: norm.low ?? norm.price ?? null,
+    close: norm.price ?? null,
+    volume: norm.volume ?? null,
+  };
+  const points = existing.points
+    .filter((p) => now - p.ts <= HISTORY_WINDOW_MS)
+    .concat(point);
+  historyCache.set(key, { points, lastFetchTs: now });
+}
+
+function resolveTvSymbol(kind, key, exchange) {
+  const upperKey = (key || '').toUpperCase();
+  if (kind === 'company') {
+    const ex = (exchange || '').toUpperCase().replace('-', '');
+    if (!ex || !upperKey) return null;
+    return { exchange: ex, ticker: upperKey };
+  }
+  if (kind === 'commodity') {
+    const c = COMMODITY_SYMBOLS.find((x) => x.key.toUpperCase() === upperKey);
+    if (!c || !c.tv?.length) return null;
+    const [ex, tick] = c.tv[0].split(':');
+    return { exchange: ex, ticker: tick };
+  }
+  if (kind === 'currency') {
+    const c = CURRENCY_SYMBOLS.find((x) => x.key.toUpperCase() === upperKey);
+    if (!c || !c.tv?.length) return null;
+    const [ex, tick] = c.tv[0].split(':');
+    return { exchange: ex, ticker: tick };
+  }
+  if (kind === 'index') {
+    const c = INDEX_SYMBOLS.find((x) => x.key.toUpperCase() === upperKey);
+    if (!c || !c.tv?.length) return null;
+    const [ex, tick] = c.tv[0].split(':');
+    return { exchange: ex, ticker: tick };
+  }
+  return null;
+}
+
+// GET /api/market/history/:kind/:key?exchange=TSXV
+// kind: company | commodity | currency | index
+router.get('/history/:kind/:key', async (req, res) => {
+  try {
+    const kind = (req.params.kind || '').toLowerCase();
+    const key = req.params.key;
+    const exchange = req.query.exchange || '';
+    const resolved = resolveTvSymbol(kind, key, exchange);
+    if (!resolved) return res.status(400).json({ error: 'Unsupported history symbol' });
+
+    const hKey = historyKey(resolved.exchange, resolved.ticker);
+    const existing = historyCache.get(hKey);
+    const now = Date.now();
+    const shouldRefresh = !existing || now - existing.lastFetchTs >= HISTORY_INTERVAL_MS;
+
+    if (shouldRefresh) {
+      try {
+        const data = await fetchTradingView(resolved.exchange, resolved.ticker);
+        const norm = normalizePrice(data);
+        pushHistoryPoint(resolved.exchange, resolved.ticker, norm);
+      } catch (err) {
+        // If we have older cached points, still return them.
+        if (!existing) throw err;
+      }
+    }
+
+    const latest = historyCache.get(hKey) || { points: [] };
+    const points = latest.points.filter((p) => now - p.ts <= HISTORY_WINDOW_MS);
+    historyCache.set(hKey, { ...latest, points });
+
+    res.json({
+      kind,
+      key,
+      exchange: resolved.exchange,
+      ticker: resolved.ticker,
+      intervalMs: HISTORY_INTERVAL_MS,
+      windowMs: HISTORY_WINDOW_MS,
+      points,
+    });
+  } catch (err) {
+    res.status(502).json({ error: err.message || 'Failed to fetch history', points: [] });
+  }
+});
+
 module.exports = router;

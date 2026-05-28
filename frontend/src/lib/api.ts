@@ -296,12 +296,132 @@ export async function fetchCommodities(): Promise<CommoditiesResponse> {
   return res.json();
 }
 
+export interface CurrencySpot {
+  key: string;
+  label: string;
+  subtitle: string | null;
+  price: number | null;
+  change_pct: number | null;
+}
+
+export interface CurrenciesResponse {
+  updatedAt: string;
+  items: CurrencySpot[];
+}
+
+export async function fetchCurrencies(): Promise<CurrenciesResponse> {
+  const res = await fetch(`${API_BASE}/market/currencies`);
+  if (!res.ok) throw new Error(`Failed to fetch currencies: ${res.status}`);
+  return res.json();
+}
+
+export interface IndexSpot {
+  key: string;
+  label: string;
+  about: string;
+  price: number | null;
+  change_pct: number | null;
+  currency: string | null;
+}
+
+export interface IndexesResponse {
+  updatedAt: string;
+  items: IndexSpot[];
+}
+
+export async function fetchIndexes(): Promise<IndexesResponse> {
+  const res = await fetch(`${API_BASE}/market/indexes`);
+  if (!res.ok) throw new Error(`Failed to fetch indexes: ${res.status}`);
+  return res.json();
+}
+
+export interface MarketHistoryPoint {
+  ts: number;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number | null;
+}
+
+export interface MarketHistoryResponse {
+  kind: string;
+  key: string;
+  exchange: string;
+  ticker: string;
+  intervalMs: number;
+  windowMs: number;
+  points: MarketHistoryPoint[];
+}
+
+export async function fetchMarketHistory(
+  kind: "company" | "commodity" | "currency" | "index",
+  key: string,
+  opts?: { exchange?: string },
+): Promise<MarketHistoryResponse> {
+  const qs = new URLSearchParams();
+  if (opts?.exchange) qs.set("exchange", opts.exchange);
+  const res = await fetch(`${API_BASE}/market/history/${kind}/${encodeURIComponent(key)}${qs.toString() ? `?${qs.toString()}` : ""}`);
+  if (!res.ok) {
+    return { kind, key, exchange: opts?.exchange || "", ticker: key, intervalMs: 30 * 60 * 1000, windowMs: 24 * 60 * 60 * 1000, points: [] };
+  }
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
-// Auth
+// Watchlist (DB-backed)
 // ---------------------------------------------------------------------------
 
-const TOKEN_KEY = 'orewire.auth.token';
-const USER_KEY = 'orewire.auth.user';
+export interface WatchlistItem {
+  id: number;
+  itemType: string;
+  itemKey: string;
+  companyId: number | null;
+  companyName: string | null;
+  ticker: string | null;
+  exchange: string | null;
+  marketCap: number | null;
+  createdAt: string;
+}
+
+export async function fetchWatchlist(): Promise<WatchlistItem[]> {
+  const res = await authFetch(`${API_BASE}/watchlist`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.items || [];
+}
+
+export async function addToWatchlist(itemType: string, itemKey: string, companyId?: number): Promise<void> {
+  const res = await authFetch(`${API_BASE}/watchlist`, {
+    method: 'POST',
+    body: JSON.stringify({ itemType, itemKey, companyId }),
+  });
+  if (!res.ok) throw new Error('Failed to add to watchlist');
+}
+
+export async function removeFromWatchlist(itemType: string, itemKey: string): Promise<void> {
+  const res = await authFetch(`${API_BASE}/watchlist/${itemType}/${itemKey}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to remove from watchlist');
+}
+
+export async function checkWatchlist(itemType: string, itemKey: string): Promise<boolean> {
+  if (!getAuthToken() && !getRefreshToken()) return false;
+  try {
+    const res = await authFetch(`${API_BASE}/watchlist/check/${itemType}/${itemKey}`);
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.watched;
+  } catch { return false; }
+}
+
+// ---------------------------------------------------------------------------
+// Auth (JWT: access + refresh)
+// ---------------------------------------------------------------------------
+
+const ACCESS_KEY  = 'orewire.auth.access';
+const REFRESH_KEY = 'orewire.auth.refresh';
+const USER_KEY    = 'orewire.auth.user';
+const ACCESS_EXP  = 'orewire.auth.access_exp';
 
 export interface AuthUser {
   id: number;
@@ -309,12 +429,24 @@ export interface AuthUser {
 }
 
 export interface AuthResponse {
-  token: string;
+  accessToken?: string;
+  refreshToken?: string;
+  accessExpiresAt?: number;
+  refreshExpiresAt?: number;
+  token?: string; // backwards-compat alias for accessToken
   user?: AuthUser;
 }
 
 export function getAuthToken(): string | null {
-  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+  try { return localStorage.getItem(ACCESS_KEY); } catch { return null; }
+}
+
+function getRefreshToken(): string | null {
+  try { return localStorage.getItem(REFRESH_KEY); } catch { return null; }
+}
+
+function getAccessExp(): number {
+  try { return parseInt(localStorage.getItem(ACCESS_EXP) || '0', 10); } catch { return 0; }
 }
 
 export function getAuthUser(): AuthUser | null {
@@ -327,9 +459,7 @@ export function getAuthUser(): AuthUser | null {
 const AUTH_EVENT = 'orewire-auth-change';
 
 function emitAuthChange() {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new Event(AUTH_EVENT));
-  }
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(AUTH_EVENT));
 }
 
 export function onAuthChange(handler: () => void): () => void {
@@ -344,7 +474,10 @@ export function onAuthChange(handler: () => void): () => void {
 
 export function setAuth(resp: AuthResponse) {
   try {
-    localStorage.setItem(TOKEN_KEY, resp.token);
+    const access = resp.accessToken || resp.token;
+    if (access) localStorage.setItem(ACCESS_KEY, access);
+    if (resp.refreshToken) localStorage.setItem(REFRESH_KEY, resp.refreshToken);
+    if (resp.accessExpiresAt) localStorage.setItem(ACCESS_EXP, String(resp.accessExpiresAt));
     if (resp.user) localStorage.setItem(USER_KEY, JSON.stringify(resp.user));
   } catch { /* ignore */ }
   emitAuthChange();
@@ -352,10 +485,56 @@ export function setAuth(resp: AuthResponse) {
 
 export function clearAuth() {
   try {
-    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(ACCESS_KEY);
+    localStorage.removeItem(REFRESH_KEY);
+    localStorage.removeItem(ACCESS_EXP);
     localStorage.removeItem(USER_KEY);
   } catch { /* ignore */ }
   emitAuthChange();
+}
+
+let refreshing: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (refreshing) return refreshing;
+
+  const refresh = getRefreshToken();
+  if (!refresh) return null;
+
+  refreshing = (async () => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: refresh }),
+      });
+      if (!res.ok) { clearAuth(); return null; }
+      const data: AuthResponse = await res.json();
+      const access = data.accessToken || data.token;
+      if (!access) { clearAuth(); return null; }
+      try {
+        localStorage.setItem(ACCESS_KEY, access);
+        if (data.accessExpiresAt) localStorage.setItem(ACCESS_EXP, String(data.accessExpiresAt));
+        if (data.user) localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+      } catch { /* ignore */ }
+      emitAuthChange();
+      return access;
+    } catch {
+      return null;
+    } finally {
+      refreshing = null;
+    }
+  })();
+
+  return refreshing;
+}
+
+/** Returns a valid access token, refreshing if needed. */
+async function getValidAccessToken(): Promise<string | null> {
+  const token = getAuthToken();
+  const exp = getAccessExp();
+  if (token && exp && Date.now() < exp - 30_000) return token;
+  return refreshAccessToken();
 }
 
 async function authRequest(path: string, body: Record<string, unknown>): Promise<AuthResponse> {
@@ -365,10 +544,24 @@ async function authRequest(path: string, body: Record<string, unknown>): Promise
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data?.error || `Request failed: ${res.status}`);
-  }
+  if (!res.ok) throw new Error(data?.error || `Request failed: ${res.status}`);
   return data as AuthResponse;
+}
+
+export async function verifyAuth(): Promise<{ authenticated: boolean; user: AuthUser | null }> {
+  const token = await getValidAccessToken();
+  if (!token) return { authenticated: false, user: null };
+  try {
+    const res = await fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) { clearAuth(); return { authenticated: false, user: null }; }
+    const data = await res.json();
+    if (data.authenticated && data.user) {
+      try { localStorage.setItem(USER_KEY, JSON.stringify(data.user)); } catch {}
+    }
+    return data;
+  } catch {
+    return { authenticated: false, user: null };
+  }
 }
 
 export async function login(email: string, password: string): Promise<AuthResponse> {
@@ -384,12 +577,13 @@ export async function register(email: string, password: string): Promise<AuthRes
 }
 
 export async function logout(): Promise<void> {
-  const token = getAuthToken();
+  const refresh = getRefreshToken();
   clearAuth();
-  if (!token) return;
+  if (!refresh) return;
   await fetch(`${API_BASE}/auth/logout`, {
     method: 'POST',
-    headers: { 'x-auth-token': token },
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken: refresh }),
   }).catch(() => undefined);
 }
 
@@ -411,16 +605,91 @@ export interface Discussion {
 function authHeaders(): Record<string, string> {
   const token = getAuthToken();
   const h: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) h['x-auth-token'] = token;
+  if (token) {
+    h['Authorization'] = `Bearer ${token}`;
+    h['x-auth-token']  = token; // backwards-compat for any code still using it
+  }
   return h;
 }
 
+/**
+ * fetch wrapper that auto-refreshes the access token on 401 and retries once.
+ */
+export async function authFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  let token = await getValidAccessToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(init.headers as Record<string, string> | undefined),
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+    headers['x-auth-token']  = token;
+  }
+  let res = await fetch(input, { ...init, headers });
+  if (res.status === 401 && getRefreshToken()) {
+    token = await refreshAccessToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+      headers['x-auth-token']  = token;
+      res = await fetch(input, { ...init, headers });
+    }
+  }
+  if (res.status === 401) clearAuth();
+  return res;
+}
+
 export async function fetchDiscussions(companyId: number): Promise<Discussion[]> {
-  const res = await fetch(`${API_BASE}/discussions/${companyId}`, {
-    headers: authHeaders(),
-  });
+  const res = await authFetch(`${API_BASE}/discussions/${companyId}`);
   if (!res.ok) throw new Error(`Failed to fetch discussions: ${res.status}`);
   return res.json();
+}
+
+export async function fetchCommodityDiscussions(commodityKey: string): Promise<Discussion[]> {
+  const res = await authFetch(`${API_BASE}/discussions/commodity/${commodityKey}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function postCommodityDiscussion(commodityKey: string, body: string): Promise<Discussion> {
+  const res = await authFetch(`${API_BASE}/discussions/commodity/${commodityKey}`, {
+    method: 'POST',
+    body: JSON.stringify({ body }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Failed to post: ${res.status}`);
+  return data as Discussion;
+}
+
+export async function fetchCurrencyDiscussions(currencyKey: string): Promise<Discussion[]> {
+  const res = await authFetch(`${API_BASE}/discussions/currency/${currencyKey}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function postCurrencyDiscussion(currencyKey: string, body: string): Promise<Discussion> {
+  const res = await authFetch(`${API_BASE}/discussions/currency/${currencyKey}`, {
+    method: 'POST',
+    body: JSON.stringify({ body }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Failed to post: ${res.status}`);
+  return data as Discussion;
+}
+
+export async function fetchIndexDiscussions(indexKey: string): Promise<Discussion[]> {
+  const res = await authFetch(`${API_BASE}/discussions/index/${indexKey}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function postIndexDiscussion(indexKey: string, body: string): Promise<Discussion> {
+  const res = await authFetch(`${API_BASE}/discussions/index/${indexKey}`, {
+    method: 'POST',
+    body: JSON.stringify({ body }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Failed to post: ${res.status}`);
+  return data as Discussion;
 }
 
 // ---------------------------------------------------------------------------
@@ -436,13 +705,45 @@ export interface NewsItem {
   timeAgo: string;
   commodity: string | null;
   sentiment: 'bullish' | 'bearish' | 'neutral';
+  ticker?: string | null;
 }
 
-export async function fetchNewsFeed(): Promise<NewsItem[]> {
-  const res = await fetch(`${API_BASE}/news/feed`);
-  if (!res.ok) return [];
+export interface NewsFeedResponse {
+  items: NewsItem[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNext: boolean;
+    hasPrev: boolean;
+  };
+}
+
+export async function fetchNewsFeed(params?: { page?: number; limit?: number }): Promise<NewsFeedResponse> {
+  const qs = new URLSearchParams();
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.limit) qs.set("limit", String(params.limit));
+  const query = qs.toString();
+  const res = await fetch(`${API_BASE}/news/feed${query ? `?${query}` : ""}`);
+  if (!res.ok) {
+    return {
+      items: [],
+      pagination: { page: params?.page || 1, limit: params?.limit || 12, total: 0, totalPages: 1, hasNext: false, hasPrev: false },
+    };
+  }
   const data = await res.json();
-  return data.items || [];
+  return {
+    items: data.items || [],
+    pagination: data.pagination || {
+      page: params?.page || 1,
+      limit: params?.limit || 12,
+      total: data.items?.length || 0,
+      totalPages: 1,
+      hasNext: false,
+      hasPrev: false,
+    },
+  };
 }
 
 export async function fetchCompanyNews(name: string, ticker?: string, exchange?: string): Promise<NewsItem[]> {
@@ -456,29 +757,173 @@ export async function fetchCompanyNews(name: string, ticker?: string, exchange?:
 }
 
 export async function postDiscussion(companyId: number, body: string): Promise<Discussion> {
-  const res = await fetch(`${API_BASE}/discussions/${companyId}`, {
+  const res = await authFetch(`${API_BASE}/discussions/${companyId}`, {
     method: 'POST',
-    headers: authHeaders(),
     body: JSON.stringify({ body }),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    if (res.status === 401) clearAuth();
-    throw new Error(data?.error || `Failed to post: ${res.status}`);
-  }
+  if (!res.ok) throw new Error(data?.error || `Failed to post: ${res.status}`);
   return data as Discussion;
 }
 
 export async function voteDiscussion(companyId: number, commentId: number, vote: number): Promise<{ score: number; userVote: number }> {
-  const res = await fetch(`${API_BASE}/discussions/${companyId}/${commentId}/vote`, {
+  const res = await authFetch(`${API_BASE}/discussions/${companyId}/${commentId}/vote`, {
     method: 'POST',
-    headers: authHeaders(),
     body: JSON.stringify({ vote }),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    if (res.status === 401) clearAuth();
-    throw new Error(data?.error || `Failed to vote: ${res.status}`);
-  }
+  if (!res.ok) throw new Error(data?.error || `Failed to vote: ${res.status}`);
   return data;
+}
+
+// ---------------------------------------------------------------------------
+// Jobs
+// ---------------------------------------------------------------------------
+
+export interface JobListing {
+  id: number;
+  companyName: string;
+  ticker: string | null;
+  title: string;
+  location: string;
+  contactEmail: string;
+  description: string;
+  salary: string | null;
+  discipline: string | null;
+  jobType: string;
+  tags: string[];
+  promoted: boolean;
+  status: string;
+  timeAgo: string;
+  createdAt: string;
+}
+
+export async function fetchJobs(filters?: { search?: string; discipline?: string; type?: string }): Promise<JobListing[]> {
+  const params = new URLSearchParams();
+  if (filters?.search) params.set('search', filters.search);
+  if (filters?.discipline && filters.discipline !== 'All') params.set('discipline', filters.discipline);
+  if (filters?.type && filters.type !== 'All') params.set('type', filters.type);
+  const res = await fetch(`${API_BASE}/jobs?${params.toString()}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.jobs || [];
+}
+
+export async function postJob(job: {
+  companyName: string;
+  ticker?: string;
+  title: string;
+  location: string;
+  contactEmail: string;
+  description?: string;
+}): Promise<JobListing> {
+  const res = await authFetch(`${API_BASE}/jobs`, {
+    method: 'POST',
+    body: JSON.stringify(job),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Failed to post job: ${res.status}`);
+  return data as JobListing;
+}
+
+// ---------------------------------------------------------------------------
+// Job Applications
+// ---------------------------------------------------------------------------
+
+export interface JobApplication {
+  id: number;
+  jobId: number;
+  userId: number | null;
+  name: string;
+  email: string;
+  phone: string | null;
+  resumeUrl: string | null;
+  coverLetter: string | null;
+  expectedSalary: string | null;
+  website: string | null;
+  status: string;
+  timeAgo: string;
+  createdAt: string;
+}
+
+export interface JobWithApplications {
+  jobId: number;
+  jobTitle: string;
+  companyName: string;
+  jobLocation: string;
+  jobStatus: string;
+  applications: JobApplication[];
+}
+
+export async function updateJobStatus(jobId: number, status: 'active' | 'private'): Promise<JobListing> {
+  const res = await authFetch(`${API_BASE}/jobs/${jobId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Failed: ${res.status}`);
+  return data as JobListing;
+}
+
+export async function deleteJob(jobId: number): Promise<void> {
+  const res = await authFetch(`${API_BASE}/jobs/${jobId}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error || `Failed: ${res.status}`);
+  }
+}
+
+export async function applyToJob(jobId: number, data: {
+  name: string;
+  email?: string;
+  phone?: string;
+  resumeUrl?: string;
+  coverLetter?: string;
+  expectedSalary?: string;
+  website?: string;
+}): Promise<JobApplication> {
+  const res = await authFetch(`${API_BASE}/applications/${jobId}`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  const result = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(result?.error || `Failed to apply: ${res.status}`);
+  return result as JobApplication;
+}
+
+export async function fetchMyJobApplications(): Promise<JobWithApplications[]> {
+  const res = await authFetch(`${API_BASE}/applications/my-jobs`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.jobs || [];
+}
+
+export interface MyApplication {
+  applicationId: number;
+  status: string;
+  appliedAt: string;
+  timeAgo: string;
+  jobId: number;
+  jobTitle: string;
+  companyName: string;
+  jobLocation: string;
+  ticker: string | null;
+  salary: string | null;
+}
+
+export async function fetchMyApplications(): Promise<MyApplication[]> {
+  const res = await authFetch(`${API_BASE}/applications/my-applied`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.applications || [];
+}
+
+export async function updateApplicationStatus(appId: number, status: string): Promise<JobApplication> {
+  const res = await authFetch(`${API_BASE}/applications/${appId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Failed to update: ${res.status}`);
+  return data as JobApplication;
 }

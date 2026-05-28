@@ -33,6 +33,7 @@ const Nav = () => {
           <a href="/#feed" className="hover:text-primary text-foreground/80">Feed</a>
           <Link to="/companies" className="hover:text-primary text-foreground/80">Companies</Link>
           <Link to="/watchlist" className="hover:text-primary text-foreground/80">Watchlist</Link>
+          <Link to="/jobs" className="hover:text-primary text-foreground/80">Jobs</Link>
           <a href="/#pricing" className="hover:text-primary text-foreground/80">Pricing</a>
         </nav>
 

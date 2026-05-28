@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowDownRight, ArrowUpRight, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import Nav from "@/components/site/Nav";
 import MarketStrip from "@/components/site/MarketStrip";
@@ -66,10 +66,17 @@ function fmtPct(n: number | null | undefined): string {
 
 const Companies = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [sel, setSel] = useState<Selected>(EMPTY);
+  const [search, setSearch] = useState(() => searchParams.get("search") || "");
+  const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get("search") || "");
+  const [sel, setSel] = useState<Selected>(() => ({
+    market: searchParams.get("market") || null,
+    commodity: searchParams.get("commodity") || null,
+    continent: searchParams.get("continent") || null,
+    country: searchParams.get("country") || null,
+    status: searchParams.get("status") || null,
+  }));
 
   useEffect(() => {
     const t = setTimeout(() => {

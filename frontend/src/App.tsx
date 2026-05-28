@@ -8,6 +8,13 @@ import Companies from "./pages/Companies.tsx";
 import CompanyDetail from "./pages/CompanyDetail.tsx";
 import Watchlist from "./pages/Watchlist.tsx";
 import Login from "./pages/Login.tsx";
+import Jobs from "./pages/Jobs.tsx";
+import JobDashboard from "./pages/JobDashboard.tsx";
+import CommodityDetail from "./pages/CommodityDetail.tsx";
+import CurrencyDetail from "./pages/CurrencyDetail.tsx";
+import IndexDetail from "./pages/IndexDetail.tsx";
+import News from "./pages/News.tsx";
+import NewsDetail from "./pages/NewsDetail.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -23,6 +30,13 @@ const App = () => (
           <Route path="/companies" element={<Companies />} />
           <Route path="/company/:slug" element={<CompanyDetail />} />
           <Route path="/watchlist" element={<Watchlist />} />
+          <Route path="/jobs" element={<Jobs />} />
+          <Route path="/jobs/dashboard" element={<JobDashboard />} />
+          <Route path="/market/commodity/:slug" element={<CommodityDetail />} />
+          <Route path="/market/currency/:slug" element={<CurrencyDetail />} />
+          <Route path="/market/index/:slug" element={<IndexDetail />} />
+          <Route path="/news" element={<News />} />
+          <Route path="/news/:slug" element={<NewsDetail />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Login />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

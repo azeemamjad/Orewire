@@ -17,29 +17,25 @@ const Index = () => {
       <Nav />
       <MarketStrip />
       <CommodityBar />
-      <SearchHero />
-
-      {/* 3-column market overview */}
-      <section className="border-b border-border bg-background">
-        <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-8">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-            {/* Left: Gainers & Losers */}
-            <div className="lg:col-span-5">
-              <Movers />
-            </div>
-            {/* Center: News Feed */}
-            <div className="lg:col-span-4">
-              <NewsFeed />
-            </div>
-            {/* Right: Commodities + Indexes */}
-            <div className="lg:col-span-3 space-y-4">
-              <CommoditySidebar />
+      <main>
+        {/* Search + Bento grid in one section */}
+        <section className="border-b border-border bg-background">
+          <div className="max-w-[1440px] mx-auto px-4 lg:px-6 py-6 lg:py-8">
+            <SearchHero />
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+              <div className="lg:col-span-5">
+                <Movers />
+              </div>
+              <div className="lg:col-span-4">
+                <NewsFeed />
+              </div>
+              <div className="lg:col-span-3 space-y-4">
+                <CommoditySidebar />
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <main>
         <LiveFeed />
         <HowItWorks />
         <Pricing />

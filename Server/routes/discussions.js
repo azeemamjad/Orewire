@@ -3,38 +3,11 @@ const router  = express.Router();
 const db      = require('../db');
 const { attachUser, requireUser } = require('./auth');
 
-async function ensureTables() {
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS discussions (
-      id          SERIAL PRIMARY KEY,
-      company_id  INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      body        TEXT NOT NULL,
-      created_at  TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS discussion_votes (
-      id             SERIAL PRIMARY KEY,
-      discussion_id  INTEGER NOT NULL REFERENCES discussions(id) ON DELETE CASCADE,
-      user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      vote           SMALLINT NOT NULL CHECK (vote IN (-1, 1)),
-      created_at     TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE (discussion_id, user_id)
-    )
-  `);
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_discussions_company ON discussions(company_id)`);
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_discussion_votes_disc ON discussion_votes(discussion_id)`);
-}
-
-const tablesReady = ensureTables().catch(err => {
-  console.error('Failed to create discussion tables:', err.message);
-});
+// Tables created by db/migrate.js
 
 // GET /api/discussions/:companyId — public, but attaches user for vote info
 router.get('/:companyId', attachUser, async (req, res) => {
   try {
-    await tablesReady;
     const companyId = parseInt(req.params.companyId, 10);
     if (!companyId) return res.status(400).json({ error: 'Invalid company ID' });
 
@@ -80,7 +53,6 @@ router.get('/:companyId', attachUser, async (req, res) => {
 // POST /api/discussions/:companyId — requires auth
 router.post('/:companyId', requireUser, async (req, res) => {
   try {
-    await tablesReady;
     const companyId = parseInt(req.params.companyId, 10);
     if (!companyId) return res.status(400).json({ error: 'Invalid company ID' });
 
@@ -114,7 +86,6 @@ router.post('/:companyId', requireUser, async (req, res) => {
 // POST /api/discussions/:companyId/:commentId/vote — requires auth
 router.post('/:companyId/:commentId/vote', requireUser, async (req, res) => {
   try {
-    await tablesReady;
     const commentId = parseInt(req.params.commentId, 10);
     if (!commentId) return res.status(400).json({ error: 'Invalid comment ID' });
 
@@ -152,7 +123,6 @@ router.post('/:companyId/:commentId/vote', requireUser, async (req, res) => {
 // DELETE /api/discussions/:companyId/:commentId — owner only
 router.delete('/:companyId/:commentId', requireUser, async (req, res) => {
   try {
-    await tablesReady;
     const commentId = parseInt(req.params.commentId, 10);
     const result = await db.query(
       `DELETE FROM discussions WHERE id = $1 AND user_id = $2 RETURNING id`,
@@ -163,6 +133,182 @@ router.delete('/:companyId/:commentId', requireUser, async (req, res) => {
   } catch (err) {
     console.error('DELETE discussion error:', err);
     res.status(500).json({ error: 'Failed to delete comment' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Commodity discussions
+// ---------------------------------------------------------------------------
+
+// GET /api/discussions/commodity/:key
+router.get('/commodity/:key', attachUser, async (req, res) => {
+  try {
+    const key = req.params.key.toUpperCase();
+    const userId = req.user?.id || null;
+
+    const result = await db.query(`
+      SELECT
+        d.id, d.commodity_key, d.user_id, u.email AS user_email, d.body, d.created_at,
+        COALESCE(SUM(v.vote), 0)::int AS score,
+        ${userId ? `COALESCE((SELECT vote FROM discussion_votes WHERE discussion_id = d.id AND user_id = $2), 0)` : '0'} AS user_vote
+      FROM discussions d
+      JOIN users u ON u.id = d.user_id
+      LEFT JOIN discussion_votes v ON v.discussion_id = d.id
+      WHERE d.commodity_key = $1
+      GROUP BY d.id, u.email
+      ORDER BY d.created_at DESC
+      LIMIT 50
+    `, userId ? [key, userId] : [key]);
+
+    const comments = result.rows.map(r => ({
+      id: r.id,
+      companyId: null,
+      commodityKey: r.commodity_key,
+      userId: r.user_id,
+      userEmail: r.user_email,
+      body: r.body,
+      score: r.score,
+      userVote: r.user_vote,
+      createdAt: r.created_at,
+    }));
+    res.json(comments);
+  } catch (err) {
+    console.error('GET commodity discussions error:', err?.message || err);
+    res.status(500).json({ error: 'Failed to fetch discussions', detail: err?.message });
+  }
+});
+
+// POST /api/discussions/commodity/:key
+router.post('/commodity/:key', requireUser, async (req, res) => {
+  try {
+    const key = req.params.key.toUpperCase();
+    const { body } = req.body || {};
+    if (!body || !body.trim()) return res.status(400).json({ error: 'Comment body is required' });
+
+    const result = await db.query(
+      `INSERT INTO discussions (commodity_key, user_id, body) VALUES ($1, $2, $3) RETURNING id, commodity_key, user_id, body, created_at`,
+      [key, req.user.id, body.trim()]
+    );
+    const row = result.rows[0];
+    res.status(201).json({
+      id: row.id, companyId: null, commodityKey: row.commodity_key, userId: row.user_id,
+      userEmail: req.user.email, body: row.body, score: 0, userVote: 0, createdAt: row.created_at,
+    });
+  } catch (err) {
+    console.error('POST commodity discussion error:', err);
+    res.status(500).json({ error: 'Failed to post comment' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Currency discussions
+// ---------------------------------------------------------------------------
+
+router.get('/currency/:key', attachUser, async (req, res) => {
+  try {
+    const key = req.params.key.toUpperCase();
+    const userId = req.user?.id || null;
+
+    const result = await db.query(`
+      SELECT
+        d.id, d.currency_key, d.user_id, u.email AS user_email, d.body, d.created_at,
+        COALESCE(SUM(v.vote), 0)::int AS score,
+        ${userId ? `COALESCE((SELECT vote FROM discussion_votes WHERE discussion_id = d.id AND user_id = $2), 0)` : '0'} AS user_vote
+      FROM discussions d
+      JOIN users u ON u.id = d.user_id
+      LEFT JOIN discussion_votes v ON v.discussion_id = d.id
+      WHERE d.currency_key = $1
+      GROUP BY d.id, u.email
+      ORDER BY d.created_at DESC
+      LIMIT 50
+    `, userId ? [key, userId] : [key]);
+
+    const comments = result.rows.map(r => ({
+      id: r.id, companyId: null, currencyKey: r.currency_key,
+      userId: r.user_id, userEmail: r.user_email, body: r.body,
+      score: r.score, userVote: r.user_vote, createdAt: r.created_at,
+    }));
+    res.json(comments);
+  } catch (err) {
+    console.error('GET currency discussions error:', err?.message || err);
+    res.status(500).json({ error: 'Failed to fetch discussions', detail: err?.message });
+  }
+});
+
+router.post('/currency/:key', requireUser, async (req, res) => {
+  try {
+    const key = req.params.key.toUpperCase();
+    const { body } = req.body || {};
+    if (!body || !body.trim()) return res.status(400).json({ error: 'Comment body is required' });
+
+    const result = await db.query(
+      `INSERT INTO discussions (currency_key, user_id, body) VALUES ($1, $2, $3) RETURNING id, currency_key, user_id, body, created_at`,
+      [key, req.user.id, body.trim()]
+    );
+    const row = result.rows[0];
+    res.status(201).json({
+      id: row.id, companyId: null, currencyKey: row.currency_key, userId: row.user_id,
+      userEmail: req.user.email, body: row.body, score: 0, userVote: 0, createdAt: row.created_at,
+    });
+  } catch (err) {
+    console.error('POST currency discussion error:', err);
+    res.status(500).json({ error: 'Failed to post comment' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Index discussions
+// ---------------------------------------------------------------------------
+
+router.get('/index/:key', attachUser, async (req, res) => {
+  try {
+    const key = req.params.key.toUpperCase();
+    const userId = req.user?.id || null;
+
+    const result = await db.query(`
+      SELECT
+        d.id, d.index_key, d.user_id, u.email AS user_email, d.body, d.created_at,
+        COALESCE(SUM(v.vote), 0)::int AS score,
+        ${userId ? `COALESCE((SELECT vote FROM discussion_votes WHERE discussion_id = d.id AND user_id = $2), 0)` : '0'} AS user_vote
+      FROM discussions d
+      JOIN users u ON u.id = d.user_id
+      LEFT JOIN discussion_votes v ON v.discussion_id = d.id
+      WHERE d.index_key = $1
+      GROUP BY d.id, u.email
+      ORDER BY d.created_at DESC
+      LIMIT 50
+    `, userId ? [key, userId] : [key]);
+
+    const comments = result.rows.map(r => ({
+      id: r.id, companyId: null, indexKey: r.index_key,
+      userId: r.user_id, userEmail: r.user_email, body: r.body,
+      score: r.score, userVote: r.user_vote, createdAt: r.created_at,
+    }));
+    res.json(comments);
+  } catch (err) {
+    console.error('GET index discussions error:', err?.message || err);
+    res.status(500).json({ error: 'Failed to fetch discussions' });
+  }
+});
+
+router.post('/index/:key', requireUser, async (req, res) => {
+  try {
+    const key = req.params.key.toUpperCase();
+    const { body } = req.body || {};
+    if (!body || !body.trim()) return res.status(400).json({ error: 'Comment body is required' });
+
+    const result = await db.query(
+      `INSERT INTO discussions (index_key, user_id, body) VALUES ($1, $2, $3) RETURNING id, index_key, user_id, body, created_at`,
+      [key, req.user.id, body.trim()]
+    );
+    const row = result.rows[0];
+    res.status(201).json({
+      id: row.id, companyId: null, indexKey: row.index_key, userId: row.user_id,
+      userEmail: req.user.email, body: row.body, score: 0, userVote: 0, createdAt: row.created_at,
+    });
+  } catch (err) {
+    console.error('POST index discussion error:', err);
+    res.status(500).json({ error: 'Failed to post comment' });
   }
 });
 
