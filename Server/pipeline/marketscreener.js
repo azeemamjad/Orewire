@@ -5,24 +5,17 @@
 //   3. fetchPeople(slug) parses /quote/stock/<slug>/managers/ for the people table.
 
 const cheerio = require('cheerio');
-const { fetchWithProxy } = require('./proxy-fetch');
-const { addLog } = require('./state');
 
 const BASE = 'https://www.marketscreener.com';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 const HEADERS = {
   'User-Agent': UA,
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9',
+  'Accept': 'text/html,application/xhtml+xml',
   'Accept-Language': 'en-US,en;q=0.9',
-  'Accept-Encoding': 'gzip, deflate, br',
-  'Cache-Control': 'no-cache',
 };
 
 async function getHtml(url) {
-  const res = await fetchWithProxy(url, {
-    headers: HEADERS,
-    redirect: 'follow',
-  }, { logger: (m) => addLog('warn', `[Profiles] ${m}`) });
+  const res = await fetch(url, { headers: HEADERS, redirect: 'follow' });
   if (!res.ok) throw new Error(`MS ${res.status} on ${url}`);
   return res.text();
 }
