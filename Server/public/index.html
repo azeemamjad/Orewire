@@ -254,13 +254,21 @@
       <select id="co-exchange" onchange="_coPage=1;loadCompanies()">
         <option value="">All exchanges</option>
       </select>
+      <select id="co-missing" onchange="_coPage=1;loadCompanies()" title="Filter companies missing enrichment data">
+        <option value="">All companies</option>
+        <option value="any">Missing any field</option>
+        <option value="description">Missing description</option>
+        <option value="website">Missing website</option>
+        <option value="headquarters">Missing headquarters</option>
+        <option value="people">No managers/directors</option>
+      </select>
       <button class="btn btn-ghost btn-sm" onclick="_coPage=1;loadCompanies()">↻ Refresh</button>
       <span id="co-count" class="text-muted" style="margin-left:auto;font-size:12px;"></span>
     </div>
 
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Name</th><th>Exchange</th><th>Ticker</th><th>SEDAR Ticker</th><th>Market Cap (C$M)</th><th>Sector</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Exchange</th><th>Ticker</th><th>SEDAR Ticker</th><th>Market Cap (C$M)</th><th>Enrichment</th><th>Actions</th></tr></thead>
         <tbody id="companies-body"><tr class="empty-row"><td colspan="7">Loading…</td></tr></tbody>
       </table>
     </div>
@@ -648,6 +656,17 @@
   </div>
 </div>
 
+<!-- ── EDIT COMPANY PROFILE MODAL ── -->
+<div class="modal-backdrop" id="profile-modal" onclick="if(event.target===this)closeProfileModal()">
+  <div class="modal" style="max-width:900px;">
+    <div class="modal-header">
+      <h2 id="profile-modal-title">Edit Company Profile</h2>
+      <button class="modal-close" onclick="closeProfileModal()">✕</button>
+    </div>
+    <div class="modal-body" id="profile-modal-body">Loading…</div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div id="toast"></div>
 
@@ -727,9 +746,11 @@ function coChangePage(delta) {
 async function loadCompanies() {
   const search   = document.getElementById('co-search').value;
   const exchange = document.getElementById('co-exchange').value;
+  const missing  = document.getElementById('co-missing').value;
   const params   = new URLSearchParams();
   if (search)   params.set('search', search);
   if (exchange) params.set('exchange', exchange);
+  if (missing)  params.set('missing', missing);
   params.set('page', _coPage);
   params.set('limit', '20');
 
@@ -750,19 +771,32 @@ async function loadCompanies() {
       tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No companies found. Import an Excel file first.</td></tr>';
       return;
     }
-    tbody.innerHTML = rows.map(c => `
+    tbody.innerHTML = rows.map(c => {
+      const has = {
+        desc:  !!(c.description && String(c.description).trim()),
+        web:   !!(c.website && String(c.website).trim()),
+        hq:    !!(c.headquarters && String(c.headquarters).trim()),
+        ppl:   !!c.has_people,
+      };
+      const badge = (ok, label) =>
+        `<span class="badge ${ok ? 'badge-analyzed' : 'badge-pending'}" style="font-size:10px;${ok ? '' : 'opacity:0.55;'}" title="${label}: ${ok ? 'set' : 'missing'}">${ok ? '✓' : '·'} ${label}</span>`;
+      return `
       <tr>
         <td><strong>${esc(c.name)}</strong></td>
         <td><span class="badge badge-pending">${esc(c.exchange ?? '—')}</span></td>
         <td>${esc(c.ticker ?? '—')}</td>
         <td>${esc(c.sedar_ticker ?? '—')}</td>
         <td>${c.market_cap != null ? Number(c.market_cap).toLocaleString() : '—'}</td>
-        <td>${esc(c.sector ?? '—')}</td>
+        <td style="display:flex;gap:4px;flex-wrap:wrap;">
+          ${badge(has.desc, 'Desc')}${badge(has.web, 'Web')}${badge(has.hq, 'HQ')}${badge(has.ppl, 'People')}
+        </td>
         <td style="display:flex;gap:6px;">
+          <button class="btn btn-ghost btn-sm" onclick="openEditProfile(${c.id})">✎ Edit</button>
           <button class="btn btn-primary btn-sm" onclick="quickScrape('${esc(c.name).replace(/'/g,"\\'")}','${esc(c.exchange??'')}','${esc(c.ticker??'')}')">▶ Scrape</button>
           <button class="btn btn-danger btn-sm" onclick="deleteCompany(${c.id})">✕</button>
         </td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
   } catch (e) {
     tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Error: ${esc(e.message)}</td></tr>`;
   }
@@ -789,6 +823,185 @@ async function deleteCompany(id) {
   await fetch(`${API}/api/companies/${id}`, { method: 'DELETE' });
   toast('Company deleted');
   loadCompanies();
+}
+
+// ── Edit Profile (manual enrichment) ──────────────────────────────────────
+
+let _editingCompanyId = null;
+let _editingPeople = [];
+
+function closeProfileModal() {
+  document.getElementById('profile-modal').classList.remove('open');
+  _editingCompanyId = null;
+  _editingPeople = [];
+}
+
+async function openEditProfile(companyId) {
+  _editingCompanyId = companyId;
+  const modal = document.getElementById('profile-modal');
+  const body  = document.getElementById('profile-modal-body');
+  body.innerHTML = '<div class="loading">Loading…</div>';
+  modal.classList.add('open');
+  try {
+    const r = await fetch(`${API}/api/companies/${companyId}/profile`).then(r => r.json());
+    if (r.error) throw new Error(r.error);
+    _editingPeople = r.people || [];
+    document.getElementById('profile-modal-title').textContent =
+      `Edit Profile — ${r.company.name} (${r.company.exchange || ''} ${r.company.ticker || ''})`;
+    renderEditProfileForm(r.company);
+  } catch (e) {
+    body.innerHTML = `<p style="color:var(--danger);">Error: ${esc(e.message)}</p>`;
+  }
+}
+
+function renderEditProfileForm(company) {
+  const body = document.getElementById('profile-modal-body');
+  body.innerHTML = `
+    <div style="display:grid;gap:14px;">
+      <div>
+        <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;">Description</label>
+        <textarea id="pf-description" rows="5" style="width:100%;padding:8px;font:inherit;">${esc(company.description ?? '')}</textarea>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div>
+          <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;">Website</label>
+          <input id="pf-website" type="url" placeholder="https://…" value="${esc(company.website ?? '')}" style="width:100%;padding:8px;font:inherit;" />
+        </div>
+        <div>
+          <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;">Headquarters</label>
+          <input id="pf-hq" type="text" placeholder="City, Country" value="${esc(company.headquarters ?? '')}" style="width:100%;padding:8px;font:inherit;" />
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn btn-ghost" onclick="closeProfileModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveProfile()">Save profile</button>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:10px 0;" />
+
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div class="section-title" style="margin:0;">Managers &amp; Directors</div>
+          <button class="btn btn-primary btn-sm" onclick="addPersonRow()">+ Add person</button>
+        </div>
+        <div class="table-wrap" style="max-height:340px;overflow:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th style="width:90px;">Role</th>
+                <th>Title</th>
+                <th style="width:65px;">Age</th>
+                <th style="width:80px;">Since</th>
+                <th style="width:100px;">Kind</th>
+                <th style="width:60px;"></th>
+              </tr>
+            </thead>
+            <tbody id="pf-people-body"></tbody>
+          </table>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px;">Edit any cell and click <strong>Save</strong> on that row. Removed rows are deleted immediately.</div>
+      </div>
+    </div>
+  `;
+  renderPeopleRows();
+}
+
+function renderPeopleRows() {
+  const tbody = document.getElementById('pf-people-body');
+  if (_editingPeople.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No managers or directors yet — click "+ Add person".</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _editingPeople.map((p, idx) => personRowHtml(p, idx)).join('');
+}
+
+function personRowHtml(p, idx) {
+  const persistedId = p.id != null ? String(p.id) : '';
+  return `
+    <tr data-idx="${idx}" data-id="${persistedId}">
+      <td><input value="${esc(p.name ?? '')}" data-field="name" style="width:100%;padding:5px;font:inherit;" /></td>
+      <td><input value="${esc(p.role_code ?? '')}" data-field="role_code" placeholder="CEO" style="width:100%;padding:5px;font:inherit;text-transform:uppercase;" /></td>
+      <td><input value="${esc(p.title ?? '')}" data-field="title" style="width:100%;padding:5px;font:inherit;" /></td>
+      <td><input type="number" value="${p.age ?? ''}" data-field="age" style="width:100%;padding:5px;font:inherit;" /></td>
+      <td><input type="number" value="${p.since_year ?? ''}" data-field="since_year" placeholder="2024" style="width:100%;padding:5px;font:inherit;" /></td>
+      <td>
+        <select data-field="kind" style="width:100%;padding:5px;font:inherit;">
+          <option value="manager"${p.kind === 'manager' ? ' selected' : ''}>Manager</option>
+          <option value="director"${p.kind === 'director' ? ' selected' : ''}>Director</option>
+        </select>
+      </td>
+      <td style="display:flex;gap:4px;">
+        <button class="btn btn-primary btn-sm" onclick="savePersonRow(${idx})" title="Save row">💾</button>
+        <button class="btn btn-danger btn-sm" onclick="removePersonRow(${idx})" title="Remove">✕</button>
+      </td>
+    </tr>
+  `;
+}
+
+function addPersonRow() {
+  _editingPeople.push({ id: null, name: '', role_code: '', title: '', age: null, since_year: null, kind: 'manager', source: 'manual' });
+  renderPeopleRows();
+}
+
+function _readPersonRow(idx) {
+  const tr = document.querySelector(`#pf-people-body tr[data-idx="${idx}"]`);
+  if (!tr) return null;
+  const data = {};
+  tr.querySelectorAll('[data-field]').forEach(el => { data[el.dataset.field] = el.value; });
+  return data;
+}
+
+async function savePersonRow(idx) {
+  const data = _readPersonRow(idx);
+  if (!data || !data.name?.trim()) { toast('Name is required', 'err'); return; }
+  const persisted = _editingPeople[idx];
+  const url = persisted.id
+    ? `${API}/api/companies/${_editingCompanyId}/people/${persisted.id}`
+    : `${API}/api/companies/${_editingCompanyId}/people`;
+  const method = persisted.id ? 'PUT' : 'POST';
+  try {
+    const r = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).then(r => r.json());
+    if (r.error) throw new Error(r.error);
+    _editingPeople[idx] = r;
+    renderPeopleRows();
+    toast(persisted.id ? 'Person updated' : 'Person added');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function removePersonRow(idx) {
+  const persisted = _editingPeople[idx];
+  if (persisted.id) {
+    if (!confirm(`Remove ${persisted.name}?`)) return;
+    try {
+      await fetch(`${API}/api/companies/${_editingCompanyId}/people/${persisted.id}`, { method: 'DELETE' });
+      toast('Removed');
+    } catch (e) { toast(e.message, 'err'); return; }
+  }
+  _editingPeople.splice(idx, 1);
+  renderPeopleRows();
+}
+
+async function saveProfile() {
+  const body = {
+    description:  document.getElementById('pf-description').value.trim() || null,
+    website:      document.getElementById('pf-website').value.trim() || null,
+    headquarters: document.getElementById('pf-hq').value.trim() || null,
+  };
+  try {
+    const r = await fetch(`${API}/api/companies/${_editingCompanyId}/profile`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(r => r.json());
+    if (r.error) throw new Error(r.error);
+    toast('Profile saved');
+    loadCompanies();   // refresh badges in the list
+  } catch (e) { toast(e.message, 'err'); }
 }
 
 // ── Filings ──

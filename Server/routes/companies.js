@@ -181,10 +181,12 @@ function countryClause(country, paramIdx) {
 // Routes
 // ---------------------------------------------------------------------------
 
-// GET /api/companies?page=1&limit=20&search=&exchange=&commodity=&continent=&country=
+// GET /api/companies?page=1&limit=20&search=&exchange=&commodity=&continent=&country=&missing=
+// `missing` filters to companies lacking enrichment data:
+//   description | website | headquarters | people | any
 router.get('/', async (req, res) => {
   try {
-  const { search, exchange, commodity, continent, country, page = '1', limit = '20' } = req.query;
+  const { search, exchange, commodity, continent, country, missing, page = '1', limit = '20' } = req.query;
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
   const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
   const offset = (pageNum - 1) * limitNum;
@@ -211,6 +213,21 @@ router.get('/', async (req, res) => {
   const cntryCl = countryClause(country, params.length + 1);
   if (cntryCl) { where.push(cntryCl.sql); params.push(...cntryCl.params); }
 
+  if (missing) {
+    const noPeople = `NOT EXISTS (SELECT 1 FROM company_people p WHERE p.company_id = companies.id)`;
+    const checks = {
+      description:  `(description IS NULL OR description = '')`,
+      website:      `(website IS NULL OR website = '')`,
+      headquarters: `(headquarters IS NULL OR headquarters = '')`,
+      people:       noPeople,
+    };
+    if (missing === 'any') {
+      where.push(`(${[checks.description, checks.website, checks.headquarters, checks.people].join(' OR ')})`);
+    } else if (checks[missing]) {
+      where.push(checks[missing]);
+    }
+  }
+
   const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
   const countQuery = `SELECT COUNT(*) as c FROM companies ${whereSql}`;
@@ -219,7 +236,9 @@ router.get('/', async (req, res) => {
 
   const dataParams = [...params, limitNum, offset];
   const dataQuery = `
-    SELECT * FROM companies
+    SELECT companies.*,
+           EXISTS (SELECT 1 FROM company_people p WHERE p.company_id = companies.id) AS has_people
+    FROM companies
     ${whereSql}
     ORDER BY market_cap DESC NULLS LAST, name ASC
     LIMIT $${params.length + 1} OFFSET $${params.length + 2}
@@ -365,6 +384,130 @@ router.delete('/:id', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error('Company delete failed:', err?.message || err);
+    res.status(503).json({ error: 'Database unavailable' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Admin enrichment: read + edit profile (description / website / HQ) + people
+// ---------------------------------------------------------------------------
+
+// GET /api/companies/:id/profile — current enrichment fields + people list
+router.get('/:id/profile', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const c = await db.query(
+      `SELECT id, exchange, ticker, name, description, website, headquarters, ms_slug, profile_scraped_at
+       FROM companies WHERE id = $1`,
+      [id]
+    );
+    if (c.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    const p = await db.query(
+      `SELECT id, name, role_code, title, age, since_year, kind, source, updated_at
+       FROM company_people WHERE company_id = $1
+       ORDER BY CASE kind WHEN 'manager' THEN 0 ELSE 1 END, role_code NULLS LAST, name`,
+      [id]
+    );
+    res.json({ company: c.rows[0], people: p.rows });
+  } catch (err) {
+    console.error('Profile read failed:', err?.message || err);
+    res.status(503).json({ error: 'Database unavailable' });
+  }
+});
+
+// PUT /api/companies/:id/profile — update description / website / headquarters
+router.put('/:id/profile', express.json(), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { description, website, headquarters } = req.body || {};
+    const r = await db.query(
+      `UPDATE companies SET
+         description        = $2,
+         website            = $3,
+         headquarters       = $4,
+         profile_scraped_at = COALESCE(profile_scraped_at, NOW()),
+         updated_at         = NOW()
+       WHERE id = $1
+       RETURNING id, description, website, headquarters`,
+      [id, description ?? null, website ?? null, headquarters ?? null]
+    );
+    if (r.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    res.json(r.rows[0]);
+  } catch (err) {
+    console.error('Profile update failed:', err?.message || err);
+    res.status(503).json({ error: 'Database unavailable' });
+  }
+});
+
+function _normalizePerson(body) {
+  return {
+    name:       (body?.name || '').trim(),
+    role_code:  body?.role_code ? String(body.role_code).trim().toUpperCase().slice(0, 8) : null,
+    title:      body?.title ? String(body.title).trim() : null,
+    age:        body?.age != null && body.age !== '' ? parseInt(body.age, 10) : null,
+    since_year: body?.since_year != null && body.since_year !== '' ? parseInt(body.since_year, 10) : null,
+    kind:       body?.kind === 'director' ? 'director' : 'manager',
+  };
+}
+
+// POST /api/companies/:id/people — add a person
+router.post('/:id/people', express.json(), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const p = _normalizePerson(req.body);
+    if (!p.name) return res.status(400).json({ error: 'name required' });
+    const exists = await db.query('SELECT 1 FROM companies WHERE id = $1', [id]);
+    if (exists.rows.length === 0) return res.status(404).json({ error: 'Company not found' });
+    const r = await db.query(
+      `INSERT INTO company_people (company_id, name, role_code, title, age, since_year, kind, source, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'manual', NOW())
+       ON CONFLICT (company_id, name, kind) DO UPDATE SET
+         role_code  = EXCLUDED.role_code,
+         title      = EXCLUDED.title,
+         age        = EXCLUDED.age,
+         since_year = EXCLUDED.since_year,
+         source     = 'manual',
+         updated_at = NOW()
+       RETURNING id, name, role_code, title, age, since_year, kind, source, updated_at`,
+      [id, p.name, p.role_code, p.title, p.age, p.since_year, p.kind]
+    );
+    res.json(r.rows[0]);
+  } catch (err) {
+    console.error('Person add failed:', err?.message || err);
+    res.status(503).json({ error: err.message || 'Database unavailable' });
+  }
+});
+
+// PUT /api/companies/:id/people/:personId — update one person
+router.put('/:id/people/:personId', express.json(), async (req, res) => {
+  try {
+    const { id, personId } = req.params;
+    const p = _normalizePerson(req.body);
+    if (!p.name) return res.status(400).json({ error: 'name required' });
+    const r = await db.query(
+      `UPDATE company_people SET
+         name = $3, role_code = $4, title = $5, age = $6, since_year = $7, kind = $8,
+         source = 'manual', updated_at = NOW()
+       WHERE id = $2 AND company_id = $1
+       RETURNING id, name, role_code, title, age, since_year, kind, source, updated_at`,
+      [id, personId, p.name, p.role_code, p.title, p.age, p.since_year, p.kind]
+    );
+    if (r.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    res.json(r.rows[0]);
+  } catch (err) {
+    console.error('Person update failed:', err?.message || err);
+    res.status(503).json({ error: err.message || 'Database unavailable' });
+  }
+});
+
+// DELETE /api/companies/:id/people/:personId — remove a person
+router.delete('/:id/people/:personId', async (req, res) => {
+  try {
+    const { id, personId } = req.params;
+    await db.query('DELETE FROM company_people WHERE id = $1 AND company_id = $2', [personId, id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Person delete failed:', err?.message || err);
     res.status(503).json({ error: 'Database unavailable' });
   }
 });
