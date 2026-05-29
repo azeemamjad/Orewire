@@ -10,11 +10,38 @@ async function migrate() {
     CREATE TABLE IF NOT EXISTS users (
       id          SERIAL PRIMARY KEY,
       email       TEXT UNIQUE NOT NULL,
+      username    TEXT UNIQUE,
       password    TEXT NOT NULL,
       salt        TEXT NOT NULL,
+      first_name  TEXT,
+      last_name   TEXT,
+      two_step_enabled BOOLEAN DEFAULT FALSE,
+      email_verified BOOLEAN DEFAULT FALSE,
       created_at  TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name TEXT`);
+  await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name TEXT`);
+  await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT`);
+  await safeQuery(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_unique ON users(username) WHERE username IS NOT NULL`);
+  await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS two_step_enabled BOOLEAN DEFAULT FALSE`);
+  await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE`);
+  await safeQuery(`UPDATE users SET email_verified = TRUE WHERE email_verified IS NULL`);
+
+  // Auth OTP / password reset
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS auth_otps (
+      id          SERIAL PRIMARY KEY,
+      user_id     INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      email       TEXT NOT NULL,
+      purpose     TEXT NOT NULL,
+      code_hash   TEXT NOT NULL,
+      expires_at  TIMESTAMPTZ NOT NULL,
+      consumed_at TIMESTAMPTZ,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_auth_otps_email_purpose ON auth_otps(email, purpose, created_at DESC)`);
 
   // Discussions
   await db.query(`
@@ -118,6 +145,32 @@ async function migrate() {
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_applications_job ON job_applications(job_id)`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_applications_user ON job_applications(user_id)`);
   await safeQuery(`CREATE UNIQUE INDEX IF NOT EXISTS idx_applications_unique ON job_applications(job_id, email)`);
+
+  // Company profile enrichment (MarketScreener)
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS description TEXT`);
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS website TEXT`);
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS headquarters TEXT`);
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS ms_slug TEXT`);
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS profile_scraped_at TIMESTAMPTZ`);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_companies_ms_slug ON companies(ms_slug)`);
+
+  // Company managers / directors (one row per person, source = 'marketscreener' | 'website')
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS company_people (
+      id          SERIAL PRIMARY KEY,
+      company_id  INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      name        TEXT NOT NULL,
+      role_code   TEXT,
+      title       TEXT,
+      age         INTEGER,
+      since_year  INTEGER,
+      kind        TEXT NOT NULL DEFAULT 'manager',
+      source      TEXT NOT NULL DEFAULT 'marketscreener',
+      updated_at  TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (company_id, name, kind)
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_company_people_company ON company_people(company_id)`);
 
   // Watchlist
   await db.query(`

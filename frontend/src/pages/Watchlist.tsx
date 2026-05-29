@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Navigate, Link } from "react-router-dom";
-import { ChevronDown, ChevronUp, Plus, Search, Trash2, ArrowUpRight, ArrowDownRight, ArrowUpDown } from "lucide-react";
+import { Link } from "react-router-dom";
+import { ChevronDown, ChevronUp, Plus, Search, Trash2, ArrowUpRight, ArrowDownRight, ArrowUpDown, Lock } from "lucide-react";
 import Nav from "@/components/site/Nav";
 import MarketStrip from "@/components/site/MarketStrip";
+import MorningBrief from "@/components/site/MorningBrief";
 import Footer from "@/components/site/Footer";
 import { fetchCompanies, fetchCommodities, fetchCurrencies, fetchIndexes, fetchWatchlist, addToWatchlist, removeFromWatchlist, companySlug, type Company } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
@@ -138,7 +139,9 @@ const Watchlist = () => {
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
-        <Nav /><MarketStrip />
+        <Nav />
+        <MarketStrip />
+        <MorningBrief />
         <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading...</div>
         <Footer />
       </div>
@@ -146,7 +149,39 @@ const Watchlist = () => {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login?redirect=/watchlist" replace />;
+    return (
+      <div className="min-h-screen bg-background text-foreground flex flex-col">
+        <Nav />
+        <MarketStrip />
+        <MorningBrief />
+        <main className="flex-1 flex items-center justify-center px-4 py-20">
+          <div className="max-w-md w-full border border-border bg-card p-8 text-center">
+            <div className="mx-auto w-12 h-12 grid place-items-center bg-muted rounded-full mb-4">
+              <Lock className="w-5 h-5" />
+            </div>
+            <h1 className="font-display text-2xl tracking-tight mb-2">Sign in to use your watchlist</h1>
+            <p className="text-sm text-muted-foreground mb-6">
+              Create a free account to save companies and access full filings &amp; insider data.
+            </p>
+            <div className="flex gap-2 justify-center">
+              <Link
+                to="/register?redirect=/watchlist"
+                className="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium h-10 px-4 py-2 rounded-none bg-accent text-accent-foreground hover:bg-accent/90 transition-colors"
+              >
+                Sign up free
+              </Link>
+              <Link
+                to="/login?redirect=/watchlist"
+                className="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 rounded-none transition-colors"
+              >
+                Sign in
+              </Link>
+            </div>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
   }
 
   const handleAddCompany = async (c: Company) => {
@@ -168,6 +203,7 @@ const Watchlist = () => {
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <Nav />
       <MarketStrip />
+      <MorningBrief />
 
       <section className="bg-background border-b border-border">
         <div className="max-w-[1200px] mx-auto px-4 lg:px-6 py-10 lg:py-14 flex flex-col lg:flex-row lg:items-end justify-between gap-6">

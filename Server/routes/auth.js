@@ -13,6 +13,10 @@ const ACCESS_TTL  = '5h';
 const REFRESH_TTL = '7d';
 const ACCESS_TTL_MS  = 5 * 60 * 60 * 1000;
 const REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const OTP_TTL_MINUTES = 10;
+const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const AUTH_FROM_EMAIL = process.env.AUTH_FROM_EMAIL || 'auth@orewire.com';
 
 // In-memory store for admin sessions and revoked refresh tokens.
 // (Admin still uses opaque tokens — only user auth migrates to JWT.)
@@ -25,6 +29,10 @@ const revokedRefreshTokens = new Set();
 
 function sha256(str) {
   return crypto.createHash('sha256').update(str).digest('hex');
+}
+
+function generateOtpCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
 }
 
 function hashPassword(password, salt) {
@@ -46,7 +54,7 @@ function verifyPassword(password, salt, expectedHash) {
 // ---------------------------------------------------------------------------
 
 function issueTokens(user) {
-  const payload = { sub: user.id, email: user.email };
+  const payload = { sub: user.id, email: user.email, username: user.username || null };
   const accessToken  = jwt.sign(payload, JWT_SECRET,         { expiresIn: ACCESS_TTL });
   const refreshToken = jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: REFRESH_TTL });
   return { accessToken, refreshToken };
@@ -63,6 +71,78 @@ function verifyRefreshToken(token) {
   if (revokedRefreshTokens.has(token)) return null;
   try { return jwt.verify(token, JWT_REFRESH_SECRET); }
   catch { return null; }
+}
+
+async function sendEmailViaResend(to, subject, html) {
+  if (!RESEND_API_KEY) throw new Error('RESEND_API_KEY not configured');
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+    },
+    body: JSON.stringify({
+      from: AUTH_FROM_EMAIL,
+      to: [to],
+      subject,
+      html,
+    }),
+  });
+  if (!res.ok) throw new Error(`Resend failed: ${res.status}`);
+}
+
+async function issueAndSendOtp({ userId, email, purpose }) {
+  const code = generateOtpCode();
+  const now = Date.now();
+  const expiresAt = new Date(now + OTP_TTL_MINUTES * 60 * 1000);
+  await db.query(
+    `INSERT INTO auth_otps (user_id, email, purpose, code_hash, expires_at)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [userId || null, email.toLowerCase(), purpose, sha256(code), expiresAt]
+  );
+  const purposeText =
+    purpose === 'register'
+      ? 'verify your account'
+      : purpose === 'login_2fa'
+        ? 'complete your sign in'
+        : 'reset your password';
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height:1.5;">
+      <h2>Orewire verification code</h2>
+      <p>Use the code below to ${purposeText}:</p>
+      <p style="font-size:24px;font-weight:bold;letter-spacing:2px;">${code}</p>
+      <p>This code expires in ${OTP_TTL_MINUTES} minutes.</p>
+    </div>
+  `;
+  await sendEmailViaResend(email.toLowerCase(), 'Your Orewire verification code', html);
+}
+
+async function canResendOtp(email, purpose) {
+  const r = await db.query(
+    `SELECT created_at FROM auth_otps WHERE email = $1 AND purpose = $2 ORDER BY created_at DESC LIMIT 1`,
+    [email.toLowerCase(), purpose]
+  );
+  const last = r.rows[0]?.created_at ? new Date(r.rows[0].created_at).getTime() : 0;
+  const remainingMs = Math.max(0, OTP_RESEND_COOLDOWN_MS - (Date.now() - last));
+  return { ok: remainingMs === 0, remainingMs };
+}
+
+async function consumeOtp(email, purpose, code) {
+  const r = await db.query(
+    `SELECT id, user_id, expires_at, consumed_at, code_hash
+       FROM auth_otps
+      WHERE email = $1 AND purpose = $2
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [email.toLowerCase(), purpose]
+  );
+  const row = r.rows[0];
+  if (!row) return { ok: false, error: 'No code found' };
+  if (row.consumed_at) return { ok: false, error: 'Code already used' };
+  if (new Date(row.expires_at).getTime() < Date.now()) return { ok: false, error: 'Code expired' };
+  if (sha256(String(code || '')) !== row.code_hash) return { ok: false, error: 'Invalid code' };
+  await db.query(`UPDATE auth_otps SET consumed_at = NOW() WHERE id = $1`, [row.id]);
+  return { ok: true, userId: row.user_id };
 }
 
 // ---------------------------------------------------------------------------
@@ -119,35 +199,112 @@ function clearAdminCookie(res) {
 // ---------------------------------------------------------------------------
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const USERNAME_RE = /^[a-zA-Z0-9_]{3,24}$/;
+const NAME_MIN_LEN = 2;
+
+function validateName(value, label) {
+  const trimmed = String(value || '').trim();
+  if (trimmed.length < NAME_MIN_LEN) {
+    return { ok: false, error: `${label} must be at least ${NAME_MIN_LEN} characters` };
+  }
+  return { ok: true, value: trimmed };
+}
 
 router.post('/register', express.json(), async (req, res) => {
   try {
-    const { email, password } = req.body || {};
-    if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+    const { firstName, lastName, username, email, password } = req.body || {};
+    if (!firstName || !lastName || !username || !email || !password) return res.status(400).json({ error: 'First name, last name, username, email and password are required' });
+    const first = validateName(firstName, 'First name');
+    if (!first.ok) return res.status(400).json({ error: first.error });
+    const last = validateName(lastName, 'Last name');
+    if (!last.ok) return res.status(400).json({ error: last.error });
     if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Invalid email' });
+    if (!USERNAME_RE.test(username)) return res.status(400).json({ error: 'Username must be 3-24 chars: letters, numbers or underscore' });
     if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
 
-    const existing = await db.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
-    if (existing.rows.length > 0) return res.status(409).json({ error: 'An account with that email already exists' });
-
     const { salt, hash } = hashPassword(password);
+    const existing = await db.query('SELECT id, email_verified FROM users WHERE email = $1', [email.toLowerCase()]);
+    const existingUsername = await db.query('SELECT id FROM users WHERE LOWER(username) = LOWER($1)', [username.trim()]);
+    if (existing.rows.length > 0) {
+      const message = existing.rows[0].email_verified
+        ? 'An account with that email already exists'
+        : 'Account already exists but is not verified yet. Please use resend OTP.';
+      return res.status(409).json({ error: message, requiresVerification: !existing.rows[0].email_verified, email: email.toLowerCase() });
+    }
+    if (existingUsername.rows.length > 0) {
+      return res.status(409).json({ error: 'Username is already taken' });
+    }
     const inserted = await db.query(
-      'INSERT INTO users (email, password, salt) VALUES ($1, $2, $3) RETURNING id, email',
-      [email.toLowerCase(), hash, salt]
+      `INSERT INTO users (first_name, last_name, username, email, password, salt, email_verified)
+       VALUES ($1, $2, $3, $4, $5, $6, FALSE)
+       RETURNING id`,
+      [first.value, last.value, username.trim(), email.toLowerCase(), hash, salt]
     );
-    const user = inserted.rows[0];
-    const { accessToken, refreshToken } = issueTokens(user);
-    res.status(201).json({
-      accessToken, refreshToken,
-      accessExpiresAt:  Date.now() + ACCESS_TTL_MS,
-      refreshExpiresAt: Date.now() + REFRESH_TTL_MS,
-      user: { id: user.id, email: user.email },
-      // backwards compat (old clients still using "token")
-      token: accessToken,
-    });
+    const userId = inserted.rows[0].id;
+
+    const canResend = await canResendOtp(email, 'register');
+    if (!canResend.ok) {
+      return res.status(429).json({ error: `Please wait ${Math.ceil(canResend.remainingMs / 1000)} seconds before requesting another code` });
+    }
+    await issueAndSendOtp({ userId, email, purpose: 'register' });
+    res.status(201).json({ ok: true, requiresVerification: true, email: email.toLowerCase() });
   } catch (err) {
     console.error('Register error:', err);
     res.status(500).json({ error: 'Registration failed' });
+  }
+});
+
+router.post('/verify-otp', express.json(), async (req, res) => {
+  try {
+    const { email, otp } = req.body || {};
+    if (!email || !otp) return res.status(400).json({ error: 'Email and OTP required' });
+    const verify = await consumeOtp(email, 'register', otp);
+    if (!verify.ok) return res.status(400).json({ error: verify.error });
+
+    const userResult = await db.query(
+      `UPDATE users SET email_verified = TRUE
+        WHERE id = $1
+      RETURNING id, email, username`,
+      [verify.userId]
+    );
+    const user = userResult.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const { accessToken, refreshToken } = issueTokens(user);
+    res.json({
+      accessToken, refreshToken,
+      accessExpiresAt: Date.now() + ACCESS_TTL_MS,
+      refreshExpiresAt: Date.now() + REFRESH_TTL_MS,
+      user: { id: user.id, email: user.email, username: user.username || null },
+      token: accessToken,
+    });
+  } catch (err) {
+    console.error('Verify OTP error:', err);
+    res.status(500).json({ error: 'Verification failed' });
+  }
+});
+
+router.post('/resend-otp', express.json(), async (req, res) => {
+  try {
+    const { email, purpose = 'register' } = req.body || {};
+    if (!email) return res.status(400).json({ error: 'Email required' });
+    const allowedPurpose =
+      purpose === 'reset_password'
+        ? 'reset_password'
+        : purpose === 'login_2fa'
+          ? 'login_2fa'
+          : 'register';
+    const canResend = await canResendOtp(email, allowedPurpose);
+    if (!canResend.ok) {
+      return res.status(429).json({ error: `Please wait ${Math.ceil(canResend.remainingMs / 1000)} seconds before requesting another code`, retryAfterMs: canResend.remainingMs });
+    }
+    const user = await db.query(`SELECT id FROM users WHERE email = $1`, [email.toLowerCase()]);
+    if (!user.rows[0]) return res.json({ ok: true });
+    await issueAndSendOtp({ userId: user.rows[0].id, email, purpose: allowedPurpose });
+    res.json({ ok: true, retryAfterMs: OTP_RESEND_COOLDOWN_MS });
+  } catch (err) {
+    console.error('Resend OTP error:', err);
+    res.status(500).json({ error: 'Failed to resend code' });
   }
 });
 
@@ -158,7 +315,7 @@ router.post('/login', express.json(), async (req, res) => {
 
     if (email) {
       const result = await db.query(
-        'SELECT id, email, password, salt FROM users WHERE email = $1',
+        'SELECT id, email, username, password, salt, two_step_enabled, email_verified, first_name, last_name FROM users WHERE email = $1 OR LOWER(username) = LOWER($1)',
         [email.toLowerCase()]
       );
       const user = result.rows[0];
@@ -166,12 +323,40 @@ router.post('/login', express.json(), async (req, res) => {
       if (!verifyPassword(password, user.salt, user.password)) {
         return res.status(401).json({ error: 'Invalid email or password' });
       }
+      if (!user.email_verified) {
+        return res.status(403).json({ error: 'Please verify your email with OTP before signing in' });
+      }
+      if (user.two_step_enabled) {
+        const canResend = await canResendOtp(user.email, 'login_2fa');
+        if (!canResend.ok) {
+          return res.status(429).json({
+            error: `Please wait ${Math.ceil(canResend.remainingMs / 1000)} seconds before requesting another code`,
+            retryAfterMs: canResend.remainingMs,
+            requiresTwoStep: true,
+            email: user.email,
+          });
+        }
+        await issueAndSendOtp({ userId: user.id, email: user.email, purpose: 'login_2fa' });
+        return res.json({
+          ok: true,
+          requiresTwoStep: true,
+          email: user.email,
+          retryAfterMs: OTP_RESEND_COOLDOWN_MS,
+        });
+      }
       const { accessToken, refreshToken } = issueTokens(user);
       return res.json({
         accessToken, refreshToken,
         accessExpiresAt:  Date.now() + ACCESS_TTL_MS,
         refreshExpiresAt: Date.now() + REFRESH_TTL_MS,
-        user: { id: user.id, email: user.email },
+        user: {
+          id: user.id,
+          email: user.email,
+          username: user.username || null,
+          firstName: user.first_name || null,
+          lastName: user.last_name || null,
+          twoStepEnabled: !!user.two_step_enabled,
+        },
         token: accessToken,
       });
     }
@@ -188,17 +373,185 @@ router.post('/login', express.json(), async (req, res) => {
   }
 });
 
+router.post('/forgot-password', express.json(), async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    if (!email || !EMAIL_RE.test(email)) return res.json({ ok: true });
+    const user = await db.query(`SELECT id, email_verified FROM users WHERE email = $1`, [email.toLowerCase()]);
+    if (!user.rows[0] || !user.rows[0].email_verified) return res.json({ ok: true });
+    const canResend = await canResendOtp(email, 'reset_password');
+    if (!canResend.ok) {
+      return res.status(429).json({ error: `Please wait ${Math.ceil(canResend.remainingMs / 1000)} seconds before requesting another code`, retryAfterMs: canResend.remainingMs });
+    }
+    await issueAndSendOtp({ userId: user.rows[0].id, email, purpose: 'reset_password' });
+    res.json({ ok: true, retryAfterMs: OTP_RESEND_COOLDOWN_MS });
+  } catch (err) {
+    console.error('Forgot password error:', err);
+    res.status(500).json({ error: 'Could not process request' });
+  }
+});
+
+router.post('/reset-password', express.json(), async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body || {};
+    if (!email || !otp || !newPassword) return res.status(400).json({ error: 'Email, OTP and new password required' });
+    if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    const verify = await consumeOtp(email, 'reset_password', otp);
+    if (!verify.ok) return res.status(400).json({ error: verify.error });
+    const { salt, hash } = hashPassword(newPassword);
+    await db.query(`UPDATE users SET password = $1, salt = $2 WHERE id = $3`, [hash, salt, verify.userId]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Reset password error:', err);
+    res.status(500).json({ error: 'Reset failed' });
+  }
+});
+
+router.post('/verify-login-otp', express.json(), async (req, res) => {
+  try {
+    const { email, otp } = req.body || {};
+    if (!email || !otp) return res.status(400).json({ error: 'Email and OTP required' });
+    const verify = await consumeOtp(email, 'login_2fa', otp);
+    if (!verify.ok) return res.status(400).json({ error: verify.error });
+    const userResult = await db.query(
+      `SELECT id, email, username, first_name, last_name, two_step_enabled, email_verified
+         FROM users
+        WHERE id = $1`,
+      [verify.userId]
+    );
+    const user = userResult.rows[0];
+    if (!user || !user.email_verified) return res.status(401).json({ error: 'Invalid session' });
+    const { accessToken, refreshToken } = issueTokens(user);
+    res.json({
+      accessToken, refreshToken,
+      accessExpiresAt: Date.now() + ACCESS_TTL_MS,
+      refreshExpiresAt: Date.now() + REFRESH_TTL_MS,
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username || null,
+        firstName: user.first_name || null,
+        lastName: user.last_name || null,
+        twoStepEnabled: !!user.two_step_enabled,
+      },
+      token: accessToken,
+    });
+  } catch (err) {
+    console.error('Verify login OTP error:', err);
+    res.status(500).json({ error: 'Verification failed' });
+  }
+});
+
+router.get('/profile', requireUser, async (req, res) => {
+  try {
+    const r = await db.query(
+      `SELECT id, email, username, first_name, last_name, two_step_enabled, email_verified, created_at
+         FROM users
+        WHERE id = $1`,
+      [req.user.id]
+    );
+    const user = r.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username || null,
+        firstName: user.first_name || '',
+        lastName: user.last_name || '',
+        twoStepEnabled: !!user.two_step_enabled,
+        emailVerified: !!user.email_verified,
+        createdAt: user.created_at,
+      },
+    });
+  } catch (err) {
+    console.error('Profile fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+router.patch('/profile', requireUser, express.json(), async (req, res) => {
+  try {
+    const { firstName, lastName, username } = req.body || {};
+    if (!firstName || !lastName || !username) {
+      return res.status(400).json({ error: 'First name, last name and username are required' });
+    }
+    const first = validateName(firstName, 'First name');
+    if (!first.ok) return res.status(400).json({ error: first.error });
+    const last = validateName(lastName, 'Last name');
+    if (!last.ok) return res.status(400).json({ error: last.error });
+    if (!USERNAME_RE.test(username)) return res.status(400).json({ error: 'Username must be 3-24 chars: letters, numbers or underscore' });
+    const exists = await db.query(
+      `SELECT id FROM users WHERE LOWER(username) = LOWER($1) AND id <> $2`,
+      [String(username).trim(), req.user.id]
+    );
+    if (exists.rows[0]) return res.status(409).json({ error: 'Username is already taken' });
+    const updated = await db.query(
+      `UPDATE users
+          SET first_name = $1, last_name = $2, username = $3
+        WHERE id = $4
+      RETURNING id, email, username, first_name, last_name, two_step_enabled, email_verified, created_at`,
+      [first.value, last.value, String(username).trim(), req.user.id]
+    );
+    const user = updated.rows[0];
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username || null,
+        firstName: user.first_name || '',
+        lastName: user.last_name || '',
+        twoStepEnabled: !!user.two_step_enabled,
+        emailVerified: !!user.email_verified,
+        createdAt: user.created_at,
+      },
+    });
+  } catch (err) {
+    console.error('Profile update error:', err);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+router.patch('/profile/two-step', requireUser, express.json(), async (req, res) => {
+  try {
+    const enabled = !!req.body?.enabled;
+    const updated = await db.query(
+      `UPDATE users SET two_step_enabled = $1
+        WHERE id = $2
+      RETURNING id, email, username, first_name, last_name, two_step_enabled, email_verified, created_at`,
+      [enabled, req.user.id]
+    );
+    const user = updated.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username || null,
+        firstName: user.first_name || '',
+        lastName: user.last_name || '',
+        twoStepEnabled: !!user.two_step_enabled,
+        emailVerified: !!user.email_verified,
+        createdAt: user.created_at,
+      },
+    });
+  } catch (err) {
+    console.error('Two-step update error:', err);
+    res.status(500).json({ error: 'Failed to update two-step verification' });
+  }
+});
+
 // POST /api/auth/refresh — exchange refresh token for a new access token
 router.post('/refresh', express.json(), (req, res) => {
   const { refreshToken } = req.body || {};
   const payload = verifyRefreshToken(refreshToken);
   if (!payload) return res.status(401).json({ error: 'Invalid or expired refresh token' });
 
-  const accessToken = jwt.sign({ sub: payload.sub, email: payload.email }, JWT_SECRET, { expiresIn: ACCESS_TTL });
+  const accessToken = jwt.sign({ sub: payload.sub, email: payload.email, username: payload.username || null }, JWT_SECRET, { expiresIn: ACCESS_TTL });
   res.json({
     accessToken,
     accessExpiresAt: Date.now() + ACCESS_TTL_MS,
-    user: { id: payload.sub, email: payload.email },
+    user: { id: payload.sub, email: payload.email, username: payload.username || null },
     token: accessToken,
   });
 });
@@ -207,13 +560,13 @@ router.get('/me', (req, res) => {
   const token = req.headers['authorization']?.replace(/^Bearer\s+/i, '') || req.headers['x-auth-token'];
   const payload = verifyAccessToken(token);
   if (!payload) return res.status(401).json({ authenticated: false });
-  res.json({ authenticated: true, user: { id: payload.sub, email: payload.email } });
+  res.json({ authenticated: true, user: { id: payload.sub, email: payload.email, username: payload.username || null } });
 });
 
 router.get('/check', (req, res) => {
   const token = req.headers['authorization']?.replace(/^Bearer\s+/i, '') || req.headers['x-auth-token'];
   const payload = verifyAccessToken(token);
-  if (payload) return res.json({ ok: true, user: { id: payload.sub, email: payload.email } });
+  if (payload) return res.json({ ok: true, user: { id: payload.sub, email: payload.email, username: payload.username || null } });
   res.status(401).json({ error: 'Session expired or invalid' });
 });
 
@@ -281,7 +634,7 @@ function extractToken(req) {
 function attachUser(req, _res, next) {
   req.user = null;
   const payload = verifyAccessToken(extractToken(req));
-  if (payload) req.user = { id: payload.sub, email: payload.email };
+  if (payload) req.user = { id: payload.sub, email: payload.email, username: payload.username || null };
   next();
 }
 
@@ -290,7 +643,7 @@ function requireUser(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Login required' });
   const payload = verifyAccessToken(token);
   if (!payload) return res.status(401).json({ error: 'Session expired — please log in again' });
-  req.user = { id: payload.sub, email: payload.email };
+  req.user = { id: payload.sub, email: payload.email, username: payload.username || null };
   next();
 }
 

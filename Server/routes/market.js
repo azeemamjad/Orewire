@@ -223,12 +223,21 @@ router.get('/movers', async (req, res) => {
 // ---------------------------------------------------------------------------
 // Each commodity has fallback symbols tried in order until one returns data.
 const COMMODITY_SYMBOLS = [
-  { key: 'gold',    label: 'Gold',     unit: 'oz', tv: ['TVC:GOLD', 'OANDA:XAUUSD'] },
-  { key: 'silver',  label: 'Silver',   unit: 'oz', tv: ['TVC:SILVER', 'OANDA:XAGUSD'] },
-  { key: 'copper',  label: 'Copper',   unit: 'lb', tv: ['COMEX:HG1!', 'TVC:COPPER', 'CAPITALCOM:COPPER'] },
-  { key: 'lithium', label: 'Lithium',  unit: 'ETF', tv: ['AMEX:LIT', 'NASDAQ:LIT', 'NYSEARCA:LIT'] },
-  { key: 'uranium', label: 'U₃O₈', unit: 'lb', tv: ['AMEX:URA', 'NYSEARCA:URA'] },
-  { key: 'nickel',  label: 'Nickel',   unit: 't',  tv: ['SHFE:NI1!', 'NYMEX:LN1!', 'AMEX:NIKL', 'LME_DLY:N1!', 'TVC:NICKEL'] },
+  { key: 'gold',      label: 'Gold',            unit: 'oz',  tv: ['COMEX:GC1!', 'TVC:GOLD', 'OANDA:XAUUSD'] },
+  { key: 'silver',    label: 'Silver',          unit: 'oz',  tv: ['COMEX:SI1!', 'TVC:SILVER', 'OANDA:XAGUSD'] },
+  { key: 'copper',    label: 'Copper',          unit: 'lb',  tv: ['COMEX:HG1!', 'TVC:COPPER', 'CAPITALCOM:COPPER'] },
+  { key: 'uranium',   label: 'Uranium',         unit: 'lb',  tv: ['NYMEX:UX1!', 'AMEX:URA', 'NYSEARCA:URA'] },
+  { key: 'lithium',   label: 'Lithium',         unit: 't',   tv: ['TVC:LITHIUM', 'AMEX:LIT', 'NYSEARCA:LIT'] },
+  { key: 'iron_ore',  label: 'Iron Ore',        unit: 't',   tv: ['TVC:IRONORE', 'SGX:FEF1!', 'NYMEX:TIO1!'] },
+  { key: 'nickel',    label: 'Nickel',          unit: 't',   tv: ['LME:NI1!', 'SHFE:NI1!', 'NYMEX:LN1!', 'TVC:NICKEL'] },
+  { key: 'zinc',      label: 'Zinc',            unit: 't',   tv: ['LME:ZN1!', 'SHFE:ZN1!'] },
+  { key: 'brent',     label: 'Brent Crude Oil', unit: 'bbl', tv: ['NYMEX:BB1!', 'TVC:UKOIL', 'ICEEUR:BRN1!'] },
+  { key: 'wti',       label: 'WTI Crude Oil',   unit: 'bbl', tv: ['NYMEX:CL1!', 'TVC:USOIL', 'CAPITALCOM:OIL_CRUDE'] },
+  { key: 'tin',       label: 'Tin',             unit: 't',   tv: ['LME:SN1!'] },
+  { key: 'cobalt',    label: 'Cobalt',          unit: 't',   tv: ['LME:CA1!'] },
+  { key: 'lead',      label: 'Lead',            unit: 't',   tv: ['LME:PB1!', 'SHFE:PB1!'] },
+  { key: 'platinum',  label: 'Platinum',        unit: 'oz',  tv: ['NYMEX:PL1!', 'TVC:PLATINUM', 'OANDA:XPTUSD'] },
+  { key: 'palladium', label: 'Palladium',       unit: 'oz',  tv: ['NYMEX:PA1!', 'TVC:PALLADIUM', 'OANDA:XPDUSD'] },
 ];
 
 const COMMODITY_CACHE_TTL_MS = 30 * 60 * 1000;
@@ -271,16 +280,20 @@ router.get('/commodities', async (_req, res) => {
 // ---------------------------------------------------------------------------
 
 const INDEX_SYMBOLS = [
-  { key: 'TSX',     label: 'S&P/TSX Composite',          tv: ['TSX:TSX', 'INDEX:TSX'], about: 'S&P/TSX Composite Index — the benchmark for the Toronto Stock Exchange covering large-cap Canadian equities.' },
-  { key: 'TSXV',    label: 'TSX Venture Composite',      tv: ['TSX:TSXV', 'INDEX:JX'],   about: 'Composite benchmark of TSX Venture Exchange listings — heavily weighted to junior mining and exploration issuers in Canada.' },
-  { key: 'TSXMINE', label: 'S&P/TSX Global Mining',      tv: ['TSX:TXGM', 'INDEX:TXGM'], about: 'S&P/TSX Global Mining Index tracks Canadian-listed and global mining producers across precious, base and industrial metals.' },
-  { key: 'XAU',     label: 'Philadelphia Gold & Silver', tv: ['NASDAQ:XAU', 'INDEX:XAU'], about: 'PHLX Gold/Silver Index (XAU) — basket of US-listed precious metals producers.' },
-  { key: 'HUI',     label: 'NYSE Arca Gold BUGS',        tv: ['NYSE:HUI', 'INDEX:HUI'], about: 'NYSE Arca Gold BUGS Index (HUI) — unhedged gold producers, more leveraged to gold price than XAU.' },
-  { key: 'GDX',     label: 'VanEck Gold Miners ETF',     tv: ['AMEX:GDX', 'NYSEARCA:GDX'], about: 'Large-cap gold miners ETF — tracks NYSE Arca Gold Miners Index.' },
-  { key: 'GDXJ',    label: 'VanEck Junior Gold Miners',  tv: ['AMEX:GDXJ', 'NYSEARCA:GDXJ'], about: 'Junior gold miners ETF — small and mid-cap gold producers and explorers.' },
-  { key: 'COPX',    label: 'Global X Copper Miners ETF', tv: ['AMEX:COPX', 'NYSEARCA:COPX'], about: 'Global copper miners ETF — pure-play exposure to copper producers worldwide.' },
-  { key: 'URA',     label: 'Global X Uranium ETF',       tv: ['AMEX:URA', 'NYSEARCA:URA'], about: 'Uranium miners and nuclear fuel ETF.' },
-  { key: 'LIT',     label: 'Global X Lithium ETF',       tv: ['AMEX:LIT', 'NYSEARCA:LIT'], about: 'Lithium miners and battery manufacturers ETF.' },
+  { key: 'GDXJ', label: 'Junior Gold Miners ETF',   tv: ['AMEX:GDXJ', 'NYSEARCA:GDXJ'],          about: 'Junior gold miners ETF — small and mid-cap gold producers and explorers.' },
+  { key: 'TSXV', label: 'TSX Venture Composite',    tv: ['TSX:JX', 'TSX:TSXV', 'INDEX:JX'],      about: 'Composite benchmark of TSX Venture Exchange listings — heavily weighted to junior mining and exploration issuers in Canada.' },
+  { key: 'XMM',  label: 'ASX 300 Metals & Mining',  tv: ['ASX:XMM', 'INDEX:XMM', 'ASX:MVR'],     about: 'S&P/ASX 300 Metals & Mining Index — Australian-listed mining and metals producers. Live price proxied via ASX:MVR (VanEck Australian Resources ETF) when the index OHLC is unavailable.' },
+  { key: 'GDX',  label: 'Gold Miners ETF',          tv: ['AMEX:GDX', 'NYSEARCA:GDX'],            about: 'Large-cap gold miners ETF — tracks NYSE Arca Gold Miners Index.' },
+  { key: 'XGD',  label: 'S&P/TSX Gold Index',       tv: ['TSX:XGD', 'INDEX:XGD'],                about: 'S&P/TSX Gold Index — Canadian-listed gold producers.' },
+  { key: 'URA',  label: 'Uranium Miners ETF',       tv: ['AMEX:URA', 'NYSEARCA:URA'],            about: 'Uranium miners and nuclear fuel ETF.' },
+  { key: 'COPX', label: 'Copper Miners ETF',        tv: ['AMEX:COPX', 'NYSEARCA:COPX'],          about: 'Global copper miners ETF — pure-play exposure to copper producers worldwide.' },
+  { key: 'SIL',  label: 'Silver Miners ETF',        tv: ['AMEX:SIL', 'NYSEARCA:SIL'],            about: 'Global X Silver Miners ETF — primary-silver producers worldwide.' },
+  { key: 'LIT',  label: 'Lithium & Battery ETF',    tv: ['AMEX:LIT', 'NYSEARCA:LIT'],            about: 'Lithium miners and battery manufacturers ETF.' },
+  { key: 'PICK', label: 'Metal & Mining SPDR ETF',  tv: ['CBOE:PICK', 'AMEX:PICK', 'NYSEARCA:PICK'], about: 'iShares MSCI Global Metals & Mining Producers ETF.' },
+  { key: 'TSX',  label: 'S&P/TSX Composite',        tv: ['TSX:TSX', 'INDEX:TSX'],                about: 'S&P/TSX Composite Index — the benchmark for the Toronto Stock Exchange covering large-cap Canadian equities.' },
+  { key: 'XJO',  label: 'ASX 200',                  tv: ['ASX:XJO', 'INDEX:XJO'],                about: 'S&P/ASX 200 — Australian large-cap benchmark.' },
+  { key: 'SPX',  label: 'S&P 500',                  tv: ['SP:SPX', 'TVC:SPX', 'INDEX:SPX'],      about: 'S&P 500 — US large-cap benchmark.' },
+  { key: 'VIX',  label: 'Volatility Index',         tv: ['TVC:VIX', 'CBOE:VIX', 'INDEX:VIX'],    about: 'CBOE Volatility Index — implied 30-day S&P 500 volatility.' },
 ];
 
 let indexesCache = null;
@@ -318,9 +331,9 @@ router.get('/indexes', async (_req, res) => {
 // ---------------------------------------------------------------------------
 
 const CURRENCY_SYMBOLS = [
-  { key: 'USDCAD', label: 'USD / CAD', tv: ['FX_IDC:USDCAD', 'FX:USDCAD', 'OANDA:USDCAD'] },
-  { key: 'AUDUSD', label: 'AUD / USD', tv: ['FX_IDC:AUDUSD', 'FX:AUDUSD', 'OANDA:AUDUSD'] },
-  { key: 'CADAUD', label: 'CAD / AUD', tv: ['FX_IDC:CADAUD', 'FX:CADAUD'] },
+  { key: 'AUDCAD', label: 'AUD / CAD', tv: ['FX:AUDCAD', 'FX_IDC:AUDCAD', 'OANDA:AUDCAD'] },
+  { key: 'USDCAD', label: 'USD / CAD', tv: ['FX:USDCAD', 'FX_IDC:USDCAD', 'OANDA:USDCAD'] },
+  { key: 'AUDUSD', label: 'AUD / USD', tv: ['FX:AUDUSD', 'FX_IDC:AUDUSD', 'OANDA:AUDUSD'] },
   { key: 'DXY',    label: 'DXY',       tv: ['TVC:DXY', 'INDEX:DXY'], subtitle: 'US Dollar Index' },
 ];
 

@@ -66,13 +66,13 @@ const LiveFeed = () => {
         <div className="flex items-end justify-between flex-wrap gap-4 mb-6">
           <div>
             <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-2 flex items-center gap-2">
-              <span className="w-1.5 h-1.5 bg-noteworthy animate-pulse-dot" /> Live filing releases
+              <span className="w-1.5 h-1.5 bg-noteworthy animate-pulse-dot" /> Live news releases
             </div>
             <h2 className="font-display text-3xl lg:text-4xl font-extrabold leading-tight">
-              Filing releases, AI-summarized.
+              News releases, AI-summarized.
             </h2>
             <p className="text-sm text-muted-foreground mt-2 max-w-xl">
-              Every filing in one or two lines. Click any filing to expand and view more details.
+              Every filing in one or two lines. Click any release to read the full announcement with AI summary, type and importance.
             </p>
           </div>
           <div className="font-mono text-[11px] text-muted-foreground">

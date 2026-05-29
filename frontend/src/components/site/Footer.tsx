@@ -1,7 +1,10 @@
 import { Twitter, Linkedin } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useAuth } from "@/hooks/use-auth";
 
-const Footer = () => (
+const Footer = () => {
+  const { isAuthenticated } = useAuth();
+  return (
   <footer className="bg-background border-t border-border">
     <div className="max-w-[1200px] mx-auto px-6 lg:px-10 py-12 grid md:grid-cols-12 gap-8">
       <div className="md:col-span-5">
@@ -30,7 +33,9 @@ const Footer = () => (
           <li><a href="/#feed" className="hover:text-foreground">Feed</a></li>
           <li><Link to="/companies" className="hover:text-foreground">Companies</Link></li>
           <li><a href="/#pricing" className="hover:text-foreground">Pricing</a></li>
-          <li><Link to="/login" className="hover:text-foreground">Login</Link></li>
+          {!isAuthenticated && (
+            <li><Link to="/login" className="hover:text-foreground">Login</Link></li>
+          )}
         </ul>
       </div>
       <div className="md:col-span-4 text-sm">
@@ -55,6 +60,7 @@ const Footer = () => (
       </div>
     </div>
   </footer>
-);
+  );
+};
 
 export default Footer;

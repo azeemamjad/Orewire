@@ -17,6 +17,7 @@ const Nav = () => {
 
   const handleLogout = async () => {
     await logout();
+    navigate("/");
   };
 
   return (
@@ -34,17 +35,9 @@ const Nav = () => {
           <Link to="/companies" className="hover:text-primary text-foreground/80">Companies</Link>
           <Link to="/watchlist" className="hover:text-primary text-foreground/80">Watchlist</Link>
           <Link to="/jobs" className="hover:text-primary text-foreground/80">Jobs</Link>
-          <a href="/#pricing" className="hover:text-primary text-foreground/80">Pricing</a>
         </nav>
 
-        <div className="flex items-center gap-3">
-          <Link
-            to="/watchlist"
-            className="hidden sm:inline-flex items-center bg-accent text-accent-foreground px-4 h-10 text-sm font-semibold hover:opacity-90 transition-opacity"
-          >
-            Open Watchlist
-          </Link>
-
+        <div className="flex items-center gap-2">
           {isAuthenticated ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -63,6 +56,9 @@ const Nav = () => {
                   {user?.email || "Account"}
                 </div>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate("/profile")} className="cursor-pointer">
+                  Profile
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleLogout} className="cursor-pointer">
                   <LogOut className="w-4 h-4 mr-2" />
                   Log out
@@ -70,12 +66,20 @@ const Nav = () => {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Link
-              to="/login"
-              className="hidden sm:inline-flex items-center text-sm text-foreground/80 hover:text-primary transition-colors"
-            >
-              Account
-            </Link>
+            <>
+              <Link
+                to="/login"
+                className="hidden sm:inline-flex items-center px-3 h-10 text-sm text-foreground/80 hover:text-foreground"
+              >
+                Sign in
+              </Link>
+              <Link
+                to="/register"
+                className="inline-flex items-center bg-accent text-accent-foreground px-4 h-10 text-sm font-semibold hover:opacity-90 transition-opacity"
+              >
+                Sign up
+              </Link>
+            </>
           )}
 
           <button className="md:hidden p-2"><Menu className="w-5 h-5" /></button>

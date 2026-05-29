@@ -585,6 +585,41 @@
       </div>
     </div>
 
+    <!-- Profile scraper (MarketScreener) -->
+    <div class="preview-box" style="margin-top:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div class="section-title" style="margin:0;">Company Profiles (MarketScreener)</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;">Scrape description, website, headquarters &amp; management/directors for companies in the DB.</div>
+        </div>
+        <div id="pp-status" style="font-size:13px;color:var(--muted);">Idle</div>
+      </div>
+      <div class="config-grid" style="margin-bottom:12px;">
+        <div class="config-field">
+          <label>Limit (companies)</label>
+          <input id="pp-limit" type="number" min="1" placeholder="50" />
+        </div>
+        <div class="config-field">
+          <label>Ticker (single company)</label>
+          <input id="pp-ticker" type="text" placeholder="e.g. MAU" />
+        </div>
+        <div class="config-field">
+          <label>Refresh if older than (days)</label>
+          <input id="pp-refresh" type="number" min="1" placeholder="leave blank = missing only" />
+        </div>
+        <div class="config-field">
+          <label>Delay between requests (ms)</label>
+          <input id="pp-delay" type="number" min="0" placeholder="2500" />
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <label class="config-toggle" style="margin-right:auto;">
+          <input type="checkbox" id="pp-dry-run" /> Dry run (don't write to DB)
+        </label>
+        <button class="btn btn-primary" id="pp-start-btn" onclick="profilesStart()">▶ Run Profile Scrape</button>
+      </div>
+    </div>
+
     <!-- Log viewer -->
     <div class="preview-box" style="margin-top:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
@@ -1633,6 +1668,76 @@ async function pipelineStartAsx() {
     await pipelinePollStatus();
   } catch (err) { toast(err.message, 'err'); }
 }
+
+// --- Company profile scraper (MarketScreener) -------------------------------
+
+let _ppPollTimer = null;
+
+async function profilesStart() {
+  const body = {};
+  const limit   = parseInt(document.getElementById('pp-limit').value);
+  const ticker  = document.getElementById('pp-ticker').value.trim();
+  const refresh = parseInt(document.getElementById('pp-refresh').value);
+  const delay   = parseInt(document.getElementById('pp-delay').value);
+  const dryRun  = document.getElementById('pp-dry-run').checked;
+  if (!isNaN(limit))   body.limit = limit;
+  if (ticker)          body.ticker = ticker;
+  if (!isNaN(refresh)) body.refreshDays = refresh;
+  if (!isNaN(delay))   body.delay = delay;
+  if (dryRun)          body.dryRun = true;
+  try {
+    const r = await fetch(`${API}/api/pipeline/profiles/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(r => r.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    toast('Profile scrape started');
+    _plLogOffset = 0;
+    document.getElementById('pl-log-box').innerHTML = '';
+    setProfilesRunningUI(true);
+    profilesPollStatus();
+    // Also kick the log poll so output streams immediately.
+    await pipelinePollStatus();
+  } catch (err) { toast(err.message, 'err'); }
+}
+
+function setProfilesRunningUI(running) {
+  const btn = document.getElementById('pp-start-btn');
+  const status = document.getElementById('pp-status');
+  if (running) {
+    btn.disabled = true;
+    btn.textContent = '⏳ Running…';
+    status.textContent = 'Running';
+    status.style.color = 'var(--accent)';
+  } else {
+    btn.disabled = false;
+    btn.textContent = '▶ Run Profile Scrape';
+    status.textContent = 'Idle';
+    status.style.color = 'var(--muted)';
+  }
+}
+
+async function profilesPollStatus() {
+  if (_ppPollTimer) clearInterval(_ppPollTimer);
+  _ppPollTimer = setInterval(async () => {
+    try {
+      const r = await fetch(`${API}/api/pipeline/profiles/status`).then(r => r.json());
+      if (!r.running) {
+        clearInterval(_ppPollTimer); _ppPollTimer = null;
+        setProfilesRunningUI(false);
+      }
+    } catch { /* ignore */ }
+  }, 3000);
+}
+
+// On page load, check status once so the button reflects reality after a refresh.
+window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const r = await fetch(`${API}/api/pipeline/profiles/status`).then(r => r.json());
+    if (r.running) { setProfilesRunningUI(true); profilesPollStatus(); }
+  } catch { /* ignore */ }
+});
 </script>
 </body>
 </html>

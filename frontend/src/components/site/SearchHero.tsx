@@ -22,7 +22,9 @@ const SearchHero = () => {
             Live · Mining terminal
           </div>
           <h1 className="font-display text-3xl lg:text-4xl font-extrabold leading-tight">
-            Search 4,200+ junior miners, commodities &amp; indexes
+            2,000+ mining &amp; resource companies, commodities &amp; indexes
+            <br />
+            <span className="text-muted-foreground">across Canada and Australia</span>
           </h1>
         </div>
         <div className="font-mono text-[11px] text-muted-foreground">

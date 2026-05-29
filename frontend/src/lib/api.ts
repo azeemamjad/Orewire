@@ -426,6 +426,12 @@ const ACCESS_EXP  = 'orewire.auth.access_exp';
 export interface AuthUser {
   id: number;
   email: string;
+  username?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  twoStepEnabled?: boolean;
+  emailVerified?: boolean;
+  createdAt?: string;
 }
 
 export interface AuthResponse {
@@ -435,6 +441,15 @@ export interface AuthResponse {
   refreshExpiresAt?: number;
   token?: string; // backwards-compat alias for accessToken
   user?: AuthUser;
+  requiresVerification?: boolean;
+  requiresTwoStep?: boolean;
+  email?: string;
+  ok?: boolean;
+  retryAfterMs?: number;
+}
+
+export interface ProfileResponse {
+  user: AuthUser;
 }
 
 export function getAuthToken(): string | null {
@@ -570,10 +585,45 @@ export async function login(email: string, password: string): Promise<AuthRespon
   return resp;
 }
 
-export async function register(email: string, password: string): Promise<AuthResponse> {
-  const resp = await authRequest('/register', { email, password });
+export async function register(a: string, b: string, c?: string, d?: string, e?: string): Promise<AuthResponse> {
+  // Backwards compatible:
+  // register(email, password)
+  // register(firstName, lastName, email, password)
+  // register(firstName, lastName, username, email, password)
+  const isFiveArg = !!(c && d && e);
+  const isFourArg = !!(c && d && !e);
+  const firstName = isFiveArg || isFourArg ? a : "User";
+  const lastName = isFiveArg || isFourArg ? b : "Member";
+  const username = isFiveArg ? c : (isFourArg ? `${firstName}${lastName}`.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 24) || "user" : "user");
+  const email = isFiveArg ? d! : (isFourArg ? c! : a);
+  const password = isFiveArg ? e! : (isFourArg ? d! : b);
+  const resp = await authRequest('/register', { firstName, lastName, username, email, password });
+  if (resp.accessToken || resp.token) setAuth(resp);
+  return resp;
+}
+
+export async function verifyRegistrationOtp(email: string, otp: string): Promise<AuthResponse> {
+  const resp = await authRequest('/verify-otp', { email, otp });
   setAuth(resp);
   return resp;
+}
+
+export async function resendOtp(email: string, purpose: "register" | "reset_password" | "login_2fa" = "register"): Promise<AuthResponse> {
+  return authRequest('/resend-otp', { email, purpose });
+}
+
+export async function verifyLoginOtp(email: string, otp: string): Promise<AuthResponse> {
+  const resp = await authRequest('/verify-login-otp', { email, otp });
+  setAuth(resp);
+  return resp;
+}
+
+export async function forgotPassword(email: string): Promise<AuthResponse> {
+  return authRequest('/forgot-password', { email });
+}
+
+export async function resetPassword(email: string, otp: string, newPassword: string): Promise<AuthResponse> {
+  return authRequest('/reset-password', { email, otp, newPassword });
 }
 
 export async function logout(): Promise<void> {
@@ -585,6 +635,37 @@ export async function logout(): Promise<void> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refreshToken: refresh }),
   }).catch(() => undefined);
+}
+
+export async function fetchProfile(): Promise<ProfileResponse> {
+  const res = await authFetch(`${API_BASE}/auth/profile`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Failed to fetch profile: ${res.status}`);
+  return data as ProfileResponse;
+}
+
+export async function updateProfile(input: { firstName: string; lastName: string; username: string }): Promise<ProfileResponse> {
+  const res = await authFetch(`${API_BASE}/auth/profile`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Failed to update profile: ${res.status}`);
+  const current = getAuthUser();
+  if (data?.user) setAuth({ user: { ...current, ...data.user } });
+  return data as ProfileResponse;
+}
+
+export async function updateTwoStep(enabled: boolean): Promise<ProfileResponse> {
+  const res = await authFetch(`${API_BASE}/auth/profile/two-step`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Failed to update 2-step: ${res.status}`);
+  const current = getAuthUser();
+  if (data?.user) setAuth({ user: { ...current, ...data.user } });
+  return data as ProfileResponse;
 }
 
 // ---------------------------------------------------------------------------

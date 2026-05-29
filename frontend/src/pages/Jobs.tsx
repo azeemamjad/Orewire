@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import Nav from "@/components/site/Nav";
 import MarketStrip from "@/components/site/MarketStrip";
+import MorningBrief from "@/components/site/MorningBrief";
 import Footer from "@/components/site/Footer";
 import { fetchJobs, postJob, applyToJob, fetchMyApplications, login as apiLogin, register as apiRegister, type JobListing, type MyApplication } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
@@ -48,6 +49,7 @@ const Jobs = () => {
     <div className="min-h-screen bg-background flex flex-col">
       <Nav />
       <MarketStrip />
+      <MorningBrief />
 
       <section className="border-b border-border bg-gradient-to-br from-background via-background to-muted/40">
         <div className="max-w-[1440px] mx-auto px-4 lg:px-6 py-8 lg:py-10">

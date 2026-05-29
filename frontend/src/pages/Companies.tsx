@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowDownRight, ArrowUpRight, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import Nav from "@/components/site/Nav";
 import MarketStrip from "@/components/site/MarketStrip";
+import MorningBrief from "@/components/site/MorningBrief";
 import CommodityBar from "@/components/site/CommodityBar";
 import Footer from "@/components/site/Footer";
 import {
@@ -134,6 +135,7 @@ const Companies = () => {
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <Nav />
       <MarketStrip />
+      <MorningBrief />
       <CommodityBar />
 
       <section className="border-b border-border bg-background">

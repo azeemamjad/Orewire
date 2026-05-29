@@ -5,6 +5,7 @@ const cron    = require('node-cron');
 const { state, addLog }           = require('../pipeline/state');
 const { load: loadConfig, save: saveConfig } = require('../pipeline/config');
 const { runPipeline, runAsxPipeline } = require('../pipeline/runner');
+const { runProfileScrape, isRunning: profilesRunning } = require('../scripts/scrape-profiles');
 
 let mainCronTask = null;
 let asxCronTask  = null;
@@ -81,6 +82,28 @@ router.post('/asx/start', (req, res) => {
   }
   runAsxPipeline();   // ASX-only pipeline
   res.json({ ok: true, message: 'ASX pipeline started' });
+});
+
+// POST /api/pipeline/profiles/start — scrape MarketScreener company profiles + people
+router.post('/profiles/start', express.json(), (req, res) => {
+  if (profilesRunning()) {
+    return res.status(409).json({ error: 'Profile scrape already running' });
+  }
+  const opts = {
+    limit:       req.body?.limit ?? null,
+    ticker:      req.body?.ticker || null,
+    refreshDays: req.body?.refreshDays ?? null,
+    delay:       req.body?.delay ?? 2500,
+    dryRun:      !!req.body?.dryRun,
+  };
+  // Fire and forget — logs flow into the existing pipeline state.
+  runProfileScrape(opts).catch((err) => addLog('err', `[Profiles] Fatal: ${err.message}`));
+  res.json({ ok: true, message: 'Profile scrape started', opts });
+});
+
+// GET /api/pipeline/profiles/status — just whether the profile job is currently running
+router.get('/profiles/status', (_req, res) => {
+  res.json({ running: profilesRunning() });
 });
 
 // POST /api/pipeline/stop
