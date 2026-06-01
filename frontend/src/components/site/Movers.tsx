@@ -29,8 +29,15 @@ function normExLabel(ex: string): string {
   return ex;
 }
 
+// "ALPHA HPA LIMITED" -> "Alpha Hpa Limited" so long names take less width.
+function titleCase(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up: boolean }) => (
-  <div className="border border-border bg-surface">
+  <div className="border border-border bg-surface flex flex-col flex-1 min-h-0">
     <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border bg-muted/30">
       <div className="flex items-center gap-2">
         {up ? (
@@ -45,6 +52,7 @@ const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up:
         All →
       </Link>
     </div>
+    <div className="flex-1 overflow-auto min-h-0">
     <table className="w-full text-[12.5px]">
       <thead>
         <tr className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border-b border-border">
@@ -71,7 +79,9 @@ const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up:
                     {normExLabel(r.exchange)}
                   </span>
                 </Link>
-                <div className="text-[10.5px] text-muted-foreground truncate max-w-[180px]">{r.name}</div>
+                <div className="text-[10.5px] text-muted-foreground truncate max-w-[108px]" title={titleCase(r.name)}>
+                  {titleCase(r.name)}
+                </div>
               </td>
               <td className="py-2 text-right font-mono font-semibold">${fmtPrice(r.price)}</td>
               <td className={`py-2 text-right font-mono font-bold ${up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]"}`}>
@@ -87,6 +97,7 @@ const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up:
         )}
       </tbody>
     </table>
+    </div>
   </div>
 );
 
@@ -110,13 +121,9 @@ const Movers = () => {
   }
 
   return (
-    <div className="flex flex-col gap-4 h-full">
-      <div className="flex-1 flex flex-col min-h-0">
-        <MoverTable title="Top Gainers" rows={gainers} up />
-      </div>
-      <div className="flex-1 flex flex-col min-h-0">
-        <MoverTable title="Top Losers" rows={losers} up={false} />
-      </div>
+    <div className="flex flex-col gap-4 min-h-0 lg:h-full">
+      <MoverTable title="Top Gainers" rows={gainers} up />
+      <MoverTable title="Top Losers" rows={losers} up={false} />
     </div>
   );
 };

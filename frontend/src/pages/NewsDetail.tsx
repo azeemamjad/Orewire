@@ -4,7 +4,7 @@ import { ArrowLeft, Clock, Sparkles } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import Nav from "@/components/site/Nav";
 import Footer from "@/components/site/Footer";
-import { fetchNewsFeed, type NewsItem } from "@/lib/api";
+import { fetchNewsFeed, fetchNewsItem, type NewsItem } from "@/lib/api";
 
 const severityStyle: Record<string, string> = {
   critical: "bg-destructive text-destructive-foreground",
@@ -62,14 +62,32 @@ function getNewsBody(item: NewsItem): string[] {
 const NewsDetail = () => {
   const { slug } = useParams();
   const decoded = decodeURIComponent(slug || "");
-  const { data, isLoading } = useQuery({
+
+  // Primary: look up the item directly by link.
+  const { data: directItem, isLoading: directLoading } = useQuery({
+    queryKey: ["news-item", decoded],
+    queryFn: () => fetchNewsItem(decoded),
+    enabled: !!decoded,
+    staleTime: 30 * 60 * 1000,
+    retry: false,
+  });
+
+  // Fallback: scan the latest 50 from the feed (handles cases where the slug
+  // isn't a link but the title, or the item isn't yet in the DB by link).
+  const { data: feedData, isLoading: feedLoading } = useQuery({
     queryKey: ["news-feed-detail-lookup"],
     queryFn: () => fetchNewsFeed({ page: 1, limit: 50 }),
+    enabled: !directItem,
     staleTime: 30 * 60 * 1000,
   });
-  const items = data?.items || [];
+  const items = feedData?.items || [];
 
-  const item = useMemo(() => items.find((n) => (n.link || n.title) === decoded), [items, decoded]);
+  const item = useMemo<NewsItem | null | undefined>(() => {
+    if (directItem) return directItem;
+    return items.find((n) => (n.link || n.title) === decoded);
+  }, [directItem, items, decoded]);
+
+  const isLoading = directLoading || (!directItem && feedLoading);
 
   if (isLoading) {
     return (

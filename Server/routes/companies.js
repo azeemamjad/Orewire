@@ -397,7 +397,9 @@ router.get('/:id/profile', async (req, res) => {
   try {
     const { id } = req.params;
     const c = await db.query(
-      `SELECT id, exchange, ticker, name, description, website, headquarters, ms_slug, profile_scraped_at
+      `SELECT id, exchange, ticker, name, description, website, headquarters,
+              transfer_agent, phone, shares_outstanding, profile_source,
+              ms_slug, profile_scraped_at
        FROM companies WHERE id = $1`,
       [id]
     );
@@ -419,17 +421,19 @@ router.get('/:id/profile', async (req, res) => {
 router.put('/:id/profile', express.json(), async (req, res) => {
   try {
     const { id } = req.params;
-    const { description, website, headquarters } = req.body || {};
+    const { description, website, headquarters, transfer_agent, phone } = req.body || {};
     const r = await db.query(
       `UPDATE companies SET
          description        = $2,
          website            = $3,
          headquarters       = $4,
+         transfer_agent     = $5,
+         phone              = $6,
          profile_scraped_at = COALESCE(profile_scraped_at, NOW()),
          updated_at         = NOW()
        WHERE id = $1
-       RETURNING id, description, website, headquarters`,
-      [id, description ?? null, website ?? null, headquarters ?? null]
+       RETURNING id, description, website, headquarters, transfer_agent, phone`,
+      [id, description ?? null, website ?? null, headquarters ?? null, transfer_agent ?? null, phone ?? null]
     );
     if (r.rows.length === 0) return res.status(404).json({ error: 'Not found' });
     res.json(r.rows[0]);

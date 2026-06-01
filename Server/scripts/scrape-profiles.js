@@ -1,4 +1,6 @@
-// MarketScreener profile + people scraper.
+// Exchange-sourced company profile + people scraper (CSE / ASX / TMX).
+// Replaces the former MarketScreener enrichment — data now comes straight from
+// each listing venue's official feed (see ../pipeline/exchanges.js).
 //
 // Two entry points:
 //   1. CLI:        node scripts/scrape-profiles.js [--limit N] [--ticker XYZ] [--refresh DAYS] [--delay MS] [--dry-run]
@@ -9,7 +11,7 @@
 
 require('dotenv').config();
 const db = require('../db');
-const ms = require('../pipeline/marketscreener');
+const exch = require('../pipeline/exchanges');
 const { addLog } = require('../pipeline/state');
 
 let _running = false;
@@ -32,20 +34,21 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 async function fetchCompaniesToScrape({ limit, ticker, refreshDays }) {
   if (ticker) {
+    // A ticker can exist on more than one exchange (e.g. ACM on CSE + ASX) — enrich every match.
     const r = await db.query(
-      `SELECT id, exchange, ticker, name, ms_slug FROM companies WHERE UPPER(ticker) = UPPER($1) LIMIT 1`,
+      `SELECT id, exchange, ticker, name FROM companies WHERE UPPER(ticker) = UPPER($1) ORDER BY exchange, id`,
       [ticker]
     );
     return r.rows;
   }
-  const conditions = ['name IS NOT NULL'];
+  const conditions = ['name IS NOT NULL', "ticker IS NOT NULL AND ticker <> ''"];
   if (refreshDays != null) {
     conditions.push(`(profile_scraped_at IS NULL OR profile_scraped_at < NOW() - INTERVAL '${refreshDays} days')`);
   } else {
     conditions.push('profile_scraped_at IS NULL');
   }
   const sql = `
-    SELECT id, exchange, ticker, name, ms_slug
+    SELECT id, exchange, ticker, name
     FROM companies
     WHERE ${conditions.join(' AND ')}
     ORDER BY market_cap DESC NULLS LAST, id ASC
@@ -55,17 +58,31 @@ async function fetchCompaniesToScrape({ limit, ticker, refreshDays }) {
   return r.rows;
 }
 
-async function saveProfile(companyId, slug, profile) {
+async function saveProfile(companyId, source, profile) {
+  // COALESCE(new, existing): exchange data wins where present, but a field the
+  // venue leaves blank never wipes data we already hold.
   await db.query(
     `UPDATE companies SET
        description        = COALESCE($2, description),
        website            = COALESCE($3, website),
        headquarters       = COALESCE($4, headquarters),
-       ms_slug            = COALESCE($5, ms_slug),
+       transfer_agent     = COALESCE($5, transfer_agent),
+       phone              = COALESCE($6, phone),
+       shares_outstanding = COALESCE($7, shares_outstanding),
+       profile_source     = $8,
        profile_scraped_at = NOW(),
        updated_at         = NOW()
      WHERE id = $1`,
-    [companyId, profile?.description || null, profile?.website || null, profile?.headquarters || null, slug || null]
+    [
+      companyId,
+      profile?.description || null,
+      profile?.website || null,
+      profile?.headquarters || null,
+      profile?.transfer_agent || null,
+      profile?.phone || null,
+      profile?.shares_outstanding ?? null,
+      source || null,
+    ]
   );
 }
 
@@ -77,14 +94,15 @@ async function savePeople(companyId, people) {
     try {
       await db.query(
         `INSERT INTO company_people (company_id, name, role_code, title, age, since_year, kind, source, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'marketscreener', NOW())
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
          ON CONFLICT (company_id, name, kind) DO UPDATE SET
            role_code  = EXCLUDED.role_code,
            title      = EXCLUDED.title,
            age        = EXCLUDED.age,
            since_year = EXCLUDED.since_year,
+           source     = EXCLUDED.source,
            updated_at = NOW()`,
-        [companyId, p.name, p.role_code, p.title, p.age, p.since_year, p.kind]
+        [companyId, p.name, p.role_code ?? null, p.title ?? null, p.age ?? null, p.since_year ?? null, p.kind, p.source || 'exchange']
       );
       saved++;
     } catch (e) {
@@ -116,31 +134,30 @@ async function runProfileScrape(opts = {}) {
     delay: opts.delay != null ? Math.max(0, Number(opts.delay)) : 2500,
     dryRun: !!opts.dryRun,
   };
-  addLog('out', `[Profiles] Starting MarketScreener scrape: ${JSON.stringify(args)}`);
+  addLog('out', `[Profiles] Starting exchange profile scrape (CSE/ASX/TMX): ${JSON.stringify(args)}`);
   try {
     const companies = await fetchCompaniesToScrape(args);
     addLog('out', `[Profiles] ${companies.length} companies queued`);
     let ok = 0, miss = 0, fail = 0;
     for (let i = 0; i < companies.length; i++) {
       const c = companies[i];
-      const tag = `[${i + 1}/${companies.length}] ${c.ticker || '?'} ${c.name?.slice(0, 50)}`;
+      const tag = `[${i + 1}/${companies.length}] ${c.exchange || '?'}:${c.ticker || '?'} ${c.name?.slice(0, 50)}`;
       try {
-        const result = await ms.scrapeCompany({
-          slug: c.ms_slug || null,
-          query: c.name,
-          ticker: c.ticker,
+        const result = await exch.scrapeCompany({
           exchange: c.exchange,
+          ticker: c.ticker,
+          name: c.name,
         });
-        if (!result.slug) {
-          addLog('warn', `[Profiles] ${tag} — NO MATCH on MarketScreener`);
+        if (!result.matched) {
+          addLog('warn', `[Profiles] ${tag} — NO MATCH (${result.source || '?'}: ${result.note || 'unknown'})`);
           miss++;
         } else if (args.dryRun) {
-          addLog('out', `[Profiles] ${tag} — slug=${result.slug} people=${result.people.length} (dry-run)`);
+          addLog('out', `[Profiles] ${tag} — src=${result.source} people=${result.people.length} ta=${result.profile?.transfer_agent ? 'yes' : 'no'} (dry-run)`);
           ok++;
         } else {
-          await saveProfile(c.id, result.slug, result.profile);
+          await saveProfile(c.id, result.source, result.profile);
           const peopleSaved = await savePeople(c.id, result.people);
-          addLog('out', `[Profiles] ${tag} — slug=${result.slug}, people=${peopleSaved}/${result.people.length}, desc=${result.profile?.description ? 'yes' : 'no'}, web=${result.profile?.website ? 'yes' : 'no'}`);
+          addLog('out', `[Profiles] ${tag} — src=${result.source}, people=${peopleSaved}/${result.people.length}, desc=${result.profile?.description ? 'yes' : 'no'}, web=${result.profile?.website ? 'yes' : 'no'}, ta=${result.profile?.transfer_agent ? 'yes' : 'no'}`);
           ok++;
         }
       } catch (e) {

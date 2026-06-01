@@ -32,8 +32,30 @@ router.get('/stats', async (req, res) => {
 
 router.get('/', async (req, res) => {
   try {
-    const { company_id, verdict, search, commodity, exchange, limit } = req.query;
-    let query = `
+    const { company_id, verdict, search, commodity, exchange, limit, page } = req.query;
+
+    // Build the shared WHERE clause for both the data and count queries.
+    let where = ' WHERE 1=1';
+    const params = [];
+    let paramIdx = 0;
+
+    if (company_id) {
+      paramIdx++;
+      where += ` AND f.company_id = $${paramIdx}`;
+      params.push(company_id);
+    }
+    if (verdict) {
+      paramIdx++;
+      where += ` AND a.verdict = $${paramIdx}`;
+      params.push(verdict);
+    }
+    if (search) {
+      paramIdx++;
+      where += ` AND f.company_name ILIKE $${paramIdx}`;
+      params.push(`%${search}%`);
+    }
+
+    const selectSql = `
       SELECT f.id, f.company_name, f.filing_type, f.pdf_filename,
              f.analyzed, f.status, f.created_at, f.commodity,
              COALESCE(NULLIF(f.exchange, ''), c.exchange) as exchange,
@@ -41,37 +63,49 @@ router.get('/', async (req, res) => {
       FROM filings f
       LEFT JOIN ai_output a ON a.filing_id = f.id
       LEFT JOIN companies c ON c.id = f.company_id
-      WHERE 1=1
     `;
-    const params = [];
-    let paramIdx = 0;
 
-    if (company_id) {
-      paramIdx++;
-      query += ` AND f.company_id = $${paramIdx}`;
-      params.push(company_id);
-    }
-    if (verdict) {
-      paramIdx++;
-      query += ` AND a.verdict = $${paramIdx}`;
-      params.push(verdict);
-    }
-    if (search) {
-      paramIdx++;
-      query += ` AND f.company_name ILIKE $${paramIdx}`;
-      params.push(`%${search}%`);
-    }
-
-    const parsedLimit = Math.max(1, Math.min(500, parseInt(limit, 10) || 500));
-    query += ` ORDER BY f.created_at DESC LIMIT ${parsedLimit}`;
-    const result = await db.query(query, params);
-    const rows = result.rows;
-
-    const enriched = rows.map(row => ({
+    const enrich = (rows) => rows.map(row => ({
       ...row,
       commodity: row.commodity || inferCommodity(row.summary, row.ticker_summary),
       verdict: row.verdict ? row.verdict.charAt(0).toUpperCase() + row.verdict.slice(1) : null,
     }));
+
+    // --- Paginated mode: return an envelope with total/totalPages. -----------
+    // Note: exchange/commodity are derived post-query, so pagination supports
+    // only the SQL-level filters (company_id, verdict, search).
+    if (page !== undefined) {
+      const parsedPage = Math.max(1, parseInt(page, 10) || 1);
+      const pageLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 10));
+      const offset = (parsedPage - 1) * pageLimit;
+
+      const countQuery = `SELECT COUNT(*)::int AS total FROM filings f LEFT JOIN ai_output a ON a.filing_id = f.id${where}`;
+      const dataQuery = `${selectSql}${where} ORDER BY f.created_at DESC LIMIT ${pageLimit} OFFSET ${offset}`;
+
+      const [countResult, dataResult] = await Promise.all([
+        db.query(countQuery, params),
+        db.query(dataQuery, params),
+      ]);
+      const total = countResult.rows[0]?.total || 0;
+      const totalPages = Math.max(1, Math.ceil(total / pageLimit));
+
+      return res.json({
+        items: enrich(dataResult.rows),
+        pagination: {
+          page: parsedPage,
+          limit: pageLimit,
+          total,
+          totalPages,
+          hasNext: parsedPage < totalPages,
+          hasPrev: parsedPage > 1,
+        },
+      });
+    }
+
+    // --- Legacy mode: plain array (with post-query exchange/commodity filters).
+    const parsedLimit = Math.max(1, Math.min(500, parseInt(limit, 10) || 500));
+    const result = await db.query(`${selectSql}${where} ORDER BY f.created_at DESC LIMIT ${parsedLimit}`, params);
+    const enriched = enrich(result.rows);
 
     const normExchange = exchange ? exchange.toUpperCase().replace('TSX-V', 'TSXV') : null;
     let resultData = enriched;

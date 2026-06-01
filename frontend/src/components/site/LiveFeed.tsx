@@ -1,192 +1,208 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, ChevronDown, Clock, Sparkles } from "lucide-react";
-import { fetchFilings, fetchStats, type Exchange, type Filing, type Verdict } from "@/lib/api";
+import { ArrowUpRight, Clock, Sparkles } from "lucide-react";
+import { fetchFilings, type Filing, type Verdict } from "@/lib/api";
+import { useAuth } from "@/hooks/use-auth";
 
-const exchanges: ("All" | Exchange)[] = ["All", "TSX-V", "CSE", "ASX", "TSX"];
-const importances = ["All", "Critical", "High", "Medium", "Low"] as const;
-const types = [
-  "All",
-  "Drill Result",
-  "Resource Update",
-  "Private Placement",
-  "Technical Report",
-  "Quarterly",
-  "MD&A",
-  "Material Change",
-  "Assay",
-  "Corporate Update",
-] as const;
+const REFETCH_MS = 60_000;
 
-const severityStyle: Record<"Critical" | "High" | "Medium" | "Low", string> = {
-  Critical: "bg-destructive text-destructive-foreground",
-  High: "bg-noteworthy text-noteworthy-foreground",
-  Medium: "bg-watch text-watch-foreground",
-  Low: "bg-routine text-routine-foreground",
+const FILTERS = ["All", "Noteworthy", "Watch", "Routine"] as const;
+type FilterValue = (typeof FILTERS)[number];
+
+// Filing types we surface, shown as the "Filings we decode" chip cloud.
+const FILING_TYPES = [
+  "NI 43-101 Technical Reports",
+  "JORC Resource Reports",
+  "Drill Results",
+  "Private Placements",
+  "Quarterly Financials",
+  "Material Change Reports",
+  "Early Warning Reports",
+  "Insider Reports",
+  "Annual Information Forms",
+  "Proxy Circulars",
+  "ASX Quarterly Activity Reports",
+  "Substantial Holder Notices",
+];
+
+const verdictStyle: Record<Verdict, string> = {
+  Noteworthy: "bg-[hsl(var(--noteworthy))] text-[hsl(var(--noteworthy-foreground))]",
+  Watch: "bg-[hsl(var(--watch))] text-[hsl(var(--watch-foreground))]",
+  Routine: "bg-[hsl(var(--routine))] text-[hsl(var(--routine-foreground))]",
 };
 
-function verdictToImportance(v: Verdict | null): "Critical" | "High" | "Medium" | "Low" {
-  if (v === "Noteworthy") return "High";
-  if (v === "Watch") return "Medium";
-  if (v === "Routine") return "Low";
-  return "Low";
-}
+const placeholderFilings: Filing[] = [
+  { id: -1, ticker: "SCZ", company: "Scorpio Gold Resources", exchange: "TSX-V", filingType: "NI 43-101", verdict: "Noteworthy", commodity: "Gold", time: "22 min ago", summary: "Updated MRE: 1.42 Moz Indicated @ 1.8 g/t Au — 31% category upgrade vs prior." },
+  { id: -2, ticker: "DEG", company: "De Grey Mining", exchange: "ASX", filingType: "JORC Resource", verdict: "Noteworthy", commodity: "Gold", time: "1 hr ago", summary: "Hemi JORC 2012 update: 11.7 Moz total; Indicated now 6.8 Moz." },
+  { id: -3, ticker: "NFG", company: "New Found Gold", exchange: "TSX-V", filingType: "Material Change", verdict: "Noteworthy", commodity: "Gold", time: "2 hrs ago", summary: "AFZ-988 high-grade step-out triggers 25,000m follow-up program." },
+  { id: -4, ticker: "GR", company: "Great Atlantic Resources", exchange: "CSE", filingType: "Private Placement", verdict: "Watch", commodity: null, time: "3 hrs ago", summary: "Subscription agreement: C$4.2M flow-through @ $0.18, half-warrant @ $0.28." },
+  { id: -5, ticker: "CXO", company: "Core Lithium", exchange: "ASX", filingType: "Appendix 5B", verdict: "Routine", commodity: "Lithium", time: "4 hrs ago", summary: "Cash flow report: A$87M cash; quarterly opex A$22M; 4 quarters runway." },
+  { id: -6, ticker: "RMS", company: "Ramelius Resources", exchange: "ASX", filingType: "Quarterly MD&A", verdict: "Routine", commodity: "Gold", time: "5 hrs ago", summary: "AISC A$1,820/oz; FY guidance reaffirmed at 280-310 koz." },
+  { id: -7, ticker: "NXE", company: "NexGen Energy", exchange: "TSX-V", filingType: "Annual Information Form", verdict: "Routine", commodity: "Uranium", time: "6 hrs ago", summary: "FY25 AIF filed; no material changes to risk factors or property disclosures." },
+  { id: -8, ticker: "FIL", company: "Filo Mining", exchange: "TSX-V", filingType: "Early Warning Report", verdict: "Watch", commodity: "Copper", time: "7 hrs ago", summary: "BHP increases stake to 11.2% via market purchases — first crossing of 10%." },
+  { id: -9, ticker: "ABX", company: "Barrick Mining", exchange: "TSX", filingType: "Proxy Circular", verdict: "Routine", commodity: "Gold", time: "9 hrs ago", summary: "2026 AGM circular; board slate unchanged, say-on-pay advisory included." },
+  { id: -10, ticker: "AGO", company: "Atlas Iron", exchange: "ASX", filingType: "Substantial Holder Notice", verdict: "Watch", commodity: null, time: "11 hrs ago", summary: "Hancock Prospecting lifts holding to 19.9% — just under takeover threshold." },
+];
+
+const FilingCard = ({ item }: { item: Filing }) => (
+  <Link
+    to={`/filings/${item.id}`}
+    className="block border border-border bg-card hover:bg-muted/40 transition-colors px-4 py-3.5"
+  >
+    <div className="flex items-center gap-2.5 mb-2 flex-wrap">
+      <span className="font-mono text-[18px] font-extrabold tracking-tight leading-none">{item.ticker}</span>
+      <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1.5 py-0.5">
+        {item.exchange}
+      </span>
+      <span className="text-[15px] font-semibold leading-none truncate max-w-[45%]">{item.company}</span>
+      {item.verdict && (
+        <span className={`text-[10px] font-mono uppercase tracking-widest font-bold px-2 py-0.5 rounded-full ${verdictStyle[item.verdict]}`}>
+          {item.verdict}
+        </span>
+      )}
+      <span className="font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 border border-border text-muted-foreground">
+        {item.filingType}
+      </span>
+      <span className="ml-auto font-mono text-[10px] text-muted-foreground inline-flex items-center gap-1 shrink-0">
+        <Clock className="w-2.5 h-2.5" />
+        {item.time}
+      </span>
+    </div>
+    <p className="text-[13px] leading-snug text-foreground/85 pl-0.5">
+      <Sparkles className="inline w-3 h-3 text-accent mr-1 -mt-0.5" />
+      {item.summary}
+    </p>
+  </Link>
+);
 
 const LiveFeed = () => {
-  const [exchange, setExchange] = useState<"All" | Exchange>("All");
-  const [importance, setImportance] = useState<(typeof importances)[number]>("All");
-  const [type, setType] = useState<(typeof types)[number]>("All");
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-  const { data: filings = [], isLoading } = useQuery({
-    queryKey: ["filings-live-feed", exchange],
-    queryFn: () => fetchFilings({ exchange, limit: 50 }),
-    refetchInterval: 60_000,
-  });
-  const { data: stats } = useQuery({
-    queryKey: ["filings-stats-live-feed"],
-    queryFn: fetchStats,
-    refetchInterval: 60_000,
+  const { isAuthenticated } = useAuth();
+  const [filter, setFilter] = useState<FilterValue>("All");
+
+  const { data } = useQuery({
+    queryKey: ["filings-section"],
+    queryFn: () => fetchFilings({ limit: 50 }),
+    staleTime: REFETCH_MS,
+    refetchInterval: REFETCH_MS,
   });
 
-  const filtered = useMemo(() => {
-    return filings.filter((f) => {
-      const itemImportance = verdictToImportance(f.verdict || null);
-      const itemType = (types.includes(f.filingType as (typeof types)[number]) ? f.filingType : "Corporate Update") as (typeof types)[number];
-      return (
-        (importance === "All" || itemImportance === importance) &&
-        (type === "All" || itemType === type)
-      );
-    });
-  }, [filings, importance, type]);
+  const items = data && data.length > 0 ? data : placeholderFilings;
+
+  const filtered = useMemo(
+    () => (filter === "All" ? items : items.filter((f) => f.verdict === filter)),
+    [items, filter],
+  );
+
+  const visible = filtered.slice(0, 5);
+  // Logged-out visitors see a blurred teaser of the next filings behind a sign-up gate.
+  const locked = isAuthenticated ? [] : filtered.slice(5, 10);
 
   return (
     <section id="feed" className="border-b border-border bg-background">
       <div className="max-w-[1200px] mx-auto px-4 lg:px-6 py-12 lg:py-16">
-        <div className="flex items-end justify-between flex-wrap gap-4 mb-6">
-          <div>
-            <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-2 flex items-center gap-2">
-              <span className="w-1.5 h-1.5 bg-noteworthy animate-pulse-dot" /> Live news releases
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
+          <div className="lg:col-span-5">
+            <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-3 flex items-center gap-2">
+              <Sparkles className="w-3 h-3 text-accent" /> Filing intelligence
             </div>
-            <h2 className="font-display text-3xl lg:text-4xl font-extrabold leading-tight">
-              News releases, AI-summarized.
+            <h2 className="font-display text-3xl lg:text-5xl font-extrabold leading-[1.05] tracking-tight">
+              We read every filing.
+              <br />
+              <span className="text-muted-foreground">So you don't have to.</span>
             </h2>
-            <p className="text-sm text-muted-foreground mt-2 max-w-xl">
-              Every filing in one or two lines. Click any release to read the full announcement with AI summary, type and importance.
+          </div>
+          <div className="lg:col-span-7 space-y-4 text-[15px] leading-relaxed text-foreground/80">
+            <p>
+              Regulatory filings are where the real story lives — and where most retail investors never look. A 200-page
+              NI 43-101 buries the grade. A subscription agreement hides the warrant terms. An Early Warning Report
+              signals a stake build days before the headlines.
+            </p>
+            <p>
+              We pull every filing from SEDAR+, ASX Announcements and the CSE the moment it's lodged, then surface the
+              numbers and decisions that matter. Tap through to any company page to read the full filing alongside its
+              history, ownership and chart context.
             </p>
           </div>
-          <div className="font-mono text-[11px] text-muted-foreground">
-            {stats?.analyzed || 0} releases translated today · Updated live
+        </div>
+
+        <div className="mb-10">
+          <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-3">
+            Filings we decode
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {FILING_TYPES.map((t) => (
+              <span
+                key={t}
+                className="font-display text-sm font-semibold px-3.5 py-2 bg-card border border-border text-foreground hover:border-accent transition-colors"
+              >
+                {t}
+              </span>
+            ))}
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-3 mb-6 pb-6 border-b border-border">
-          <Filter label="Exchange" value={exchange} options={exchanges} onChange={(v) => setExchange(v as "All" | Exchange)} />
-          <Filter label="Importance" value={importance} options={importances} onChange={(v) => setImportance(v as (typeof importances)[number])} />
-          <Filter label="Type" value={type} options={types} onChange={(v) => setType(v as (typeof types)[number])} />
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+          <h3 className="font-display text-lg font-semibold">10 most recent filings</h3>
+          <div className="flex flex-wrap gap-1.5">
+            {FILTERS.map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setFilter(f)}
+                className={`text-[11px] font-mono uppercase tracking-wider px-3 py-1 rounded-full border transition-colors ${
+                  filter === f
+                    ? "bg-foreground text-background border-foreground"
+                    : "border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {isLoading ? (
-          <div className="py-12 text-center text-muted-foreground">Loading filing releases...</div>
-        ) : (
-          <>
-            <ul className="divide-y divide-border border-y border-border">
-              {filtered.length === 0 ? (
-                <li className="py-12 text-center text-muted-foreground">No releases match your filters.</li>
-              ) : (
-                filtered.slice(0, 9).map((item: Filing, i) => {
-                  const itemImportance = verdictToImportance(item.verdict || null);
-                  const itemType = (types.includes(item.filingType as (typeof types)[number]) ? item.filingType : "Corporate Update") as (typeof types)[number];
-                  const ticker = item.ticker || "—";
-                  const isExpanded = expandedId === item.id;
-                  return (
-                    <li key={`${item.id}-${i}`} className="bg-surface hover:bg-background/60 transition-colors">
-                      <button
-                        type="button"
-                        onClick={() => setExpandedId((prev) => (prev === item.id ? null : item.id))}
-                        className="w-full text-left block px-4 lg:px-5 py-4"
-                      >
-                        <div className="flex items-center gap-2 flex-wrap mb-2">
-                          <span className={`px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest font-bold ${severityStyle[itemImportance]}`}>
-                            {itemImportance}
-                          </span>
-                          <span className="font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 border border-border">{itemType}</span>
-                          <span className="font-mono text-[11px] font-bold">{ticker}</span>
-                          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5">{item.exchange}</span>
-                          <span className="text-[12px] text-muted-foreground truncate">· {item.company}</span>
-                          <span className="ml-auto font-mono text-[10px] text-muted-foreground flex items-center gap-1 shrink-0">
-                            <Clock className="w-2.5 h-2.5" />
-                            {item.time}
-                          </span>
-                          <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`} />
-                        </div>
-                        <p className="text-[14px] leading-snug font-medium text-foreground/90 mb-2">
-                          <Sparkles className="inline w-3 h-3 text-accent mr-1 -mt-0.5" />
-                          {item.summary}
-                        </p>
-                        <div className="flex flex-wrap gap-1.5 mb-1">
-                          {item.commodity && (
-                            <span className="font-mono text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-muted/40 border border-border text-muted-foreground">
-                              {item.commodity}
-                            </span>
-                          )}
-                          <span className="font-mono text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-muted/40 border border-border text-muted-foreground">
-                            Filing
-                          </span>
-                        </div>
-                        {isExpanded && (
-                          <div className="mt-3 pt-3 border-t border-border text-sm text-foreground/80 space-y-1">
-                            <div><span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mr-2">Company</span>{item.company}</div>
-                            <div><span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mr-2">Ticker</span>{ticker}</div>
-                            <div><span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mr-2">Exchange</span>{item.exchange}</div>
-                            <div><span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mr-2">Type</span>{itemType}</div>
-                            <div><span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mr-2">Importance</span>{itemImportance}</div>
-                          </div>
-                        )}
-                      </button>
-                    </li>
-                  );
-                })
-              )}
-            </ul>
+        <div className="relative">
+          <div className="space-y-2">
+            {visible.length === 0 ? (
+              <div className="py-12 text-center text-muted-foreground text-sm">No filings match this filter.</div>
+            ) : (
+              visible.map((item) => <FilingCard key={item.id} item={item} />)
+            )}
+          </div>
 
-            <div className="flex justify-center pt-8">
-              <Link to="/register" className="inline-flex items-center gap-2 bg-accent text-accent-foreground px-6 h-11 text-sm font-semibold hover:opacity-90 transition-opacity">
-                Get email alerts on new releases <ArrowUpRight className="w-4 h-4" />
+          {locked.length > 0 && (
+            <div className="relative mt-2">
+              <div className="space-y-2 pointer-events-none select-none blur-sm opacity-70">
+                {locked.map((item) => (
+                  <FilingCard key={item.id} item={item} />
+                ))}
+              </div>
+              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-b from-background/30 via-background/70 to-background">
+                <Link
+                  to="/register"
+                  className="inline-flex items-center gap-2 bg-accent text-accent-foreground px-5 h-11 text-sm font-semibold hover:opacity-90 transition-opacity"
+                >
+                  Sign up free to see more <ArrowUpRight className="w-4 h-4" />
+                </Link>
+              </div>
+            </div>
+          )}
+
+          {isAuthenticated && (
+            <div className="flex justify-center mt-6">
+              <Link
+                to="/filings"
+                className="inline-flex items-center gap-2 bg-accent text-accent-foreground px-5 h-11 text-sm font-semibold hover:opacity-90 transition-opacity"
+              >
+                View all filings <ArrowUpRight className="w-4 h-4" />
               </Link>
             </div>
-          </>
-        )}
+          )}
+        </div>
       </div>
     </section>
   );
 };
-
-const Filter = ({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: readonly string[];
-  onChange: (v: string) => void;
-}) => (
-  <label className="flex items-center gap-2 text-xs">
-    <span className="font-mono uppercase tracking-widest text-muted-foreground text-[10px]">{label}</span>
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="bg-surface border border-border px-2.5 h-9 text-xs font-medium outline-none focus:border-accent cursor-pointer"
-    >
-      {options.map((o) => (
-        <option key={o} value={o}>
-          {o}
-        </option>
-      ))}
-    </select>
-  </label>
-);
 
 export default LiveFeed;

@@ -173,11 +173,11 @@ const CommoditySidebar = () => {
   });
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4 min-h-0 lg:h-full">
       {/* Commodities */}
-      <div className="border border-border bg-surface">
+      <div className="border border-border bg-surface flex flex-col flex-1 min-h-0">
         <SectionHeader icon={Flame} title="Commodities" meta="· Spot" accent />
-        <div className="max-h-[360px] overflow-auto">
+        <div className="flex-1 overflow-auto min-h-0">
           <table className="w-full text-[12.5px]">
             <TableHeader />
             <tbody className="divide-y divide-border">
@@ -209,9 +209,9 @@ const CommoditySidebar = () => {
       </div>
 
       {/* Indexes */}
-      <div className="border border-border bg-surface">
+      <div className="border border-border bg-surface flex flex-col flex-1 min-h-0">
         <SectionHeader icon={TrendingUp} title="Indexes" meta="· Mining & Markets" />
-        <div className="max-h-[360px] overflow-auto">
+        <div className="flex-1 overflow-auto min-h-0">
           <table className="w-full text-[12.5px]">
             <TableHeader />
             <tbody className="divide-y divide-border">
@@ -241,9 +241,9 @@ const CommoditySidebar = () => {
       </div>
 
       {/* Currencies */}
-      <div className="border border-border bg-surface">
+      <div className="border border-border bg-surface flex flex-col flex-1 min-h-0">
         <SectionHeader icon={DollarSign} title="Currencies" meta="· FX · Spot" accent />
-        <div>
+        <div className="flex-1 overflow-auto min-h-0">
           <table className="w-full text-[12.5px]">
             <TableHeader />
             <tbody className="divide-y divide-border">

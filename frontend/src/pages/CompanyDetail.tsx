@@ -1,15 +1,21 @@
 import { useParams, Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
 import {
   ArrowUpRight,
   ArrowDownRight,
   Minus,
   Globe,
   Newspaper,
+  Clock,
+  ChevronRight,
+  Sparkles,
   MessageSquare,
   Users,
   UserCheck,
   Building,
+  Building2,
+  Star,
+  Lock,
   ExternalLink,
   Plus,
   Bell,
@@ -22,7 +28,8 @@ import {
   ChartLine,
   ChartCandlestick,
 } from "lucide-react";
-import { fetchCompany, fetchDiscussions, postDiscussion, voteDiscussion, fetchCompanyNews, fetchMarketHistory, login as apiLogin, register as apiRegister, companySlug, type Discussion, type NewsItem, type MarketHistoryPoint } from "@/lib/api";
+import { fetchCompany, fetchCompanyProfile, fetchDiscussions, postDiscussion, voteDiscussion, fetchCompanyNews, fetchMarketHistory, login as apiLogin, register as apiRegister, companySlug, type CompanyPerson, type Discussion, type NewsItem, type MarketHistoryPoint } from "@/lib/api";
+import { NewsArticleCard, getNewsSeverity, getNewsTags } from "@/components/site/NewsArticleCard";
 import { useAuth } from "@/hooks/use-auth";
 import { useState, useMemo, useEffect } from "react";
 import Nav from "@/components/site/Nav";
@@ -614,6 +621,46 @@ const CompanyDetail = () => {
           </div>
         </div>
 
+        {/* About */}
+        <AboutSection
+          ticker={data.ticker || data.name}
+          name={data.name}
+          description={data.description || md?.description || `${data.name} is a ${data.sector || "mining"} company listed on the ${data.exchange || "exchange"}.`}
+          website={data.website || null}
+          headquarters={data.headquarters || null}
+          transferAgent={data.transfer_agent || null}
+          exchange={data.exchange || null}
+        />
+
+        {/* Directors & Senior Management */}
+        <PeopleSection companyId={companyId} />
+
+        {/* Corporate Spotlight */}
+        <section className="mt-10 mb-10">
+          <h2 className="font-display text-2xl tracking-tight mb-4 pb-2 border-b border-border flex items-center gap-2">
+            <Star className="h-4 w-4" />
+            Corporate Spotlight
+          </h2>
+          <div className="border border-dashed border-border bg-muted/20 p-8 text-center">
+            <div className="mx-auto w-10 h-10 grid place-items-center bg-muted rounded-full mb-3">
+              <Lock className="w-4 h-4 text-muted-foreground" />
+            </div>
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
+              Not Yet Available
+            </div>
+            <h3 className="font-display text-xl tracking-tight mb-2">Are you a Company Director?</h3>
+            <p className="text-sm text-muted-foreground max-w-md mx-auto mb-3">
+              Put your Investment Case to Orewire's audience.
+            </p>
+            <a
+              href="mailto:hello@orewire.com"
+              className="text-sm font-medium underline underline-offset-4"
+            >
+              hello@orewire.com
+            </a>
+          </div>
+        </section>
+
         {/* News */}
         <CompanyNewsSection name={data.name} ticker={data.ticker || undefined} exchange={data.exchange || undefined} />
 
@@ -714,23 +761,6 @@ const CompanyDetail = () => {
         {/* Discussion */}
         <DiscussionSection companyId={companyId} ticker={data.ticker || data.name} />
 
-        {/* About */}
-        <div className="border border-border bg-surface mb-10">
-          <div className="px-5 py-3 border-b border-border">
-            <h3 className="font-display text-lg font-bold">About {data.ticker || data.name}</h3>
-          </div>
-          <div className="px-5 py-4">
-            <p className="text-sm text-foreground/70 leading-relaxed mb-4">
-              {md?.description || `${data.name} is a ${data.sector || "mining"} company listed on the ${data.exchange || "exchange"}.`}
-            </p>
-            <a href="#" className="inline-flex items-center gap-1.5 text-sm text-foreground/70 hover:text-foreground">
-              <Globe className="w-3.5 h-3.5" />
-              <span className="underline">{data.name?.toLowerCase().replace(/\s+/g, "")}.com</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
-          </div>
-        </div>
-
         {/* Disclaimer */}
         <div className="text-[11px] text-muted-foreground leading-relaxed mb-8 border-t border-border pt-4">
           Orewire publishes editorial summaries of public filings for informational purposes only and does not provide investment advice. Data may be delayed. Always read the original filing.
@@ -762,67 +792,216 @@ const IdRow = ({ label, value }: { label: string; value: string }) => (
   </tr>
 );
 
-const CompanyNewsSection = ({ name, ticker, exchange }: { name: string; ticker?: string; exchange?: string }) => {
-  const [expandedNewsKey, setExpandedNewsKey] = useState<string | null>(null);
-  const { data: newsItems = [], isLoading } = useQuery({
-    queryKey: ["company-news", name, ticker],
-    queryFn: () => fetchCompanyNews(name, ticker, exchange),
-    staleTime: 30 * 60 * 1000,
+const AboutSection = ({
+  ticker,
+  name,
+  description,
+  website,
+  headquarters,
+  transferAgent,
+  exchange,
+}: {
+  ticker: string;
+  name: string;
+  description: string;
+  website: string | null;
+  headquarters?: string | null;
+  transferAgent?: string | null;
+  exchange?: string | null;
+}) => {
+  // ASX issuers list a "Share Registry"; Canadian venues list a "Transfer Agent".
+  const agentLabel = (exchange || "").toUpperCase() === "ASX" ? "Share Registry" : "Transfer Agent";
+  const displayHost = (() => {
+    if (!website) return null;
+    try {
+      const u = new URL(website.match(/^https?:\/\//) ? website : `https://${website}`);
+      return u.hostname.replace(/^www\./, "");
+    } catch {
+      return website.replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "");
+    }
+  })();
+  const href = website ? (website.match(/^https?:\/\//) ? website : `https://${website}`) : null;
+
+  return (
+    <section className="mt-10">
+      <h2 className="font-display text-2xl tracking-tight mb-4 pb-2 border-b border-border flex items-center gap-2">
+        <Building2 className="h-4 w-4" />
+        About {ticker || name}
+      </h2>
+      <div className="space-y-3 text-sm leading-relaxed">
+        <p>{description}</p>
+        {href && displayHost && (
+          <a
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-sm font-medium underline underline-offset-4"
+          >
+            <Globe className="h-3.5 w-3.5" />
+            {displayHost}
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        )}
+        {(headquarters || transferAgent) && (
+          <dl className="grid sm:grid-cols-2 gap-x-8 gap-y-3 pt-3 mt-1 border-t border-border">
+            {headquarters && (
+              <div>
+                <dt className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-0.5">Head Office</dt>
+                <dd className="text-sm">{headquarters}</dd>
+              </div>
+            )}
+            {transferAgent && (
+              <div>
+                <dt className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-0.5">{agentLabel}</dt>
+                <dd className="text-sm">{transferAgent}</dd>
+              </div>
+            )}
+          </dl>
+        )}
+      </div>
+    </section>
+  );
+};
+
+const PeopleSection = ({ companyId }: { companyId: number }) => {
+  const { data, isLoading } = useQuery({
+    queryKey: ["company-profile", companyId],
+    queryFn: () => fetchCompanyProfile(companyId),
+    enabled: companyId > 0,
+    staleTime: 10 * 60 * 1000,
   });
 
-  const sentimentColor: Record<string, string> = {
-    bullish: "text-[hsl(var(--up))]",
-    bearish: "text-[hsl(var(--down))]",
-    neutral: "text-muted-foreground",
+  if (isLoading || !data || !data.people || data.people.length === 0) return null;
+
+  const people = data.people;
+  const insiderSlug = (name: string) =>
+    name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+
+  const personType = (p: CompanyPerson): { label: string; kind: "executive" | "independent" | "director" } => {
+    const title = (p.title || "").toLowerCase();
+    if (p.kind === "manager") return { label: "Executive", kind: "executive" };
+    if (/independent/.test(title)) return { label: "Independent", kind: "independent" };
+    return { label: "Director", kind: "director" };
   };
 
   return (
-    <Section icon={<Newspaper className="w-4 h-4" />} title="News">
+    <section className="mt-10 mb-10">
+      <h2 className="font-display text-2xl tracking-tight mb-4 pb-2 border-b border-border flex items-center gap-2">
+        <Users className="h-4 w-4" />
+        Directors &amp; Senior Management
+      </h2>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-xs uppercase tracking-wider text-muted-foreground border-b border-border">
+              <th className="text-left font-medium py-2">Name</th>
+              <th className="text-left font-medium py-2">Position</th>
+              <th className="text-left font-medium py-2">Type</th>
+              <th className="text-left font-medium py-2">Appointed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {people.map((p) => {
+              const t = personType(p);
+              return (
+                <tr key={p.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+                  <td className="py-2 font-medium">
+                    <a className="hover:underline" href={`/insider/${insiderSlug(p.name)}`}>{p.name}</a>
+                  </td>
+                  <td className="py-2 text-muted-foreground">{p.title || "—"}</td>
+                  <td className="py-2">
+                    <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 font-semibold text-foreground font-mono text-[10px]">
+                      {t.label}
+                    </div>
+                  </td>
+                  <td className="py-2 font-mono text-xs">{p.since_year || "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-muted-foreground mt-3 font-mono">
+        Source: {people[0]?.source === "manual"
+          ? "Manually entered"
+          : people[0]?.source === "exchange"
+          ? "Official exchange listing data"
+          : "Latest management information circular"}
+      </p>
+    </section>
+  );
+};
+
+const NEWS_PAGE_SIZE = 4;
+
+const CompanyNewsSection = ({ name, ticker, exchange }: { name: string; ticker?: string; exchange?: string }) => {
+  const {
+    data,
+    isLoading,
+    isFetchingNextPage,
+    fetchNextPage,
+    hasNextPage,
+  } = useInfiniteQuery({
+    queryKey: ["company-news", name, ticker],
+    queryFn: ({ pageParam }) =>
+      fetchCompanyNews(name, ticker, exchange, { limit: NEWS_PAGE_SIZE, offset: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextOffset ?? undefined,
+    staleTime: 30 * 60 * 1000,
+  });
+  const newsItems = data?.pages.flatMap((p) => p.items) ?? [];
+  const hasMore = !!hasNextPage;
+
+  return (
+    <section className="mt-10">
+      <h2 className="font-display text-2xl tracking-tight mb-4 pb-2 border-b border-border flex items-center gap-2">
+        <Newspaper className="h-4 w-4" />
+        News Releases
+      </h2>
       {isLoading ? (
-        <div className="px-5 py-6 text-center text-sm text-muted-foreground">Loading news...</div>
+        <div className="py-6 text-center text-sm text-muted-foreground">Loading news…</div>
       ) : newsItems.length === 0 ? (
-        <div className="px-5 py-6 text-center text-sm text-muted-foreground">No recent news found.</div>
+        <div className="py-6 text-center text-sm text-muted-foreground">No recent news found.</div>
       ) : (
-        <ul className="divide-y divide-border">
+        <div className="space-y-3">
           {newsItems.map((n, i) => (
-            <li key={i}>
+            <NewsArticleCard
+              key={`${n.link}-${i}`}
+              title={n.title}
+              summary={n.summary}
+              source={n.source}
+              timeAgo={n.timeAgo}
+              link={n.link}
+              severity={getNewsSeverity(n.sentiment, n.title)}
+              tags={getNewsTags(n.title, n.commodity)}
+            />
+          ))}
+          {hasMore && (
+            <div className="pt-6 pb-2 flex justify-center">
               <button
                 type="button"
-                onClick={() => setExpandedNewsKey((prev) => (prev === n.link ? null : n.link))}
-                className="w-full text-left px-5 py-3.5 hover:bg-background/50 transition-colors"
+                onClick={() => fetchNextPage()}
+                disabled={isFetchingNextPage}
+                className="group inline-flex items-center gap-2 border border-border bg-card px-5 h-10 text-xs font-mono uppercase tracking-[0.18em] text-foreground/80 hover:text-accent-foreground hover:bg-accent hover:border-accent disabled:opacity-50 disabled:hover:bg-card disabled:hover:text-foreground/80 disabled:hover:border-border transition-all shadow-sm hover:shadow"
               >
-                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <span className="font-mono text-[10px] text-muted-foreground">{n.source}</span>
-                  <span className="font-mono text-[10px] text-muted-foreground">· {n.timeAgo}</span>
-                  {n.commodity && (
-                    <span className="font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 border border-border">{n.commodity}</span>
-                  )}
-                  <span className={`ml-auto font-mono text-[9px] uppercase tracking-widest font-bold ${sentimentColor[n.sentiment] || ""}`}>
-                    {n.sentiment}
-                  </span>
-                  <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${expandedNewsKey === n.link ? "rotate-180" : ""}`} />
-                </div>
-                <p className="text-sm font-medium">{n.title}</p>
-                {n.summary && (
-                  <p className={`text-xs text-muted-foreground mt-1 ${expandedNewsKey === n.link ? "" : "line-clamp-2"}`}>{n.summary}</p>
-                )}
-                {expandedNewsKey === n.link && (
-                  <a
-                    href={n.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="inline-flex mt-2 text-xs text-accent hover:underline"
-                  >
-                    Read source →
-                  </a>
+                {isFetchingNextPage ? (
+                  <>
+                    <span className="w-3 h-3 border-2 border-foreground/30 border-t-foreground rounded-full animate-spin" />
+                    Loading
+                  </>
+                ) : (
+                  <>
+                    Show {NEWS_PAGE_SIZE} more
+                    <ChevronDown className="w-3.5 h-3.5 transition-transform group-hover:translate-y-0.5" />
+                  </>
                 )}
               </button>
-            </li>
-          ))}
-        </ul>
+            </div>
+          )}
+        </div>
       )}
-    </Section>
+      <div className="h-8" />
+    </section>
   );
 };
 

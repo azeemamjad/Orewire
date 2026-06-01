@@ -330,7 +330,10 @@ function formatRow(row) {
   return {
     id: row.id,
     title: row.title,
+    // Short AI line (used in collapsed card).
     summary: row.summary || row.description || '',
+    // Full content (used in expanded card). Null when we only have a short summary.
+    description: (row.description && row.description !== row.summary) ? row.description : null,
     source: row.source || 'News',
     link: row.link,
     pubDate: row.pub_date,
@@ -381,30 +384,54 @@ router.get('/feed', async (req, res) => {
   }
 });
 
-// GET /api/news/company/:name?ticker=SCZ&exchange=TSXV
+// GET /api/news/company/:name?ticker=SCZ&exchange=TSXV&limit=4&offset=0
 router.get('/company/:name', async (req, res) => {
   try {
     const companyName = decodeURIComponent(req.params.name);
     const ticker = req.query.ticker || '';
     const category = `company:${ticker || companyName}`;
+    const limit  = Math.max(1, Math.min(100, parseInt(req.query.limit,  10) || 10));
+    const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
 
-    let result = await db.query(
-      `SELECT * FROM news WHERE (category = $1 OR ticker = $2) AND relevant = TRUE ORDER BY pub_date DESC LIMIT 10`,
-      [category, ticker]
-    );
+    // Fetch limit + 1 so we can flag hasMore cheaply without a separate COUNT.
+    const fetchLimit = limit + 1;
+    const sql = `SELECT * FROM news WHERE (category = $1 OR ticker = $2) AND relevant = TRUE ORDER BY pub_date DESC LIMIT $3 OFFSET $4`;
 
-    if (result.rows.length === 0) {
+    let result = await db.query(sql, [category, ticker, fetchLimit, offset]);
+
+    // Only trigger the on-demand fetcher on the very first page when nothing exists yet.
+    if (result.rows.length === 0 && offset === 0) {
       await fetchCompanyNewsOnDemand(companyName, ticker);
-      result = await db.query(
-        `SELECT * FROM news WHERE (category = $1 OR ticker = $2) AND relevant = TRUE ORDER BY pub_date DESC LIMIT 10`,
-        [category, ticker]
-      );
+      result = await db.query(sql, [category, ticker, fetchLimit, offset]);
     }
 
-    res.json({ items: result.rows.map(formatRow) });
+    const hasMore = result.rows.length > limit;
+    const items = result.rows.slice(0, limit).map(formatRow);
+    res.json({ items, hasMore, nextOffset: hasMore ? offset + limit : null });
   } catch (err) {
     console.error('Company news query failed:', err?.message || err);
-    res.status(503).json({ items: [] });
+    res.status(503).json({ items: [], hasMore: false, nextOffset: null });
+  }
+});
+
+// GET /api/news/item?link=...  OR  /api/news/item?id=123  — fetch a single news item
+router.get('/item', async (req, res) => {
+  try {
+    const link = (req.query.link || '').toString().trim();
+    const id   = parseInt(req.query.id, 10);
+    let result;
+    if (Number.isFinite(id) && id > 0) {
+      result = await db.query(`SELECT * FROM news WHERE id = $1 LIMIT 1`, [id]);
+    } else if (link) {
+      result = await db.query(`SELECT * FROM news WHERE link = $1 LIMIT 1`, [link]);
+    } else {
+      return res.status(400).json({ error: 'link or id required' });
+    }
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    res.json({ item: formatRow(result.rows[0]) });
+  } catch (err) {
+    console.error('News item query failed:', err?.message || err);
+    res.status(503).json({ error: 'Database unavailable' });
   }
 });
 

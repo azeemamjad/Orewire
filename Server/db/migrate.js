@@ -154,6 +154,13 @@ async function migrate() {
   await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS profile_scraped_at TIMESTAMPTZ`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_companies_ms_slug ON companies(ms_slug)`);
 
+  // Exchange-sourced profile fields (TMX / CSE / ASX official listing pages).
+  // transfer_agent covers Transfer Agent (Canada: TSX/TSXV/CSE) and Share Registry (AUS: ASX).
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS transfer_agent TEXT`);
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS phone TEXT`);
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS shares_outstanding BIGINT`);
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS profile_source TEXT`);
+
   // Company managers / directors (one row per person, source = 'marketscreener' | 'website')
   await db.query(`
     CREATE TABLE IF NOT EXISTS company_people (

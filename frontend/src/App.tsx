@@ -15,6 +15,8 @@ import CurrencyDetail from "./pages/CurrencyDetail.tsx";
 import IndexDetail from "./pages/IndexDetail.tsx";
 import News from "./pages/News.tsx";
 import NewsDetail from "./pages/NewsDetail.tsx";
+import FilingDetail from "./pages/FilingDetail.tsx";
+import FilingsList from "./pages/FilingsList.tsx";
 import Profile from "./pages/Profile.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
@@ -38,6 +40,8 @@ const App = () => (
           <Route path="/market/index/:slug" element={<IndexDetail />} />
           <Route path="/news" element={<News />} />
           <Route path="/news/:slug" element={<NewsDetail />} />
+          <Route path="/filings" element={<FilingsList />} />
+          <Route path="/filings/:id" element={<FilingDetail />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Login />} />

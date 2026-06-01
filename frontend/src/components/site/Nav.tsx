@@ -1,5 +1,5 @@
 import { LogOut, Menu, UserRound } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,38 +11,62 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { logout } from "@/lib/api";
 
+const NAV_ITEMS = [
+  { to: "/", label: "Dashboard" },
+  { to: "/companies", label: "Companies" },
+  { to: "/watchlist", label: "Watchlist" },
+  { to: "/jobs", label: "Jobs" },
+];
+
 const Nav = () => {
   const { isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
 
   const handleLogout = async () => {
     await logout();
     navigate("/");
   };
 
+  const isActive = (to: string) => (to === "/" ? pathname === "/" : pathname.startsWith(to));
+
   return (
-    <header className="sticky top-0 z-40 bg-background/90 backdrop-blur border-b border-border">
-      <div className="max-w-[1440px] mx-auto px-6 lg:px-10 h-16 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-primary grid place-items-center">
-            <span className="font-display text-primary-foreground text-base font-extrabold leading-none">O</span>
+    <header className="sticky top-0 z-40 bg-background/85 backdrop-blur-md border-b border-border">
+      <div className="max-w-[1440px] mx-auto px-4 lg:px-6 h-14 flex items-center gap-6">
+        <Link to="/" className="flex items-center gap-2.5 group shrink-0">
+          <div className="relative w-8 h-8 bg-foreground grid place-items-center">
+            <span className="font-display text-background text-base font-extrabold leading-none">O</span>
+            <span className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 bg-[hsl(var(--up))] animate-pulse-dot" />
           </div>
-          <span className="font-display text-xl font-extrabold tracking-tight">Orewire</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-display text-lg font-extrabold tracking-tight">Orewire</span>
+            <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground border border-border px-1 py-0.5 leading-none hidden sm:inline-block">
+              Beta
+            </span>
+          </div>
         </Link>
 
-        <nav className="hidden md:flex items-center gap-8 text-sm">
-          <a href="/#feed" className="hover:text-primary text-foreground/80">Feed</a>
-          <Link to="/companies" className="hover:text-primary text-foreground/80">Companies</Link>
-          <Link to="/watchlist" className="hover:text-primary text-foreground/80">Watchlist</Link>
-          <Link to="/jobs" className="hover:text-primary text-foreground/80">Jobs</Link>
+        <nav className="hidden md:flex items-center gap-1 text-sm flex-1">
+          {NAV_ITEMS.map((item) => (
+            <Link
+              key={item.to}
+              to={item.to}
+              className={`relative px-3 h-14 flex items-center font-medium transition-colors ${
+                isActive(item.to) ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {item.label}
+              {isActive(item.to) && <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-accent" />}
+            </Link>
+          ))}
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 ml-auto md:ml-0">
           {isAuthenticated ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
-                  className="hidden sm:inline-flex items-center justify-center w-10 h-10 border border-border bg-surface text-foreground/80 hover:text-primary hover:border-accent transition-colors"
+                  className="hidden sm:inline-flex items-center justify-center w-9 h-9 border border-border bg-surface text-foreground/80 hover:text-primary hover:border-accent transition-colors"
                   aria-label="Profile"
                 >
                   <UserRound className="w-4 h-4" />
@@ -69,13 +93,13 @@ const Nav = () => {
             <>
               <Link
                 to="/login"
-                className="hidden sm:inline-flex items-center px-3 h-10 text-sm text-foreground/80 hover:text-foreground"
+                className="hidden sm:inline-flex items-center px-3 h-9 text-sm text-foreground/80 hover:text-foreground transition-colors"
               >
                 Sign in
               </Link>
               <Link
                 to="/register"
-                className="inline-flex items-center bg-accent text-accent-foreground px-4 h-10 text-sm font-semibold hover:opacity-90 transition-opacity"
+                className="inline-flex items-center bg-accent text-accent-foreground px-4 h-9 text-sm font-semibold hover:opacity-90 transition-opacity"
               >
                 Sign up
               </Link>

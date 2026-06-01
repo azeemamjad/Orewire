@@ -6,6 +6,8 @@ import CommodityBar from "@/components/site/CommodityBar";
 import SearchHero from "@/components/site/SearchHero";
 import Movers from "@/components/site/Movers";
 import NewsFeed from "@/components/site/NewsFeed";
+import NewsReleases from "@/components/site/NewsReleases";
+import Filings from "@/components/site/Filings";
 import CommoditySidebar from "@/components/site/CommoditySidebar";
 import LiveFeed from "@/components/site/LiveFeed";
 import HowItWorks from "@/components/site/HowItWorks";
@@ -24,20 +26,16 @@ const Index = () => {
         <section className="border-b border-border bg-background">
           <div className="max-w-[1440px] mx-auto px-4 lg:px-6 py-6 lg:py-8">
             <SearchHero />
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-              <div className="lg:col-span-5">
-                <Movers />
-              </div>
-              <div className="lg:col-span-4">
-                <NewsFeed />
-              </div>
-              <div className="lg:col-span-3 space-y-4">
-                <CommoditySidebar />
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:h-[780px]">
+              <Movers />
+              <NewsFeed />
+              <Filings />
+              <CommoditySidebar />
             </div>
           </div>
         </section>
 
+        <NewsReleases />
         <LiveFeed />
         <HowItWorks />
         <Newsletter />

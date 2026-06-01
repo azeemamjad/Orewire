@@ -593,12 +593,12 @@
       </div>
     </div>
 
-    <!-- Profile scraper (MarketScreener) -->
+    <!-- Profile scraper (Exchange listings: CSE / ASX / TMX) -->
     <div class="preview-box" style="margin-top:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
         <div>
-          <div class="section-title" style="margin:0;">Company Profiles (MarketScreener)</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:4px;">Scrape description, website, headquarters &amp; management/directors for companies in the DB.</div>
+          <div class="section-title" style="margin:0;">Company Profiles (Exchange Listings)</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;">Scrape description, website, head office, transfer agent / share registry, shares outstanding &amp; officers/directors straight from each listing venue — <strong>CSE</strong>, <strong>ASX</strong>, and <strong>TMX</strong> (TSX/TSX-V). Source is picked automatically per company's exchange.</div>
         </div>
         <div id="pp-status" style="font-size:13px;color:var(--muted);">Idle</div>
       </div>
@@ -776,6 +776,7 @@ async function loadCompanies() {
         desc:  !!(c.description && String(c.description).trim()),
         web:   !!(c.website && String(c.website).trim()),
         hq:    !!(c.headquarters && String(c.headquarters).trim()),
+        ta:    !!(c.transfer_agent && String(c.transfer_agent).trim()),
         ppl:   !!c.has_people,
       };
       const badge = (ok, label) =>
@@ -788,11 +789,12 @@ async function loadCompanies() {
         <td>${esc(c.sedar_ticker ?? '—')}</td>
         <td>${c.market_cap != null ? Number(c.market_cap).toLocaleString() : '—'}</td>
         <td style="display:flex;gap:4px;flex-wrap:wrap;">
-          ${badge(has.desc, 'Desc')}${badge(has.web, 'Web')}${badge(has.hq, 'HQ')}${badge(has.ppl, 'People')}
+          ${badge(has.desc, 'Desc')}${badge(has.web, 'Web')}${badge(has.hq, 'HQ')}${badge(has.ta, 'TA')}${badge(has.ppl, 'People')}
         </td>
         <td style="display:flex;gap:6px;">
           <button class="btn btn-ghost btn-sm" onclick="openEditProfile(${c.id})">✎ Edit</button>
-          <button class="btn btn-primary btn-sm" onclick="quickScrape('${esc(c.name).replace(/'/g,"\\'")}','${esc(c.exchange??'')}','${esc(c.ticker??'')}')">▶ Scrape</button>
+          ${c.ticker ? `<button class="btn btn-primary btn-sm" title="Pull profile from ${esc(c.exchange ?? 'exchange')} listing" onclick="quickProfile('${esc(c.ticker).replace(/'/g,"\\'")}')">▶ Profile</button>` : ''}
+          <button class="btn btn-ghost btn-sm" title="Scrape SEDAR/ASX filings" onclick="quickScrape('${esc(c.name).replace(/'/g,"\\'")}','${esc(c.exchange??'')}','${esc(c.ticker??'')}')">📄 Filings</button>
           <button class="btn btn-danger btn-sm" onclick="deleteCompany(${c.id})">✕</button>
         </td>
       </tr>`;
@@ -800,6 +802,21 @@ async function loadCompanies() {
   } catch (e) {
     tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Error: ${esc(e.message)}</td></tr>`;
   }
+}
+
+// Pull the company profile (description / website / HQ / transfer agent / officers)
+// from its exchange listing — jumps to the Pipeline tab and runs the scrape for this ticker.
+function quickProfile(ticker) {
+  document.querySelectorAll('nav li').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
+  document.querySelector('nav li[data-tab="pipeline"]').classList.add('active');
+  document.getElementById('tab-pipeline').classList.add('active');
+  // Target only this company; clear bulk controls so we don't fan out unexpectedly.
+  document.getElementById('pp-ticker').value = ticker;
+  document.getElementById('pp-limit').value = '';
+  document.getElementById('pp-refresh').value = '';
+  document.getElementById('pp-dry-run').checked = false;
+  profilesStart();
 }
 
 function quickScrape(name, exchange, ticker) {
@@ -870,6 +887,16 @@ function renderEditProfileForm(company) {
         <div>
           <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;">Headquarters</label>
           <input id="pf-hq" type="text" placeholder="City, Country" value="${esc(company.headquarters ?? '')}" style="width:100%;padding:8px;font:inherit;" />
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div>
+          <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;">${(company.exchange ?? '').toUpperCase() === 'ASX' ? 'Share Registry' : 'Transfer Agent'}</label>
+          <input id="pf-transfer-agent" type="text" placeholder="e.g. Odyssey Trust Company" value="${esc(company.transfer_agent ?? '')}" style="width:100%;padding:8px;font:inherit;" />
+        </div>
+        <div>
+          <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;">Phone</label>
+          <input id="pf-phone" type="text" placeholder="e.g. +1 604 631-3300" value="${esc(company.phone ?? '')}" style="width:100%;padding:8px;font:inherit;" />
         </div>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;">
@@ -988,9 +1015,11 @@ async function removePersonRow(idx) {
 
 async function saveProfile() {
   const body = {
-    description:  document.getElementById('pf-description').value.trim() || null,
-    website:      document.getElementById('pf-website').value.trim() || null,
-    headquarters: document.getElementById('pf-hq').value.trim() || null,
+    description:    document.getElementById('pf-description').value.trim() || null,
+    website:        document.getElementById('pf-website').value.trim() || null,
+    headquarters:   document.getElementById('pf-hq').value.trim() || null,
+    transfer_agent: document.getElementById('pf-transfer-agent').value.trim() || null,
+    phone:          document.getElementById('pf-phone').value.trim() || null,
   };
   try {
     const r = await fetch(`${API}/api/companies/${_editingCompanyId}/profile`, {
