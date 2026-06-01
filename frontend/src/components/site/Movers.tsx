@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDownRight, ArrowUpRight, TrendingUp, TrendingDown } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { fetchMovers, companySlug, type MoverItem } from "@/lib/api";
 
 const REFETCH_MS = 30 * 60 * 1000;
@@ -36,7 +36,9 @@ function titleCase(name: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up: boolean }) => (
+const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up: boolean }) => {
+  const navigate = useNavigate();
+  return (
   <div className="border border-border bg-surface flex flex-col flex-1 min-h-0">
     <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border bg-muted/30">
       <div className="flex items-center gap-2">
@@ -71,14 +73,18 @@ const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up:
           </tr>
         ) : (
           rows.map((r) => (
-            <tr key={`${r.exchange}-${r.ticker}`} className="hover:bg-background/60 transition-colors">
+            <tr
+              key={`${r.exchange}-${r.ticker}`}
+              className="hover:bg-background/60 transition-colors cursor-pointer group"
+              onClick={() => navigate(`/company/${companySlug(r.exchange, r.ticker)}`)}
+            >
               <td className="px-3 py-2">
-                <Link to={`/company/${companySlug(r.exchange, r.ticker)}`} className="flex items-center gap-2 group">
+                <div className="flex items-center gap-2">
                   <span className="font-mono font-bold group-hover:underline">{r.ticker}</span>
                   <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5">
                     {normExLabel(r.exchange)}
                   </span>
-                </Link>
+                </div>
                 <div className="text-[10.5px] text-muted-foreground truncate max-w-[108px]" title={titleCase(r.name)}>
                   {titleCase(r.name)}
                 </div>
@@ -99,7 +105,8 @@ const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up:
     </table>
     </div>
   </div>
-);
+  );
+};
 
 const Movers = () => {
   const { data, isLoading } = useQuery({
