@@ -39,6 +39,19 @@ function toNewsSlug(item: NewsItem): string {
   return encodeURIComponent(item.link || item.title);
 }
 
+// Decode/strip raw HTML some RSS summaries carry so long URLs don't overflow.
+function cleanSummary(text: string | null | undefined): string {
+  if (!text) return "";
+  const decoded = text
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&nbsp;/g, " ");
+  return decoded.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+}
+
 const PAGE_SIZE = 10;
 
 const News = () => {
@@ -106,7 +119,7 @@ const News = () => {
                         </span>
                       </div>
                       <h2 className="font-display text-lg font-bold leading-tight mb-1">{item.title}</h2>
-                      <p className="text-sm text-foreground/75 line-clamp-2">{item.summary || item.title}</p>
+                      <p className="text-sm text-foreground/75 line-clamp-2 break-words">{cleanSummary(item.summary) || item.title}</p>
                     </Link>
                   </li>
                 );

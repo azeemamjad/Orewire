@@ -5,6 +5,7 @@ const fs         = require('fs');
 const db         = require('../db');
 const { state, addLog } = require('./state');
 const { load: loadConfig } = require('./config');
+const { upsertInsiderData } = require('../db/insiders');
 
 const SCRAPER_DIR = path.resolve(
   process.env.SCRAPER_PATH || path.join(__dirname, '../../Scraper')
@@ -338,6 +339,7 @@ async function saveOneFiling(pdfPath, companyDir, companyName, ticker, exchange)
           JSON.stringify(ext.insider_holdings ?? null),
           JSON.stringify(analysis),
         ]);
+        await upsertInsiderData(client, companyRow?.id, existingFid, ext);
       }
     } else {
       // New filing — insert AI output
@@ -387,6 +389,7 @@ async function saveOneFiling(pdfPath, companyDir, companyName, ticker, exchange)
         JSON.stringify(ext.insider_holdings ?? null),
         JSON.stringify(analysis),
       ]);
+      await upsertInsiderData(client, companyRow?.id, fid, ext);
     }
 
     await client.query('COMMIT');
@@ -499,6 +502,7 @@ async function syncAnalyses() {
             JSON.stringify(ext.insider_holdings ?? null),
             JSON.stringify(analysis),
           ]);
+          await upsertInsiderData(client, companyRow?.id, fid, ext);
           stats.imported++;
         } catch (err) {
           stats.errors++;

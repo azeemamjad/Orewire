@@ -193,6 +193,47 @@ async function migrate() {
   `);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_watchlist_user ON watchlist(user_id)`);
 
+  // Filing source URL (link back to the original document on SEDAR+/ASX)
+  await safeQuery(`ALTER TABLE filings ADD COLUMN IF NOT EXISTS source_url TEXT`);
+
+  // Insider ownership — current snapshot, one row per (company, insider).
+  // Populated from filings (SEDI / proxy / director interest / substantial holder).
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS insider_ownership (
+      id                       SERIAL PRIMARY KEY,
+      company_id               INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      insider_name             TEXT NOT NULL,
+      title                    TEXT,
+      total_shares             BIGINT,
+      percent_ownership        REAL,
+      last_transaction         TEXT,
+      last_transaction_date    DATE,
+      last_updated_from_filing INTEGER REFERENCES filings(id) ON DELETE SET NULL,
+      updated_at               TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (company_id, insider_name)
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_insider_ownership_company ON insider_ownership(company_id)`);
+
+  // Insider transactions — chronological history, one row per filed transaction.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS insider_transactions (
+      id                   SERIAL PRIMARY KEY,
+      company_id           INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      filing_id            INTEGER REFERENCES filings(id) ON DELETE CASCADE,
+      insider_name         TEXT NOT NULL,
+      title                TEXT,
+      transaction_type     TEXT,
+      shares               BIGINT,
+      price                REAL,
+      transaction_date     DATE,
+      total_holdings_after BIGINT,
+      created_at           TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (company_id, insider_name, transaction_date, shares, transaction_type)
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_insider_tx_company ON insider_transactions(company_id, transaction_date DESC)`);
+
   console.log('[DB] All migrations complete');
 }
 

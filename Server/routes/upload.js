@@ -5,6 +5,7 @@ const XLSX    = require('xlsx');
 const path    = require('path');
 const fs      = require('fs');
 const db      = require('../db');
+const { upsertInsiderData } = require('../db/insiders');
 
 const upload = multer({ dest: './uploads/' });
 
@@ -411,6 +412,7 @@ router.post('/sync-analyses', express.json(), async (req, res) => {
             JSON.stringify(ext.insider_holdings ?? null),
             JSON.stringify(analysis),
           ]);
+          await upsertInsiderData(client, companyRow?.id, fid, ext);
           stats.imported++;
         } catch (err) { stats.errors.push({ file: jf, error: err.message }); }
       }

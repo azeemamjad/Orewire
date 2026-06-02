@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 const path    = require('path');
 const fs      = require('fs');
 const db      = require('../db');
+const { upsertInsiderData } = require('../db/insiders');
 
 const scraperPath   = path.resolve(process.env.SCRAPER_PATH  || path.join(__dirname, '../../Scraper'));
 const downloadsDir  = path.resolve(process.env.DOWNLOADS_DIR || path.join(__dirname, '../../Scraper/downloads'));
@@ -135,6 +136,7 @@ async function syncAnalyses() {
             JSON.stringify(ext.insider_holdings ?? null),
             JSON.stringify(analysis),
           ]);
+          await upsertInsiderData(client, companyRow?.id, fid, ext);
           stats.imported++;
         } catch (err) { stats.errors.push({ file: jf, error: err.message }); }
       }

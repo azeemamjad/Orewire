@@ -1,6 +1,7 @@
 const express = require('express');
 const router  = express.Router();
 const db      = require('../db');
+const { attachUser } = require('./auth');
 
 function normalizeExchange(ex) {
   if (!ex) return null;
@@ -512,6 +513,47 @@ router.delete('/:id/people/:personId', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error('Person delete failed:', err?.message || err);
+    res.status(503).json({ error: 'Database unavailable' });
+  }
+});
+
+// GET /api/companies/:id/insiders — ownership table + transaction feed.
+// Free (anonymous) users see top 5 owners + latest 3 transactions; registered
+// users (req.user set) see the full history.
+router.get('/:id/insiders', attachUser, async (req, res) => {
+  try {
+    const companyId = parseInt(req.params.id, 10);
+    if (!companyId) return res.status(400).json({ error: 'Invalid company id' });
+    const isRegistered = !!req.user;
+
+    const ownershipRes = await db.query(
+      `SELECT insider_name, title, total_shares, percent_ownership, last_transaction, last_transaction_date
+         FROM insider_ownership
+        WHERE company_id = $1
+        ORDER BY COALESCE(percent_ownership, 0) DESC, COALESCE(total_shares, 0) DESC`,
+      [companyId],
+    );
+    const txRes = await db.query(
+      `SELECT insider_name, title, transaction_type, shares, price, transaction_date, total_holdings_after
+         FROM insider_transactions
+        WHERE company_id = $1
+        ORDER BY transaction_date DESC NULLS LAST, id DESC
+        LIMIT 200`,
+      [companyId],
+    );
+
+    const ownershipAll = ownershipRes.rows;
+    const txAll = txRes.rows;
+
+    res.json({
+      registered: isRegistered,
+      ownershipTotal: ownershipAll.length,
+      transactionsTotal: txAll.length,
+      ownership: isRegistered ? ownershipAll : ownershipAll.slice(0, 5),
+      transactions: isRegistered ? txAll : txAll.slice(0, 3),
+    });
+  } catch (err) {
+    console.error('Insiders query failed:', err?.message || err);
     res.status(503).json({ error: 'Database unavailable' });
   }
 });

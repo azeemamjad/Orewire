@@ -32,6 +32,19 @@ function getFilingType(title: string): string {
   return "News Release";
 }
 
+// Decode/strip raw HTML that some RSS summaries carry so long URLs don't overflow.
+function cleanSummary(text: string | null | undefined): string {
+  if (!text) return "";
+  const decoded = text
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&nbsp;/g, " ");
+  return decoded.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+}
+
 const placeholderItems: NewsItem[] = [
   { title: "Hole EL-247 returned 12.4m @ 3.2 g/t Au — 2.4× deposit average. Mineralization remains open at depth.", source: "TMX Newsfile", timeAgo: "12 min ago", commodity: "Gold", sentiment: "bullish", link: "#", pubDate: "", summary: "" },
   { title: "Hemi Indicated resource increased 18% to 6.8 Moz Au. Conversion drilling continues ahead of feasibility.", source: "GlobeNewsWire", timeAgo: "1 hr ago", commodity: "Gold", sentiment: "bullish", link: "#", pubDate: "", summary: "" },
@@ -88,8 +101,8 @@ const NewsFeed = () => {
                     {item.timeAgo}
                   </span>
                 </div>
-                <p className="text-[13px] leading-snug font-medium line-clamp-2">
-                  {item.summary || item.title}
+                <p className="text-[13px] leading-snug font-medium line-clamp-2 break-words">
+                  {cleanSummary(item.summary) || item.title}
                 </p>
               </Link>
             </li>

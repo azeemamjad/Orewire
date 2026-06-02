@@ -1,6 +1,13 @@
 const express = require('express');
 const router  = express.Router();
+const path    = require('path');
+const fs      = require('fs');
 const db      = require('../db');
+
+// SEDAR+/ASX hand out temporary links, so we serve our own downloaded copy.
+const DOWNLOADS_DIR = path.resolve(
+  process.env.DOWNLOADS_DIR || path.join(__dirname, '../../Scraper/downloads')
+);
 
 function inferCommodity(summary, tickerSummary) {
   const text = `${summary || ''} ${tickerSummary || ''}`.toLowerCase();
@@ -135,6 +142,29 @@ router.get('/:id', async (req, res) => {
     res.json({ ...filing, analysis: analysisResult.rows[0] || null });
   } catch (err) {
     console.error('Filing detail query failed:', err?.message || err);
+    res.status(503).json({ error: 'Database unavailable' });
+  }
+});
+
+// GET /api/filings/:id/document — serve our downloaded copy of the original PDF.
+router.get('/:id/document', async (req, res) => {
+  try {
+    const result = await db.query('SELECT pdf_path, pdf_filename FROM filings WHERE id = $1', [req.params.id]);
+    const filing = result.rows[0];
+    if (!filing || !filing.pdf_path) return res.status(404).json({ error: 'Document not found' });
+
+    // Resolve and constrain to the downloads dir to prevent path traversal.
+    const resolved = path.resolve(filing.pdf_path);
+    if (resolved !== DOWNLOADS_DIR && !resolved.startsWith(DOWNLOADS_DIR + path.sep)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    if (!fs.existsSync(resolved)) return res.status(404).json({ error: 'File no longer available' });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${filing.pdf_filename || 'filing.pdf'}"`);
+    res.sendFile(resolved);
+  } catch (err) {
+    console.error('Filing document serve failed:', err?.message || err);
     res.status(503).json({ error: 'Database unavailable' });
   }
 });

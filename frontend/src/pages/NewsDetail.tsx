@@ -4,6 +4,7 @@ import { ArrowLeft, Clock, Sparkles } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import Nav from "@/components/site/Nav";
 import Footer from "@/components/site/Footer";
+import Disclaimer from "@/components/site/Disclaimer";
 import { fetchNewsFeed, fetchNewsItem, type NewsItem } from "@/lib/api";
 
 const severityStyle: Record<string, string> = {
@@ -50,8 +51,21 @@ function formatFullDate(dateStr: string): string {
   });
 }
 
+// Decode/strip raw HTML some RSS summaries carry so long URLs don't overflow.
+function cleanSummary(text: string | null | undefined): string {
+  if (!text) return "";
+  const decoded = text
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&nbsp;/g, " ");
+  return decoded.replace(/<[^>]*>/g, " ").replace(/[ \t]+/g, " ").trim();
+}
+
 function getNewsBody(item: NewsItem): string[] {
-  const text = (item.summary || item.title || "").trim();
+  const text = cleanSummary(item.summary || item.title || "");
   if (!text) return ["No detailed summary available for this release yet."];
   return text
     .split(/\n{2,}/)
@@ -143,7 +157,7 @@ const NewsDetail = () => {
             <div className="font-mono text-[10px] uppercase tracking-widest text-accent mb-1.5 flex items-center gap-1.5">
               <Sparkles className="w-3 h-3" /> AI summary
             </div>
-            <p className="text-[15px] leading-relaxed text-foreground/85">{item.summary || item.title}</p>
+            <p className="text-[15px] leading-relaxed text-foreground/85 break-words">{cleanSummary(item.summary) || item.title}</p>
           </div>
 
           <div className="flex flex-wrap gap-1.5 mt-4 pt-4 border-t border-border">
@@ -172,6 +186,7 @@ const NewsDetail = () => {
               Read original release →
             </a>
           )}
+          <Disclaimer className="mt-6" />
         </article>
       </main>
       <Footer />

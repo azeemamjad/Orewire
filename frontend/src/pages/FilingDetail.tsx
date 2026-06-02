@@ -3,13 +3,15 @@ import { ArrowLeft, ArrowUpRight, Clock, Sparkles } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import Nav from "@/components/site/Nav";
 import Footer from "@/components/site/Footer";
-import { companySlug, fetchFiling, type Verdict } from "@/lib/api";
+import Disclaimer from "@/components/site/Disclaimer";
+import { companySlug, fetchFiling, filingDocumentUrl, type Verdict } from "@/lib/api";
 
 const verdictStyle: Record<Verdict, string> = {
   Noteworthy: "bg-[hsl(var(--noteworthy))] text-[hsl(var(--noteworthy-foreground))]",
   Watch: "bg-[hsl(var(--watch))] text-[hsl(var(--watch-foreground))]",
   Routine: "bg-[hsl(var(--routine))] text-[hsl(var(--routine-foreground))]",
 };
+
 
 const Section = ({ title, body }: { title: string; body: string }) => (
   <div className="border-t border-border pt-4">
@@ -112,11 +114,21 @@ const FilingDetail = () => {
           {filing.gradeCommentary && <Section title="Grade commentary" body={filing.gradeCommentary} />}
           {filing.context && <Section title="Context" body={filing.context} />}
           {filing.whatToWatch && <Section title="What to watch" body={filing.whatToWatch} />}
-          {filing.pdfFilename && (
-            <div className="border-t border-border pt-4 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              Source: {filing.pdfFilename}
-            </div>
-          )}
+          <div className="border-t border-border pt-4 flex items-center justify-between gap-3 flex-wrap">
+            <a
+              href={filing.sourceUrl || filingDocumentUrl(filing.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
+            >
+              Read original document (PDF)
+              <ArrowUpRight className="w-3.5 h-3.5" />
+            </a>
+            {filing.pdfFilename && (
+              <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{filing.pdfFilename}</span>
+            )}
+          </div>
+          <Disclaimer />
         </article>
       </main>
       <Footer />

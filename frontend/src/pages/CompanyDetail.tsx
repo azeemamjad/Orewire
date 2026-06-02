@@ -6,8 +6,8 @@ import {
   Minus,
   Globe,
   Newspaper,
+  FileText,
   Clock,
-  ChevronRight,
   Sparkles,
   MessageSquare,
   Users,
@@ -24,415 +24,91 @@ import {
   X,
   Check,
   ChevronDown,
-  Activity,
-  ChartLine,
-  ChartCandlestick,
 } from "lucide-react";
-import { fetchCompany, fetchCompanyProfile, fetchDiscussions, postDiscussion, voteDiscussion, fetchCompanyNews, fetchMarketHistory, login as apiLogin, register as apiRegister, companySlug, type CompanyPerson, type Discussion, type NewsItem, type MarketHistoryPoint } from "@/lib/api";
-import { NewsArticleCard, getNewsSeverity, getNewsTags } from "@/components/site/NewsArticleCard";
+import { fetchCompany, fetchCompanyProfile, fetchDiscussions, postDiscussion, voteDiscussion, fetchCompanyNews, fetchCompanyInsiders, login as apiLogin, register as apiRegister, type CompanyPerson, type Discussion, type InsiderTransaction } from "@/lib/api";
+import { getNewsSeverity, getNewsTags } from "@/components/site/NewsArticleCard";
 import { useAuth } from "@/hooks/use-auth";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import Nav from "@/components/site/Nav";
 import MarketStrip from "@/components/site/MarketStrip";
 import Footer from "@/components/site/Footer";
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ComposedChart, Bar, Cell } from "recharts";
 
 import { checkWatchlist, addToWatchlist, removeFromWatchlist } from "@/lib/api";
 
-const verdictPill: Record<string, string> = {
-  Noteworthy: "bg-noteworthy text-noteworthy-foreground",
-  Watch: "bg-watch text-watch-foreground",
-  Routine: "bg-routine text-routine-foreground",
-};
 
-type ChartPeriod = "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1D" | "1W" | "1M" | "3M" | "6M" | "YTD" | "1Y" | "5Y" | "All";
-
-const periodDays: Record<ChartPeriod, number> = {
-  "1m": 1, "5m": 1, "15m": 1, "30m": 1, "1h": 1, "4h": 1,
-  "1D": 1, "1W": 7, "1M": 30, "3M": 90, "6M": 180, "YTD": 150, "1Y": 365, "5Y": 1825, "All": 2500,
-};
-
-interface ChartPoint {
-  date: string;
-  price: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  isUp: boolean;
-  wickRange: [number, number];
-  bodyRange: [number, number];
+// Map our exchange codes to TradingView's symbol prefixes.
+function tvSymbol(exchange?: string | null, ticker?: string | null): string | null {
+  if (!ticker) return null;
+  const ex = (exchange || "").toUpperCase().replace("-", ""); // "TSX-V" -> "TSXV"
+  const prefix = ({ TSX: "TSX", TSXV: "TSXV", CSE: "CSE", ASX: "ASX" } as Record<string, string>)[ex] || ex;
+  return prefix ? `${prefix}:${ticker.toUpperCase()}` : ticker.toUpperCase();
 }
 
-function formatDateLabel(t: Date, period: ChartPeriod): string {
-  const isIntraday = ["1m", "5m", "15m", "30m", "1h", "4h"].includes(period);
-  if (isIntraday) {
-    return `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
-  }
-  if (periodDays[period] <= 7) {
-    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    return `${dayNames[t.getDay()]} ${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
-  }
-  if (periodDays[period] <= 365) {
-    return `${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
-  }
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return `${monthNames[t.getMonth()]} '${String(t.getFullYear()).slice(2)}`;
-}
+const PriceChart = ({ exchange, ticker }: { exchange?: string | null; ticker?: string | null }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const symbol = tvSymbol(exchange, ticker);
 
-function generateChartData(price: number, period: ChartPeriod): ChartPoint[] {
-  const points: ChartPoint[] = [];
-  const now = new Date();
-  const isIntraday = ["1m", "5m", "15m", "30m", "1h", "4h"].includes(period);
-  const intervalMinutes: Record<string, number> = { "1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240 };
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !symbol) return;
+    container.innerHTML = "";
 
-  let count: number;
-  let stepMs: number;
+    const widget = document.createElement("div");
+    widget.className = "tradingview-widget-container__widget";
+    widget.style.height = "100%";
+    widget.style.width = "100%";
+    container.appendChild(widget);
 
-  if (isIntraday) {
-    const mins = intervalMinutes[period] || 60;
-    count = Math.floor((6.5 * 60) / mins);
-    stepMs = mins * 60 * 1000;
-  } else {
-    const days = periodDays[period];
-    count = Math.max(30, Math.min(days, 90));
-    stepMs = (days / count) * 24 * 60 * 60 * 1000;
-  }
-
-  let p = price * (0.65 + Math.random() * 0.2);
-  const drift = (price - p) / count;
-  const volatility = price * 0.025;
-
-  for (let i = 0; i < count; i++) {
-    const t = new Date(now.getTime() - (count - i) * stepMs);
-    const noise = (Math.random() - 0.45) * price * 0.04;
-    const open = p;
-    p += drift + noise;
-    p = Math.max(p, price * 0.4);
-    const close = p;
-    const high = Math.max(open, close) + Math.random() * volatility;
-    const low = Math.min(open, close) - Math.random() * volatility;
-    const isUp = close >= open;
-
-    points.push({
-      date: formatDateLabel(t, period),
-      price: parseFloat(close.toFixed(3)),
-      open: parseFloat(open.toFixed(3)),
-      high: parseFloat(high.toFixed(3)),
-      low: parseFloat(Math.max(low, 0).toFixed(3)),
-      close: parseFloat(close.toFixed(3)),
-      isUp,
-      wickRange: [parseFloat(Math.max(low, 0).toFixed(3)), parseFloat(high.toFixed(3))],
-      bodyRange: isUp ? [parseFloat(open.toFixed(3)), parseFloat(close.toFixed(3))] : [parseFloat(close.toFixed(3)), parseFloat(open.toFixed(3))],
+    const script = document.createElement("script");
+    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+    script.type = "text/javascript";
+    script.async = true;
+    script.innerHTML = JSON.stringify({
+      autosize: true,
+      symbol,
+      interval: "D",
+      timezone: "Etc/UTC",
+      theme: document.documentElement.classList.contains("dark") ? "dark" : "light",
+      style: "1",
+      locale: "en",
+      withdateranges: true,
+      hide_top_toolbar: false,
+      hide_legend: false,
+      hide_side_toolbar: false,
+      allow_symbol_change: false,
+      save_image: true,
+      support_host: "https://www.tradingview.com",
     });
-  }
+    container.appendChild(script);
 
-  const lastOpen = p;
-  const isUp = price >= lastOpen;
-  const high = Math.max(lastOpen, price) + Math.random() * volatility;
-  const low = Math.max(Math.min(lastOpen, price) - Math.random() * volatility, 0);
-  points.push({
-    date: formatDateLabel(now, period),
-    price,
-    open: parseFloat(lastOpen.toFixed(3)),
-    high: parseFloat(high.toFixed(3)),
-    low: parseFloat(low.toFixed(3)),
-    close: price,
-    isUp,
-    wickRange: [parseFloat(low.toFixed(3)), parseFloat(high.toFixed(3))],
-    bodyRange: isUp ? [parseFloat(lastOpen.toFixed(3)), price] : [price, parseFloat(lastOpen.toFixed(3))],
-  });
-  return points;
-}
-
-const CandlestickBar = (props: any) => {
-  const { x, width, payload } = props;
-  if (!payload) return null;
-  const { wickRange, bodyRange, isUp } = payload;
-  const yScale = props.yAxis?.scale || props.background?.yAxis?.scale;
-  if (!yScale) return null;
-
-  const color = isUp ? "hsl(var(--up))" : "hsl(var(--down))";
-  const wickX = x + width / 2;
-  const wickTop = yScale(wickRange[1]);
-  const wickBottom = yScale(wickRange[0]);
-  const bodyTop = yScale(bodyRange[1]);
-  const bodyBottom = yScale(bodyRange[0]);
-  const bodyH = Math.max(bodyBottom - bodyTop, 1);
-
-  return (
-    <g>
-      <line x1={wickX} y1={wickTop} x2={wickX} y2={wickBottom} stroke={color} strokeWidth={1} />
-      <rect x={x} y={bodyTop} width={width} height={bodyH} fill={color} />
-    </g>
-  );
-};
-
-type ChartStyle = "area" | "line" | "candles";
-
-const mainPeriods: ChartPeriod[] = ["1D", "1W", "1M", "3M", "1Y", "All"];
-
-const PriceChart = ({ price, historyPoints }: { price: number; historyPoints?: MarketHistoryPoint[] }) => {
-  const [period, setPeriod] = useState<ChartPeriod>("3M");
-  const [chartStyle, setChartStyle] = useState<ChartStyle>("area");
-  const [showMore, setShowMore] = useState(false);
-
-  const chartData = useMemo(() => {
-    const points = historyPoints || [];
-    const mapped = points
-      .map((p) => {
-        if (p.close == null || p.open == null || p.high == null || p.low == null) return null;
-        const t = new Date(p.ts);
-        const label = formatDateLabel(t, period);
-        const isUp = p.close >= p.open;
-        return {
-          date: label,
-          price: parseFloat(p.close.toFixed(3)),
-          open: parseFloat(p.open.toFixed(3)),
-          high: parseFloat(p.high.toFixed(3)),
-          low: parseFloat(Math.max(p.low, 0).toFixed(3)),
-          close: parseFloat(p.close.toFixed(3)),
-          isUp,
-          wickRange: [parseFloat(Math.max(p.low, 0).toFixed(3)), parseFloat(p.high.toFixed(3))] as [number, number],
-          bodyRange: (isUp
-            ? [parseFloat(p.open.toFixed(3)), parseFloat(p.close.toFixed(3))]
-            : [parseFloat(p.close.toFixed(3)), parseFloat(p.open.toFixed(3))]) as [number, number],
-        };
-      })
-      .filter(Boolean) as ChartPoint[];
-    if (mapped.length > 1) return mapped;
-    return generateChartData(price, period);
-  }, [price, period, historyPoints]);
-
-  const minPrice = Math.min(...chartData.map((d) => d.low));
-  const maxPrice = Math.max(...chartData.map((d) => d.high));
-  const padding = (maxPrice - minPrice) * 0.1 || 0.01;
-
-  const isMainPeriod = mainPeriods.includes(period);
-
-  const selectPeriod = (p: ChartPeriod) => {
-    setPeriod(p);
-    setShowMore(false);
-  };
+    return () => {
+      container.innerHTML = "";
+    };
+  }, [symbol]);
 
   return (
     <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
       <div className="space-y-1.5 p-6 pb-3 flex flex-row items-center justify-between gap-3 flex-wrap">
         <h3 className="font-semibold tracking-tight font-display text-xl">Price</h3>
-        <div className="flex items-center gap-2">
-          {/* Period selector */}
-          <div className="inline-flex items-center rounded-md border border-border bg-muted/40 p-0.5 relative">
-            {mainPeriods.map((p) => (
-              <button
-                key={p}
-                onClick={() => selectPeriod(p)}
-                className={`text-[11px] font-mono px-2.5 py-1 rounded-sm transition-colors ${
-                  period === p
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {p}
-              </button>
-            ))}
-            <button
-              onClick={() => setShowMore(!showMore)}
-              className={`text-[11px] font-mono px-2 py-1 rounded-sm flex items-center gap-0.5 transition-colors ${
-                !isMainPeriod
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {!isMainPeriod ? period : "More"}
-              <ChevronDown className="h-3 w-3" />
-            </button>
-
-            {showMore && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowMore(false)} />
-                <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-md shadow-lg p-3 w-48">
-                  <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Intraday</div>
-                  <div className="grid grid-cols-3 gap-1 mb-3">
-                    {(["1m", "5m", "15m", "30m", "1h", "4h"] as ChartPeriod[]).map((p) => (
-                      <button
-                        key={p}
-                        onClick={() => selectPeriod(p)}
-                        className={`text-[11px] font-mono px-2 py-1.5 rounded-sm transition-colors text-center ${
-                          period === p
-                            ? "bg-background text-foreground shadow-sm border border-border"
-                            : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-                        }`}
-                      >
-                        {p}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Extended</div>
-                  <div className="grid grid-cols-3 gap-1">
-                    {(["6M", "YTD", "5Y"] as ChartPeriod[]).map((p) => (
-                      <button
-                        key={p}
-                        onClick={() => selectPeriod(p)}
-                        className={`text-[11px] font-mono px-2 py-1.5 rounded-sm transition-colors text-center ${
-                          period === p
-                            ? "bg-background text-foreground shadow-sm border border-border"
-                            : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-                        }`}
-                      >
-                        {p}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Chart style selector */}
-          <div className="inline-flex items-center rounded-md border border-border bg-muted/40 p-0.5">
-            <button
-              title="Area"
-              aria-label="Area"
-              onClick={() => setChartStyle("area")}
-              className={`p-1.5 rounded-sm transition-colors ${chartStyle === "area" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              <Activity className="h-3.5 w-3.5" />
-            </button>
-            <button
-              title="Line"
-              aria-label="Line"
-              onClick={() => setChartStyle("line")}
-              className={`p-1.5 rounded-sm transition-colors ${chartStyle === "line" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              <ChartLine className="h-3.5 w-3.5" />
-            </button>
-            <button
-              title="Candles"
-              aria-label="Candles"
-              onClick={() => setChartStyle("candles")}
-              className={`p-1.5 rounded-sm transition-colors ${chartStyle === "candles" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              <ChartCandlestick className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
+        {symbol && <span className="font-mono text-[11px] text-muted-foreground">{symbol}</span>}
       </div>
       <div className="p-6 pt-0">
-        <div className="h-72">
-          <ResponsiveContainer width="100%" height="100%">
-            {chartStyle === "candles" ? (
-              <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 11, fontFamily: "JetBrains Mono", fill: "hsl(var(--muted-foreground))" }}
-                  tickLine={{ stroke: "hsl(var(--muted-foreground))" }}
-                  axisLine={{ stroke: "hsl(var(--muted-foreground))" }}
-                  interval="preserveStartEnd"
-                  minTickGap={50}
-                />
-                <YAxis
-                  domain={[minPrice - padding, maxPrice + padding]}
-                  tick={{ fontSize: 11, fontFamily: "JetBrains Mono", fill: "hsl(var(--muted-foreground))" }}
-                  tickLine={{ stroke: "hsl(var(--muted-foreground))" }}
-                  axisLine={{ stroke: "hsl(var(--muted-foreground))" }}
-                  tickFormatter={(v: number) => `$${v.toFixed(2)}`}
-                  width={48}
-                  yAxisId="price"
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "hsl(var(--popover))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: 4,
-                    fontSize: 12,
-                    fontFamily: "JetBrains Mono",
-                  }}
-                  formatter={(_v: any, name: string, props: any) => {
-                    const d = props.payload;
-                    if (name === "wickRange") return [`O: $${d.open.toFixed(3)} H: $${d.high.toFixed(3)} L: $${d.low.toFixed(3)} C: $${d.close.toFixed(3)}`, "OHLC"];
-                    return null;
-                  }}
-                  labelStyle={{ color: "hsl(var(--muted-foreground))", fontSize: 11 }}
-                />
-                <Bar dataKey="wickRange" yAxisId="price" barSize={1}>
-                  {chartData.map((d, i) => (
-                    <Cell key={i} fill={d.isUp ? "hsl(var(--up))" : "hsl(var(--down))"} />
-                  ))}
-                </Bar>
-                <Bar dataKey="bodyRange" yAxisId="price" barSize={6}>
-                  {chartData.map((d, i) => (
-                    <Cell key={i} fill={d.isUp ? "hsl(var(--up))" : "hsl(var(--down))"} />
-                  ))}
-                </Bar>
-              </ComposedChart>
-            ) : (
-              <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(152, 60%, 36%)" stopOpacity={chartStyle === "line" ? 0 : 0.25} />
-                    <stop offset="100%" stopColor="hsl(152, 60%, 36%)" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 11, fontFamily: "JetBrains Mono", fill: "hsl(var(--muted-foreground))" }}
-                  tickLine={{ stroke: "hsl(var(--muted-foreground))" }}
-                  axisLine={{ stroke: "hsl(var(--muted-foreground))" }}
-                  interval="preserveStartEnd"
-                  minTickGap={50}
-                />
-                <YAxis
-                  domain={[minPrice - padding, maxPrice + padding]}
-                  tick={{ fontSize: 11, fontFamily: "JetBrains Mono", fill: "hsl(var(--muted-foreground))" }}
-                  tickLine={{ stroke: "hsl(var(--muted-foreground))" }}
-                  axisLine={{ stroke: "hsl(var(--muted-foreground))" }}
-                  tickFormatter={(v: number) => `$${v.toFixed(2)}`}
-                  width={48}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "hsl(var(--popover))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: 4,
-                    fontSize: 12,
-                    fontFamily: "JetBrains Mono",
-                  }}
-                  formatter={(value: number) => [`$${value.toFixed(3)}`, "Price"]}
-                  labelStyle={{ color: "hsl(var(--muted-foreground))", fontSize: 11 }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="price"
-                  stroke="hsl(152, 60%, 36%)"
-                  strokeWidth={1.5}
-                  fill={chartStyle === "line" ? "none" : "url(#priceGrad)"}
-                  dot={false}
-                  activeDot={{ r: 3, fill: "hsl(152, 60%, 36%)", strokeWidth: 0 }}
-                />
-              </AreaChart>
-            )}
-          </ResponsiveContainer>
-        </div>
+        {symbol ? (
+          <div
+            className="tradingview-widget-container w-full aspect-[16/9] min-h-[340px]"
+            ref={containerRef}
+          />
+        ) : (
+          <div className="w-full aspect-[16/9] min-h-[340px] grid place-items-center text-sm text-muted-foreground">
+            Chart unavailable for this listing.
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
 
-const placeholderOwnership = [
-  { holder: "Management & Directors", shares: "74.0M", pct: "14.2%", bar: 14.2 },
-  { holder: "Eric Sprott (HoldCo)", shares: "51.1M", pct: "9.8%", bar: 9.8 },
-  { holder: "Institutional", shares: "117.2M", pct: "22.5%", bar: 22.5 },
-  { holder: "Retail / Other", shares: "278.7M", pct: "53.5%", bar: 53.5 },
-];
-
-const placeholderInsiders = [
-  { insider: "P. Donnelly", role: "CEO", date: "2026-05-12", shares: "250K", price: "C$0.39", value: "C$98K" },
-  { insider: "A. Chen", role: "Director", date: "2026-05-09", shares: "100K", price: "C$0.38", value: "C$38K" },
-  { insider: "Eric Sprott (HoldCo)", role: "10% Holder", date: "2026-05-08", shares: "1.50M", price: "C$0.38", value: "C$570K" },
-  { insider: "M. Larkin", role: "CFO", date: "2026-04-22", shares: "75K", price: "C$0.31", value: "C$23K" },
-  { insider: "R. Patel", role: "VP Exploration", date: "2026-04-15", shares: "40K", price: "C$0.29", value: "C$12K" },
-];
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -452,19 +128,11 @@ function emailToHandle(email: string): string {
 const CompanyDetail = () => {
   const { slug } = useParams();
   const [inWatchlist, setInWatchlist] = useState(false);
-  const [expandedFilingId, setExpandedFilingId] = useState<number | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["company", slug],
     queryFn: () => fetchCompany(slug!),
     enabled: !!slug,
-  });
-
-  const { data: companyHistory } = useQuery({
-    queryKey: ["market-history", "company", data?.ticker, data?.exchange],
-    queryFn: () => fetchMarketHistory("company", data?.ticker || "", { exchange: (data?.exchange || "").toUpperCase().replace("-", "") }),
-    enabled: !!data?.ticker && !!data?.exchange,
-    refetchInterval: 30 * 60 * 1000,
   });
 
   const companyId = data?.id ?? 0;
@@ -573,9 +241,7 @@ const CompanyDetail = () => {
 
         {/* Chart + Stats */}
         <div className="grid lg:grid-cols-[1fr_320px] gap-6 mb-10">
-          {md && md.price !== null && (
-            <PriceChart price={md.price} historyPoints={companyHistory?.points} />
-          )}
+          <PriceChart exchange={data.exchange} ticker={data.ticker} />
 
           <div className="space-y-4">
             <div className="border border-border bg-surface">
@@ -661,102 +327,19 @@ const CompanyDetail = () => {
           </div>
         </section>
 
-        {/* News */}
-        <CompanyNewsSection name={data.name} ticker={data.ticker || undefined} exchange={data.exchange || undefined} />
+        {/* News & Filings */}
+        <section className="mt-10 mb-10 grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <CompanyNewsColumn name={data.name} ticker={data.ticker || undefined} exchange={data.exchange || undefined} />
+          <CompanyFilingsColumn
+            filings={data.filings}
+            name={data.name}
+            ticker={data.ticker || undefined}
+            exchange={data.exchange || undefined}
+          />
+        </section>
 
-        {/* Filings */}
-        {data.filings.length > 0 && (
-          <Section icon={<Globe className="w-4 h-4" />} title="Filings">
-            <ul className="divide-y divide-border">
-              {data.filings.map((f) => (
-                <li key={f.id}>
-                  <button
-                    type="button"
-                    onClick={() => setExpandedFilingId((prev) => (prev === f.id ? null : f.id))}
-                    className="w-full text-left px-5 py-3.5 hover:bg-background/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      {f.verdict && (
-                        <span className={`px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest font-bold rounded-full ${verdictPill[f.verdict] || "bg-surface text-muted-foreground"}`}>
-                          {f.verdict}
-                        </span>
-                      )}
-                      <span className="font-mono text-[10px] text-muted-foreground">
-                        {new Date(f.created_at).toLocaleDateString("en-CA")}
-                      </span>
-                      <span className="font-mono text-xs font-bold text-foreground/80 uppercase">
-                        {f.filing_type || "Filing"}
-                      </span>
-                      <ChevronDown className={`ml-auto w-3.5 h-3.5 text-muted-foreground transition-transform ${expandedFilingId === f.id ? "rotate-180" : ""}`} />
-                    </div>
-                    <p className={`text-sm text-foreground/70 ${expandedFilingId === f.id ? "" : "line-clamp-2"}`}>
-                      {f.summary || "No summary available"}
-                    </p>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </Section>
-        )}
-
-        {/* Ownership */}
-        <Section icon={<Users className="w-4 h-4" />} title="Ownership">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border-b border-border">
-                <th className="text-left px-5 py-2 font-medium">Holder</th>
-                <th className="text-right py-2 font-medium">Shares</th>
-                <th className="text-right py-2 font-medium">% Out</th>
-                <th className="text-left px-5 py-2 font-medium">Distribution</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {placeholderOwnership.map((o) => (
-                <tr key={o.holder}>
-                  <td className="px-5 py-2.5 font-medium">{o.holder}</td>
-                  <td className="py-2.5 text-right font-mono">{o.shares}</td>
-                  <td className="py-2.5 text-right font-mono">{o.pct}</td>
-                  <td className="px-5 py-2.5">
-                    <div className="w-full bg-border h-2.5">
-                      <div className="bg-primary h-2.5" style={{ width: `${o.bar}%` }} />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Section>
-
-        {/* Recent Insider Transactions */}
-        <Section icon={<UserCheck className="w-4 h-4" />} title="Recent Insider Transactions">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border-b border-border">
-                <th className="text-left px-5 py-2 font-medium">Insider</th>
-                <th className="text-left py-2 font-medium">Role</th>
-                <th className="text-left py-2 font-medium">Date</th>
-                <th className="text-right py-2 font-medium">Shares</th>
-                <th className="text-right py-2 font-medium">Price</th>
-                <th className="text-right px-5 py-2 font-medium">Value</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {placeholderInsiders.map((ins) => (
-                <tr key={ins.insider + ins.date}>
-                  <td className="px-5 py-2.5 font-medium">{ins.insider}</td>
-                  <td className="py-2.5 text-muted-foreground">{ins.role}</td>
-                  <td className="py-2.5 font-mono text-muted-foreground">{ins.date}</td>
-                  <td className="py-2.5 text-right font-mono">{ins.shares}</td>
-                  <td className="py-2.5 text-right font-mono">{ins.price}</td>
-                  <td className="px-5 py-2.5 text-right font-mono font-bold text-[hsl(var(--up))]">{ins.value}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="px-5 py-2 border-t border-border">
-            <span className="font-mono text-[10px] text-muted-foreground">Source: SEDI insider reports · last 90 days</span>
-          </div>
-        </Section>
+        {/* Insider ownership & transactions */}
+        <CompanyInsiders companyId={companyId} ticker={data.ticker || undefined} exchange={data.exchange || undefined} name={data.name} />
 
         {/* Discussion */}
         <DiscussionSection companyId={companyId} ticker={data.ticker || data.name} />
@@ -934,14 +517,158 @@ const PeopleSection = ({ companyId }: { companyId: number }) => {
 
 const NEWS_PAGE_SIZE = 4;
 
-const CompanyNewsSection = ({ name, ticker, exchange }: { name: string; ticker?: string; exchange?: string }) => {
-  const {
-    data,
-    isLoading,
-    isFetchingNextPage,
-    fetchNextPage,
-    hasNextPage,
-  } = useInfiniteQuery({
+const VERDICT_FILTERS = ["All", "Noteworthy", "Watch", "Routine"] as const;
+type VerdictFilter = (typeof VERDICT_FILTERS)[number];
+
+const DATE_RANGES = [
+  { value: "7", label: "Last 7 days" },
+  { value: "30", label: "Last 30 days" },
+  { value: "90", label: "Last 90 days" },
+  { value: "all", label: "All time" },
+];
+
+const verdictRound: Record<string, string> = {
+  Noteworthy: "bg-[hsl(var(--noteworthy))] text-[hsl(var(--noteworthy-foreground))]",
+  Watch: "bg-[hsl(var(--watch))] text-[hsl(var(--watch-foreground))]",
+  Routine: "bg-[hsl(var(--routine))] text-[hsl(var(--routine-foreground))]",
+};
+
+function severityToVerdict(sev: "Critical" | "High" | "Medium" | "Low"): "Noteworthy" | "Watch" | "Routine" {
+  if (sev === "Critical" || sev === "High") return "Noteworthy";
+  if (sev === "Medium") return "Watch";
+  return "Routine";
+}
+
+function newsType(title: string): string {
+  return getNewsTags(title, null)[0] || "News Release";
+}
+
+function fmtExchange(ex?: string): string {
+  if (!ex) return "";
+  return ex.toUpperCase() === "TSXV" ? "TSX-V" : ex;
+}
+
+// Filing verdicts come from the API lowercase ("noteworthy"); normalize to the
+// capitalized form used by the verdict pills and filters everywhere else.
+function capVerdict(v: string | null): string | null {
+  if (!v) return null;
+  return v.charAt(0).toUpperCase() + v.slice(1).toLowerCase();
+}
+
+// Some RSS-sourced news summaries arrive as raw/escaped HTML (e.g. embedded
+// <a href> markup). Decode the common entities, strip tags, and collapse
+// whitespace so long URLs don't overflow the card.
+function cleanSummary(text: string | null | undefined): string {
+  if (!text) return "";
+  const decoded = text
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&nbsp;/g, " ");
+  return decoded.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+}
+
+function withinDays(dateStr: string | undefined | null, days: string): boolean {
+  if (days === "all" || !dateStr) return true;
+  const t = new Date(dateStr).getTime();
+  if (Number.isNaN(t)) return true;
+  return Date.now() - t <= parseInt(days, 10) * 24 * 60 * 60 * 1000;
+}
+
+const FeedFilterBar = ({
+  verdict,
+  onVerdict,
+  days,
+  onDays,
+}: {
+  verdict: VerdictFilter;
+  onVerdict: (v: VerdictFilter) => void;
+  days: string;
+  onDays: (d: string) => void;
+}) => (
+  <div className="flex flex-wrap items-center gap-2 mb-4">
+    <div className="flex flex-wrap gap-1.5">
+      {VERDICT_FILTERS.map((f) => (
+        <button
+          key={f}
+          type="button"
+          onClick={() => onVerdict(f)}
+          className={`text-[11px] font-mono uppercase tracking-wider px-3 py-1 rounded-full border transition-colors ${
+            verdict === f
+              ? "bg-foreground text-background border-foreground"
+              : "border-border text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {f}
+        </button>
+      ))}
+    </div>
+    <select
+      value={days}
+      onChange={(e) => onDays(e.target.value)}
+      className="ml-auto bg-card border border-border px-2.5 h-8 text-xs font-medium outline-none focus:border-accent cursor-pointer rounded-sm"
+    >
+      {DATE_RANGES.map((r) => (
+        <option key={r.value} value={r.value}>
+          {r.label}
+        </option>
+      ))}
+    </select>
+  </div>
+);
+
+const FeedCard = ({
+  to,
+  verdict,
+  exLabel,
+  ticker,
+  name,
+  type,
+  time,
+  summary,
+}: {
+  to: string;
+  verdict: string | null;
+  exLabel: string;
+  ticker?: string;
+  name: string;
+  type: string;
+  time: string;
+  summary: string;
+}) => (
+  <Link to={to} className="block border border-border bg-card hover:bg-muted/40 transition-colors px-3.5 py-3">
+    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+      {ticker && <span className="font-mono text-sm font-extrabold tracking-tight leading-none">{ticker}</span>}
+      {exLabel && (
+        <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5">
+          {exLabel}
+        </span>
+      )}
+      <span className="text-[13px] font-semibold leading-none truncate max-w-[40%]">{name}</span>
+      {verdict && (
+        <span className={`text-[9px] font-mono uppercase tracking-widest font-bold px-1.5 py-0.5 rounded-full ${verdictRound[verdict] || "bg-surface text-muted-foreground"}`}>
+          {verdict}
+        </span>
+      )}
+      <span className="font-mono text-[9px] uppercase tracking-wider px-1 py-0.5 border border-border text-muted-foreground">{type}</span>
+      <span className="ml-auto font-mono text-[9px] text-muted-foreground inline-flex items-center gap-1 shrink-0">
+        <Clock className="w-2.5 h-2.5" />
+        {time}
+      </span>
+    </div>
+    <p className="text-[12.5px] leading-snug text-foreground/85 pl-0.5 break-words line-clamp-2">
+      <Sparkles className="inline w-3 h-3 text-accent mr-1 -mt-0.5" />
+      {summary}
+    </p>
+  </Link>
+);
+
+const CompanyNewsColumn = ({ name, ticker, exchange }: { name: string; ticker?: string; exchange?: string }) => {
+  const [verdict, setVerdict] = useState<VerdictFilter>("All");
+  const [days, setDays] = useState("all");
+  const { data, isLoading } = useInfiniteQuery({
     queryKey: ["company-news", name, ticker],
     queryFn: ({ pageParam }) =>
       fetchCompanyNews(name, ticker, exchange, { limit: NEWS_PAGE_SIZE, offset: pageParam }),
@@ -949,59 +676,109 @@ const CompanyNewsSection = ({ name, ticker, exchange }: { name: string; ticker?:
     getNextPageParam: (lastPage) => lastPage.nextOffset ?? undefined,
     staleTime: 30 * 60 * 1000,
   });
+
+  const exLabel = fmtExchange(exchange);
   const newsItems = data?.pages.flatMap((p) => p.items) ?? [];
-  const hasMore = !!hasNextPage;
+  const filtered = newsItems
+    .filter((n) => {
+      const v = severityToVerdict(getNewsSeverity(n.sentiment, n.title));
+      return (verdict === "All" || v === verdict) && withinDays(n.pubDate, days);
+    })
+    .slice(0, 4);
 
   return (
-    <section className="mt-10">
+    <div className="min-w-0">
       <h2 className="font-display text-2xl tracking-tight mb-4 pb-2 border-b border-border flex items-center gap-2">
         <Newspaper className="h-4 w-4" />
         News Releases
       </h2>
-      {isLoading ? (
-        <div className="py-6 text-center text-sm text-muted-foreground">Loading news…</div>
-      ) : newsItems.length === 0 ? (
-        <div className="py-6 text-center text-sm text-muted-foreground">No recent news found.</div>
-      ) : (
-        <div className="space-y-3">
-          {newsItems.map((n, i) => (
-            <NewsArticleCard
-              key={`${n.link}-${i}`}
-              title={n.title}
-              summary={n.summary}
-              source={n.source}
-              timeAgo={n.timeAgo}
-              link={n.link}
-              severity={getNewsSeverity(n.sentiment, n.title)}
-              tags={getNewsTags(n.title, n.commodity)}
-            />
-          ))}
-          {hasMore && (
-            <div className="pt-6 pb-2 flex justify-center">
-              <button
-                type="button"
-                onClick={() => fetchNextPage()}
-                disabled={isFetchingNextPage}
-                className="group inline-flex items-center gap-2 border border-border bg-card px-5 h-10 text-xs font-mono uppercase tracking-[0.18em] text-foreground/80 hover:text-accent-foreground hover:bg-accent hover:border-accent disabled:opacity-50 disabled:hover:bg-card disabled:hover:text-foreground/80 disabled:hover:border-border transition-all shadow-sm hover:shadow"
-              >
-                {isFetchingNextPage ? (
-                  <>
-                    <span className="w-3 h-3 border-2 border-foreground/30 border-t-foreground rounded-full animate-spin" />
-                    Loading
-                  </>
-                ) : (
-                  <>
-                    Show {NEWS_PAGE_SIZE} more
-                    <ChevronDown className="w-3.5 h-3.5 transition-transform group-hover:translate-y-0.5" />
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-      <div className="h-8" />
-    </section>
+      <div className="mt-4">
+        <FeedFilterBar verdict={verdict} onVerdict={setVerdict} days={days} onDays={setDays} />
+        {isLoading ? (
+          <div className="py-6 text-center text-sm text-muted-foreground">Loading news…</div>
+        ) : filtered.length === 0 ? (
+          <div className="py-6 text-center text-sm text-muted-foreground">No news match these filters.</div>
+        ) : (
+          <div className="space-y-2">
+            {filtered.map((n, i) => (
+              <FeedCard
+                key={`${n.link}-${i}`}
+                to={`/news/${encodeURIComponent(n.link || n.title)}`}
+                verdict={severityToVerdict(getNewsSeverity(n.sentiment, n.title))}
+                exLabel={exLabel}
+                ticker={ticker}
+                name={name}
+                type={newsType(n.title)}
+                time={n.timeAgo || ""}
+                summary={cleanSummary(n.summary) || n.title}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+type CompanyFiling = {
+  id: number;
+  filing_type: string | null;
+  commodity: string | null;
+  created_at: string;
+  verdict: string | null;
+  summary: string | null;
+};
+
+const CompanyFilingsColumn = ({
+  filings,
+  name,
+  ticker,
+  exchange,
+}: {
+  filings: CompanyFiling[];
+  name: string;
+  ticker?: string;
+  exchange?: string;
+}) => {
+  const [verdict, setVerdict] = useState<VerdictFilter>("All");
+  const [days, setDays] = useState("all");
+  const exLabel = fmtExchange(exchange);
+
+  const filtered = filings
+    .filter((f) => (verdict === "All" || capVerdict(f.verdict) === verdict) && withinDays(f.created_at, days))
+    .slice(0, 4);
+
+  return (
+    <div className="min-w-0">
+      <h2 className="font-display text-2xl tracking-tight mb-4 pb-2 border-b border-border flex items-center gap-2">
+        <FileText className="h-4 w-4" />
+        Filings
+      </h2>
+      <div className="mt-4">
+        <FeedFilterBar verdict={verdict} onVerdict={setVerdict} days={days} onDays={setDays} />
+        {filings.length === 0 ? (
+          <div className="py-6 text-center text-sm text-muted-foreground">No filings found.</div>
+        ) : filtered.length === 0 ? (
+          <div className="py-6 text-center text-sm text-muted-foreground">No filings match these filters.</div>
+        ) : (
+          <div className="space-y-2">
+            {filtered.map((f) => (
+              <FeedCard
+                key={f.id}
+                to={`/filings/${f.id}`}
+                verdict={capVerdict(f.verdict)}
+                exLabel={exLabel}
+                ticker={ticker}
+                name={name}
+                type={f.filing_type || "Filing"}
+                time={new Date(f.created_at).toLocaleDateString("en-CA")}
+                summary={f.summary || "No summary available"}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 };
 
@@ -1014,6 +791,143 @@ const Section = ({ icon, title, children }: { icon: React.ReactNode; title: stri
     {children}
   </div>
 );
+
+const fmtShares = (n: number | null) => (n == null ? "—" : Number(n).toLocaleString());
+const fmtPctOwn = (n: number | null) => (n == null ? "—" : `${n.toFixed(1)}%`);
+
+function txDescriptor(t: InsiderTransaction): string {
+  const verb =
+    t.transaction_type === "sale" || t.transaction_type === "disposition" ? "Sold"
+    : t.transaction_type === "grant" ? "Granted"
+    : t.transaction_type === "exercise" ? "Exercised"
+    : "Bought";
+  const sh = t.shares != null ? `${Number(t.shares).toLocaleString()} shares` : "shares";
+  const at = t.price != null ? ` at $${t.price.toFixed(2)}` : "";
+  const after = t.total_holdings_after != null ? ` Total holdings now ${Number(t.total_holdings_after).toLocaleString()}.` : "";
+  return `${verb} ${sh}${at}.${after}`;
+}
+
+// Routine by default; Watch for a director/CEO purchase > $50K (spec rule).
+function txVerdict(t: InsiderTransaction): "Watch" | "Routine" {
+  const value = (t.shares ?? 0) * (t.price ?? 0);
+  const senior = /ceo|cfo|director|chair/i.test(t.title || "");
+  if (t.transaction_type === "purchase" && senior && value > 50000) return "Watch";
+  return "Routine";
+}
+
+const CompanyInsiders = ({
+  companyId,
+  ticker,
+  exchange,
+}: {
+  companyId: number;
+  ticker?: string;
+  exchange?: string;
+  name: string;
+}) => {
+  const { data } = useQuery({
+    queryKey: ["company-insiders", companyId],
+    queryFn: () => fetchCompanyInsiders(companyId),
+    enabled: companyId > 0,
+    staleTime: 30 * 60 * 1000,
+  });
+
+  const exLabel = fmtExchange(exchange);
+  const ownership = data?.ownership ?? [];
+  const transactions = data?.transactions ?? [];
+  const registered = data?.registered ?? false;
+  const moreOwners = (data?.ownershipTotal ?? 0) - ownership.length;
+  const moreTx = (data?.transactionsTotal ?? 0) - transactions.length;
+
+  if (ownership.length === 0 && transactions.length === 0) {
+    return (
+      <Section icon={<UserCheck className="w-4 h-4" />} title="Insider Ownership">
+        <div className="px-5 py-6 text-sm text-muted-foreground">No insider data on file yet for this company.</div>
+      </Section>
+    );
+  }
+
+  return (
+    <Section icon={<UserCheck className="w-4 h-4" />} title="Insider Ownership">
+      {ownership.length > 0 && (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border-b border-border">
+              <th className="text-left px-5 py-2 font-medium">Name</th>
+              <th className="text-left py-2 font-medium">Title</th>
+              <th className="text-right py-2 font-medium">Shares held</th>
+              <th className="text-right py-2 font-medium">% Out</th>
+              <th className="text-left px-5 py-2 font-medium">Last transaction</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {ownership.map((o) => (
+              <tr key={o.insider_name}>
+                <td className="px-5 py-2.5 font-medium">{o.insider_name}</td>
+                <td className="py-2.5 text-muted-foreground">{o.title || "—"}</td>
+                <td className="py-2.5 text-right font-mono">{fmtShares(o.total_shares)}</td>
+                <td className="py-2.5 text-right font-mono">{fmtPctOwn(o.percent_ownership)}</td>
+                <td className="px-5 py-2.5 font-mono text-[12px] text-muted-foreground">
+                  {o.last_transaction || "—"}
+                  {o.last_transaction_date ? ` · ${new Date(o.last_transaction_date).toLocaleDateString("en-CA")}` : ""}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {!registered && moreOwners > 0 && (
+        <div className="px-5 py-3 border-t border-border text-center">
+          <Link to="/register" className="text-[12px] font-mono uppercase tracking-widest text-accent hover:underline">
+            Sign up free to see all {data?.ownershipTotal} insiders →
+          </Link>
+        </div>
+      )}
+
+      {transactions.length > 0 && (
+        <div className="border-t border-border p-4 space-y-2">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Insider transactions</div>
+          {transactions.map((t, i) => {
+            const verdict = txVerdict(t);
+            return (
+              <div key={`${t.insider_name}-${i}`} className="border border-border bg-card px-4 py-3">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className={`text-[9px] font-mono uppercase tracking-widest font-bold px-1.5 py-0.5 rounded-full ${verdictRound[verdict]}`}>
+                    {verdict}
+                  </span>
+                  {ticker && <span className="font-mono text-[11px] font-bold">{exLabel}: {ticker}</span>}
+                  <span className="text-[13px] font-semibold">
+                    {t.insider_name}
+                    {t.title ? ` (${t.title})` : ""}
+                  </span>
+                  <span className="ml-auto font-mono text-[10px] text-muted-foreground inline-flex items-center gap-1 shrink-0">
+                    <Clock className="w-2.5 h-2.5" />
+                    {t.transaction_date ? new Date(t.transaction_date).toLocaleDateString("en-CA") : "—"}
+                  </span>
+                </div>
+                <p className="text-[12.5px] leading-snug text-foreground/85">{txDescriptor(t)}</p>
+              </div>
+            );
+          })}
+          {!registered && moreTx > 0 && (
+            <div className="pt-1 text-center">
+              <Link to="/register" className="text-[12px] font-mono uppercase tracking-widest text-accent hover:underline">
+                Sign up free to see all {data?.transactionsTotal} transactions →
+              </Link>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="px-5 py-2 border-t border-border">
+        <span className="font-mono text-[10px] text-muted-foreground">
+          Source: SEDI / proxy / director interest / substantial holder filings
+        </span>
+      </div>
+    </Section>
+  );
+};
 
 const DiscussionSection = ({ companyId, ticker }: { companyId: number; ticker: string }) => {
   const { isAuthenticated } = useAuth();

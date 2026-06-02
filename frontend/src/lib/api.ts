@@ -174,6 +174,7 @@ export interface FilingDetail {
   commodity: Commodity | null;
   time: string;
   pdfFilename: string | null;
+  sourceUrl: string | null;
   summary: string;
   verdictReason: string | null;
   keyFacts: string | null;
@@ -189,6 +190,7 @@ interface RawFilingDetail {
   exchange: string | null;
   filing_type: string | null;
   pdf_filename: string | null;
+  source_url: string | null;
   commodity: string | null;
   created_at: string;
   analysis: {
@@ -202,6 +204,11 @@ interface RawFilingDetail {
     what_to_watch: string | null;
     resource_estimate: string | null;
   } | null;
+}
+
+// Our own served copy of the original PDF (SEDAR+/ASX links are temporary).
+export function filingDocumentUrl(id: string | number): string {
+  return `${API_BASE}/filings/${id}/document`;
 }
 
 export async function fetchFiling(id: string | number): Promise<FilingDetail | null> {
@@ -221,6 +228,7 @@ export async function fetchFiling(id: string | number): Promise<FilingDetail | n
     commodity: raw.commodity ? (raw.commodity as Commodity) : inferCommodity(a?.summary || ''),
     time: getTimeAgo(raw.created_at),
     pdfFilename: raw.pdf_filename,
+    sourceUrl: raw.source_url || null,
     summary: a?.summary || a?.verdict_reason || 'Analysis pending...',
     verdictReason: a?.verdict_reason || null,
     keyFacts: a?.key_facts || null,
@@ -343,6 +351,39 @@ export async function fetchCompanies(params: {
 export async function fetchCompany(idOrSlug: number | string): Promise<CompanyDetail> {
   const res = await fetch(`${API_BASE}/companies/${idOrSlug}`);
   if (!res.ok) throw new Error(`Failed to fetch company: ${res.status}`);
+  return res.json();
+}
+
+export interface InsiderOwner {
+  insider_name: string;
+  title: string | null;
+  total_shares: number | null;
+  percent_ownership: number | null;
+  last_transaction: string | null;
+  last_transaction_date: string | null;
+}
+
+export interface InsiderTransaction {
+  insider_name: string;
+  title: string | null;
+  transaction_type: string | null;
+  shares: number | null;
+  price: number | null;
+  transaction_date: string | null;
+  total_holdings_after: number | null;
+}
+
+export interface CompanyInsiders {
+  registered: boolean;
+  ownershipTotal: number;
+  transactionsTotal: number;
+  ownership: InsiderOwner[];
+  transactions: InsiderTransaction[];
+}
+
+export async function fetchCompanyInsiders(companyId: number): Promise<CompanyInsiders> {
+  const res = await authFetch(`${API_BASE}/companies/${companyId}/insiders`);
+  if (!res.ok) return { registered: false, ownershipTotal: 0, transactionsTotal: 0, ownership: [], transactions: [] };
   return res.json();
 }
 

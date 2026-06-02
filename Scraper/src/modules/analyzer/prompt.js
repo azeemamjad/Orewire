@@ -126,6 +126,19 @@ When filing_type is "Management Compensation", "Option Grant", "RSU Grant", or "
   signals a strategic pivot (e.g., capital markets expert hired before a financing,
   operations expert hired before construction).
 
+When filing_type relates to insider activity ("Insider Report", "SEDI", "Form 55-104",
+"Change of Director's Interest", "Substantial Holder Notice", "Early Warning Report",
+"Management Information Circular", "Proxy"):
+- Populate data_extracted.insider_transactions with EVERY reported buy/sell/grant/exercise:
+  insider_name, title, transaction_type, shares, price, transaction_date, and total
+  holdings AFTER the transaction.
+- Populate data_extracted.insider_ownership with each insider's resulting total_shares and
+  percent_ownership when the filing discloses ownership levels (proxies and substantial
+  holder / early warning reports always do).
+- Verdict: routine for small/individual director trades; watch for purchases >$50K by a
+  CEO/director; noteworthy for an Early Warning Report or Substantial Holder Notice (a
+  holder crossing 5%/10%).
+
 ═══════════════════════════════════════════════════════════════════
 SIGNIFICANCE VERDICTS
 ═══════════════════════════════════════════════════════════════════
@@ -319,6 +332,25 @@ OUTPUT SCHEMA
     "pp_dilution_pct": number or null,
     "insider_holdings": [
       { "name": "string", "title": "string", "shares": number }
+    ] or null,
+    "insider_transactions": [
+      {
+        "insider_name": "string",
+        "title": "string — e.g. 'CEO', 'Director', 'CFO', '10% Holder'" or null,
+        "transaction_type": "purchase" | "sale" | "grant" | "exercise" | "disposition" | null,
+        "shares": number or null,
+        "price": number or null,
+        "transaction_date": "YYYY-MM-DD" or null,
+        "total_holdings_after": number or null
+      }
+    ] or null,
+    "insider_ownership": [
+      {
+        "insider_name": "string",
+        "title": "string" or null,
+        "total_shares": number or null,
+        "percent_ownership": number or null
+      }
     ] or null
   }
 }`;

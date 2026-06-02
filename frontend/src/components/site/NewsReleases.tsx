@@ -44,6 +44,20 @@ function newsSlug(item: NewsItem): string {
   return encodeURIComponent(item.link || item.title);
 }
 
+// Some RSS summaries arrive as raw/escaped HTML (embedded <a href>); decode the
+// common entities, strip tags, and collapse whitespace so long URLs don't overflow.
+function cleanSummary(text: string | null | undefined): string {
+  if (!text) return "";
+  const decoded = text
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&nbsp;/g, " ");
+  return decoded.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+}
+
 const placeholderReleases: NewsItem[] = [
   { title: "Hole HC-247 returns 12.4m @ 3.2 g/t Au — 2.4× deposit average; ends in mineralization.", summary: "Hole HC-247 returns 12.4m @ 3.2 g/t Au — 2.4× deposit average; ends in mineralization.", source: "TMX Newsfile", link: "#scz", pubDate: "", timeAgo: "12 min ago", commodity: "Gold", sentiment: "bullish", ticker: "SCZ" },
   { title: "Hemi Indicated resource lifted 18% to 6.8 Moz Au ahead of Q3 feasibility.", summary: "Hemi Indicated resource lifted 18% to 6.8 Moz Au ahead of Q3 feasibility.", source: "GlobeNewsWire", link: "#deg", pubDate: "", timeAgo: "47 min ago", commodity: "Gold", sentiment: "bullish", ticker: "DEG" },
@@ -85,9 +99,9 @@ const ReleaseCard = ({ item }: { item: NewsItem }) => {
           {item.timeAgo}
         </span>
       </div>
-      <p className="text-[13px] leading-snug text-foreground/85 pl-0.5">
+      <p className="text-[13px] leading-snug text-foreground/85 pl-0.5 break-words line-clamp-2">
         <Sparkles className="inline w-3 h-3 text-accent mr-1 -mt-0.5" />
-        {item.summary || item.title}
+        {cleanSummary(item.summary) || item.title}
       </p>
     </Link>
   );
