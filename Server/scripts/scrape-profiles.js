@@ -43,10 +43,11 @@ async function fetchCompaniesToScrape({ limit, ticker, refreshDays }) {
   }
   const conditions = ['name IS NOT NULL', "ticker IS NOT NULL AND ticker <> ''"];
   if (refreshDays != null) {
+    // Only re-scrape companies whose profile is stale (or never scraped).
     conditions.push(`(profile_scraped_at IS NULL OR profile_scraped_at < NOW() - INTERVAL '${refreshDays} days')`);
-  } else {
-    conditions.push('profile_scraped_at IS NULL');
   }
+  // Blank refreshDays → re-fetch ALL companies. saveProfile() uses COALESCE, so a
+  // field the venue leaves blank never wipes existing data; new values overwrite.
   const sql = `
     SELECT id, exchange, ticker, name
     FROM companies

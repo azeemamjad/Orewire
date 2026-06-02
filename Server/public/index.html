@@ -260,6 +260,7 @@
         <option value="description">Missing description</option>
         <option value="website">Missing website</option>
         <option value="headquarters">Missing headquarters</option>
+        <option value="transfer_agent">Missing transfer agent</option>
         <option value="people">No managers/directors</option>
       </select>
       <button class="btn btn-ghost btn-sm" onclick="_coPage=1;loadCompanies()">↻ Refresh</button>
@@ -613,7 +614,7 @@
         </div>
         <div class="config-field">
           <label>Refresh if older than (days)</label>
-          <input id="pp-refresh" type="number" min="1" placeholder="leave blank = missing only" />
+          <input id="pp-refresh" type="number" min="1" placeholder="leave blank = all companies" />
         </div>
         <div class="config-field">
           <label>Delay between requests (ms)</label>

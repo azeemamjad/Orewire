@@ -217,13 +217,14 @@ router.get('/', async (req, res) => {
   if (missing) {
     const noPeople = `NOT EXISTS (SELECT 1 FROM company_people p WHERE p.company_id = companies.id)`;
     const checks = {
-      description:  `(description IS NULL OR description = '')`,
-      website:      `(website IS NULL OR website = '')`,
-      headquarters: `(headquarters IS NULL OR headquarters = '')`,
-      people:       noPeople,
+      description:    `(description IS NULL OR description = '')`,
+      website:        `(website IS NULL OR website = '')`,
+      headquarters:   `(headquarters IS NULL OR headquarters = '')`,
+      transfer_agent: `(transfer_agent IS NULL OR transfer_agent = '')`,
+      people:         noPeople,
     };
     if (missing === 'any') {
-      where.push(`(${[checks.description, checks.website, checks.headquarters, checks.people].join(' OR ')})`);
+      where.push(`(${[checks.description, checks.website, checks.headquarters, checks.transfer_agent, checks.people].join(' OR ')})`);
     } else if (checks[missing]) {
       where.push(checks[missing]);
     }
