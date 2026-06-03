@@ -40,6 +40,8 @@ downloads/
 
 # Data
 data/cookies.json
+Scraper/data/cookies.json
+**/cookies.json
 
 # PDFs
 *.pdf
