@@ -43,5 +43,14 @@ data/cookies.json
 Scraper/data/cookies.json
 **/cookies.json
 
+# Server runtime state (logs, jobs, local DB, saved pipeline config)
+Server/data/pipeline-logs.jsonl
+Server/data/jobs.json
+Server/data/pipeline.json
+Server/data/seed-state.json
+Server/data/app.db
+Server/data/app.db-shm
+Server/data/app.db-wal
+
 # PDFs
 *.pdf
