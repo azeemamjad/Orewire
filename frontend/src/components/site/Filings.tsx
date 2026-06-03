@@ -40,7 +40,7 @@ const Filings = () => {
           <h3 className="font-display text-sm font-bold tracking-tight">Latest filings</h3>
           <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">· Summarized</span>
         </div>
-        <Link to="/companies" className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground hover:text-foreground">
+        <Link to="/filings" className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground hover:text-foreground">
           All →
         </Link>
       </div>

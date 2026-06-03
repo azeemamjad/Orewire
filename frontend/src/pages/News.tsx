@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Clock, Newspaper } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -56,7 +56,7 @@ const PAGE_SIZE = 10;
 
 const News = () => {
   const [page, setPage] = useState(1);
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching } = useQuery({
     queryKey: ["news-feed", page, PAGE_SIZE],
     queryFn: () => fetchNewsFeed({ page, limit: PAGE_SIZE }),
     staleTime: 30 * 60 * 1000,
@@ -67,11 +67,18 @@ const News = () => {
     () => (data?.items || []).slice().sort((a, b) => new Date(b.pubDate || 0).getTime() - new Date(a.pubDate || 0).getTime()),
     [data?.items],
   );
-  const totalPages = data?.pagination?.totalPages || 1;
+  const totalPages = data?.pagination?.totalPages ?? 1;
+  const showLoading = isLoading || (isFetching && pageItems.length === 0);
 
-  useEffect(() => {
-    setPage((p) => Math.min(Math.max(1, p), totalPages));
-  }, [totalPages]);
+  const goToPage = (next: number) => {
+    const upper = data?.pagination?.totalPages;
+    const clamped = upper ? Math.min(Math.max(1, next), upper) : Math.max(1, next);
+    if (clamped === page) return;
+    setPage(clamped);
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -89,7 +96,7 @@ const News = () => {
             <span className="font-display text-sm font-bold">All News</span>
           </div>
 
-          {isLoading ? (
+          {showLoading ? (
             <div className="px-5 py-8 text-sm text-muted-foreground">Loading news...</div>
           ) : pageItems.length === 0 ? (
             <div className="px-5 py-8 text-sm text-muted-foreground">No news available.</div>
@@ -127,22 +134,23 @@ const News = () => {
             </ul>
           )}
 
-          {!isLoading && totalPages > 1 && (
+          {!showLoading && totalPages > 1 && (
             <div className="px-5 py-4 border-t border-border flex items-center justify-between gap-3">
               <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
                 Page {page} of {totalPages}
+                {isFetching ? " · loading…" : ""}
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
+                  onClick={() => goToPage(page - 1)}
+                  disabled={page === 1 || isFetching}
                   className="h-9 px-3 border border-border text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-background"
                 >
                   Previous
                 </button>
                 <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
+                  onClick={() => goToPage(page + 1)}
+                  disabled={page === totalPages || isFetching}
                   className="h-9 px-3 border border-border text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-background"
                 >
                   Next

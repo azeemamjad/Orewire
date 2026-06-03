@@ -30,18 +30,33 @@ const FilingsList = () => {
   });
 
   const items = data?.items || [];
-  const totalPages = data?.pagination?.totalPages || 1;
+  const totalPages = data?.pagination?.totalPages ?? 1;
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  };
+
+  const goToPage = (next: number) => {
+    const upper = data?.pagination?.totalPages;
+    const clamped = upper ? Math.min(Math.max(1, next), upper) : Math.max(1, next);
+    if (clamped === page) return;
+    setPage(clamped);
+    scrollToTop();
+  };
 
   // Keep the page in range when the filter narrows the result set. Guard on real
   // pagination data so a loading state (no data) never resets the page.
   useEffect(() => {
     if (!data?.pagination) return;
     setPage((p) => Math.min(Math.max(1, p), data.pagination.totalPages));
-  }, [data?.pagination]);
+  }, [data?.pagination?.totalPages, filter]);
 
   const changeFilter = (f: FilterValue) => {
     setFilter(f);
     setPage(1);
+    scrollToTop();
   };
 
   return (
@@ -123,14 +138,14 @@ const FilingsList = () => {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  onClick={() => goToPage(page - 1)}
                   disabled={page === 1}
                   className="h-9 px-3 border border-border text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-background"
                 >
                   Previous
                 </button>
                 <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  onClick={() => goToPage(page + 1)}
                   disabled={page === totalPages}
                   className="h-9 px-3 border border-border text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-background"
                 >

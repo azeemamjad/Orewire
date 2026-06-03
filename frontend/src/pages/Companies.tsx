@@ -106,9 +106,24 @@ const Companies = () => {
   const companies = data?.data ?? [];
   const pagination = data?.pagination;
 
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  };
+
+  const goToPage = (next: number) => {
+    const upper = pagination?.totalPages;
+    const clamped = upper ? Math.min(Math.max(1, next), upper) : Math.max(1, next);
+    if (clamped === page) return;
+    setPage(clamped);
+    scrollToTop();
+  };
+
   const toggle = (key: keyof Selected, value: string) => {
     setPage(1);
     setSel((prev) => ({ ...prev, [key]: prev[key] === value ? null : value }));
+    scrollToTop();
   };
 
   const clearAll = () => {
@@ -116,6 +131,7 @@ const Companies = () => {
     setSearch("");
     setDebouncedSearch("");
     setPage(1);
+    scrollToTop();
   };
 
   const hasActive = Object.values(sel).some(Boolean) || debouncedSearch.length > 0;
@@ -149,6 +165,7 @@ const Companies = () => {
               e.preventDefault();
               setDebouncedSearch(search.trim());
               setPage(1);
+              scrollToTop();
             }}
           >
             <div className="relative flex-1">
@@ -221,7 +238,7 @@ const Companies = () => {
           {pagination && pagination.totalPages > 1 && (
             <div className="flex items-center justify-center gap-2 mt-8">
               <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                onClick={() => goToPage(page - 1)}
                 disabled={!pagination.hasPrev}
                 className="p-2 border border-border disabled:opacity-30 hover:border-accent transition-colors"
                 aria-label="Previous page"
@@ -232,7 +249,7 @@ const Companies = () => {
                 Page {pagination.page} of {pagination.totalPages}
               </span>
               <button
-                onClick={() => setPage((p) => p + 1)}
+                onClick={() => goToPage(page + 1)}
                 disabled={!pagination.hasNext}
                 className="p-2 border border-border disabled:opacity-30 hover:border-accent transition-colors"
                 aria-label="Next page"
