@@ -244,9 +244,9 @@ const COMMODITY_CACHE_TTL_MS = 30 * 60 * 1000;
 let commoditiesCache = null;
 let commoditiesCacheTs = 0;
 
-router.get('/commodities', async (_req, res) => {
+async function getCommoditiesPayload() {
   if (commoditiesCache && Date.now() - commoditiesCacheTs < COMMODITY_CACHE_TTL_MS) {
-    return res.json(commoditiesCache);
+    return commoditiesCache;
   }
   const items = await Promise.all(COMMODITY_SYMBOLS.map(async (c) => {
     for (const sym of c.tv) {
@@ -272,7 +272,16 @@ router.get('/commodities', async (_req, res) => {
   const payload = { updatedAt: new Date().toISOString(), items };
   commoditiesCache = payload;
   commoditiesCacheTs = Date.now();
-  res.json(payload);
+  return payload;
+}
+
+router.get('/commodities', async (_req, res) => {
+  try {
+    res.json(await getCommoditiesPayload());
+  } catch (err) {
+    console.error('Commodities query failed:', err?.message || err);
+    res.status(503).json({ updatedAt: new Date().toISOString(), items: [] });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -299,27 +308,31 @@ const INDEX_SYMBOLS = [
 let indexesCache = null;
 let indexesCacheTs = 0;
 
+async function getIndexesPayload() {
+  if (indexesCache && Date.now() - indexesCacheTs < COMMODITY_CACHE_TTL_MS) {
+    return indexesCache;
+  }
+  const items = await Promise.all(INDEX_SYMBOLS.map(async (c) => {
+    for (const sym of c.tv) {
+      try {
+        const [ex, tick] = sym.split(':');
+        const data = await fetchTradingView(ex, tick);
+        const norm = normalizePrice(data);
+        if (norm.price == null) continue;
+        return { key: c.key, label: c.label, about: c.about, price: norm.price, change_pct: norm.change_pct, currency: norm.currency };
+      } catch { /* try next */ }
+    }
+    return { key: c.key, label: c.label, about: c.about, price: null, change_pct: null, currency: null };
+  }));
+  const payload = { updatedAt: new Date().toISOString(), items };
+  indexesCache = payload;
+  indexesCacheTs = Date.now();
+  return payload;
+}
+
 router.get('/indexes', async (_req, res) => {
   try {
-    if (indexesCache && Date.now() - indexesCacheTs < COMMODITY_CACHE_TTL_MS) {
-      return res.json(indexesCache);
-    }
-    const items = await Promise.all(INDEX_SYMBOLS.map(async (c) => {
-      for (const sym of c.tv) {
-        try {
-          const [ex, tick] = sym.split(':');
-          const data = await fetchTradingView(ex, tick);
-          const norm = normalizePrice(data);
-          if (norm.price == null) continue;
-          return { key: c.key, label: c.label, about: c.about, price: norm.price, change_pct: norm.change_pct, currency: norm.currency };
-        } catch { /* try next */ }
-      }
-      return { key: c.key, label: c.label, about: c.about, price: null, change_pct: null, currency: null };
-    }));
-    const payload = { updatedAt: new Date().toISOString(), items };
-    indexesCache = payload;
-    indexesCacheTs = Date.now();
-    res.json(payload);
+    res.json(await getIndexesPayload());
   } catch (err) {
     console.error('Indexes query failed:', err?.message || err);
     res.status(503).json({ updatedAt: new Date().toISOString(), items: [] });
@@ -340,37 +353,39 @@ const CURRENCY_SYMBOLS = [
 let currenciesCache = null;
 let currenciesCacheTs = 0;
 
+async function getCurrenciesPayload() {
+  if (currenciesCache && Date.now() - currenciesCacheTs < COMMODITY_CACHE_TTL_MS) {
+    return currenciesCache;
+  }
+  const items = await Promise.all(CURRENCY_SYMBOLS.map(async (c) => {
+    for (const sym of c.tv) {
+      try {
+        const [ex, tick] = sym.split(':');
+        const data = await fetchTradingView(ex, tick);
+        const norm = normalizePrice(data);
+        if (norm.price == null) continue;
+        return {
+          key: c.key,
+          label: c.label,
+          subtitle: c.subtitle || null,
+          price: norm.price,
+          change_pct: norm.change_pct,
+        };
+      } catch {
+        // try next fallback
+      }
+    }
+    return { key: c.key, label: c.label, subtitle: c.subtitle || null, price: null, change_pct: null };
+  }));
+  const payload = { updatedAt: new Date().toISOString(), items };
+  currenciesCache = payload;
+  currenciesCacheTs = Date.now();
+  return payload;
+}
+
 router.get('/currencies', async (_req, res) => {
   try {
-    if (currenciesCache && Date.now() - currenciesCacheTs < COMMODITY_CACHE_TTL_MS) {
-      return res.json(currenciesCache);
-    }
-
-    const items = await Promise.all(CURRENCY_SYMBOLS.map(async (c) => {
-      for (const sym of c.tv) {
-        try {
-          const [ex, tick] = sym.split(':');
-          const data = await fetchTradingView(ex, tick);
-          const norm = normalizePrice(data);
-          if (norm.price == null) continue;
-          return {
-            key: c.key,
-            label: c.label,
-            subtitle: c.subtitle || null,
-            price: norm.price,
-            change_pct: norm.change_pct,
-          };
-        } catch {
-          // try next fallback
-        }
-      }
-      return { key: c.key, label: c.label, subtitle: c.subtitle || null, price: null, change_pct: null };
-    }));
-
-    const payload = { updatedAt: new Date().toISOString(), items };
-    currenciesCache = payload;
-    currenciesCacheTs = Date.now();
-    res.json(payload);
+    res.json(await getCurrenciesPayload());
   } catch (err) {
     console.error('Currencies query failed:', err?.message || err);
     res.status(503).json({ updatedAt: new Date().toISOString(), items: [] });
@@ -479,3 +494,6 @@ router.get('/history/:kind/:key', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.getCommoditiesPayload = getCommoditiesPayload;
+module.exports.getIndexesPayload = getIndexesPayload;
+module.exports.getCurrenciesPayload = getCurrenciesPayload;

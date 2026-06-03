@@ -1,11 +1,59 @@
 {
   "schedule": "0 6 * * *",
+  "mainScheduleParts": {
+    "frequency": "daily",
+    "hour": 6,
+    "minute": 0,
+    "hours": 3,
+    "dayOfWeek": 1
+  },
   "concurrency": 5,
+  "analysisConcurrency": 2,
   "daysBack": 30,
   "seedOnStart": true,
   "asxSeedOnStart": false,
   "analyze": true,
   "enabled": false,
-  "asxSchedule": "0 6 * * *",
-  "asxEnabled": false
+  "asxSchedule": "0 7 * * *",
+  "asxScheduleParts": {
+    "frequency": "daily",
+    "hour": 7,
+    "minute": 0,
+    "hours": 3,
+    "dayOfWeek": 1
+  },
+  "asxEnabled": false,
+  "asxSeedOnStart": true,
+  "asxAnalyze": true,
+  "asxConcurrency": null,
+  "asxAnalysisConcurrency": null,
+  "asxDaysBack": null,
+  "newsSchedule": "0 */3 * * *",
+  "newsScheduleParts": {
+    "frequency": "every_hours",
+    "hour": 0,
+    "minute": 0,
+    "hours": 3,
+    "dayOfWeek": 1
+  },
+  "newsEnabled": true,
+  "profilesSchedule": "0 2 * * *",
+  "profilesScheduleParts": {
+    "frequency": "daily",
+    "hour": 2,
+    "minute": 0,
+    "hours": 3,
+    "dayOfWeek": 1
+  },
+  "profilesEnabled": true,
+  "profilesDelay": 2500,
+  "seederSchedule": "0 1 * * *",
+  "seederScheduleParts": {
+    "frequency": "daily",
+    "hour": 1,
+    "minute": 0,
+    "hours": 3,
+    "dayOfWeek": 1
+  },
+  "seederEnabled": true
 }

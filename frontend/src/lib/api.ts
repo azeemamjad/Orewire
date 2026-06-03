@@ -581,6 +581,39 @@ export async function fetchWatchlist(): Promise<WatchlistItem[]> {
   return data.items || [];
 }
 
+export type WatchlistAlertType = "news" | "filing" | "insider" | "market";
+
+export interface WatchlistAlert {
+  type: WatchlistAlertType;
+  id: string;
+  at: string;
+  href: string;
+  companyId?: number;
+  companyName?: string | null;
+  ticker?: string | null;
+  exchange?: string | null;
+  title?: string;
+  filingType?: string | null;
+  verdict?: string | null;
+  insiderName?: string;
+  insiderTitle?: string | null;
+  transactionType?: string | null;
+  shares?: number | null;
+  itemType?: string;
+  itemKey?: string;
+  label?: string;
+  price?: number;
+  changePct?: number;
+}
+
+export async function fetchWatchlistAlerts(since: string): Promise<{ alerts: WatchlistAlert[]; serverTime: string }> {
+  const qs = new URLSearchParams({ since });
+  const res = await authFetch(`${API_BASE}/watchlist/alerts?${qs.toString()}`);
+  if (!res.ok) return { alerts: [], serverTime: new Date().toISOString() };
+  const data = await res.json();
+  return { alerts: data.alerts || [], serverTime: data.serverTime || new Date().toISOString() };
+}
+
 export async function addToWatchlist(itemType: string, itemKey: string, companyId?: number): Promise<void> {
   const res = await authFetch(`${API_BASE}/watchlist`, {
     method: 'POST',
@@ -602,6 +635,31 @@ export async function checkWatchlist(itemType: string, itemKey: string): Promise
     const data = await res.json();
     return data.watched;
   } catch { return false; }
+}
+
+export async function checkItemAlert(itemType: string, itemKey: string): Promise<boolean> {
+  if (!getAuthToken() && !getRefreshToken()) return false;
+  try {
+    const res = await authFetch(`${API_BASE}/watchlist/alert/check/${itemType}/${itemKey}`);
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.alertsEnabled === true;
+  } catch {
+    return false;
+  }
+}
+
+export async function setItemAlert(
+  itemType: string,
+  itemKey: string,
+  companyId: number | undefined,
+  enabled: boolean,
+): Promise<void> {
+  const res = await authFetch(`${API_BASE}/watchlist/alert`, {
+    method: "POST",
+    body: JSON.stringify({ itemType, itemKey, companyId, enabled }),
+  });
+  if (!res.ok) throw new Error("Failed to update alert");
 }
 
 // ---------------------------------------------------------------------------
@@ -1069,6 +1127,20 @@ export async function voteDiscussion(companyId: number, commentId: number, vote:
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error || `Failed to vote: ${res.status}`);
   return data;
+}
+
+// ---------------------------------------------------------------------------
+// Morning briefing
+// ---------------------------------------------------------------------------
+
+export async function subscribeMorningBriefing(email: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/briefing/subscribe`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string })?.error || 'Subscribe failed');
 }
 
 // ---------------------------------------------------------------------------

@@ -1,13 +1,26 @@
 import { ArrowRight, Mail } from "lucide-react";
 import { useState } from "react";
+import { subscribeMorningBriefing } from "@/lib/api";
+import { toast } from "sonner";
 
 const MorningBrief = () => {
   const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: wire to subscribe endpoint when available
-    setEmail("");
+    const trimmed = email.trim();
+    if (!trimmed) return;
+    setLoading(true);
+    try {
+      await subscribeMorningBriefing(trimmed);
+      toast.success("You're subscribed to the Morning Briefing.");
+      setEmail("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not subscribe");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -36,9 +49,10 @@ const MorningBrief = () => {
           />
           <button
             type="submit"
-            className="h-full inline-flex items-center gap-1 px-4 text-[12px] font-semibold bg-foreground text-background hover:bg-accent hover:text-accent-foreground transition-colors"
+            disabled={loading}
+            className="h-full inline-flex items-center gap-1 px-4 text-[12px] font-semibold bg-foreground text-background hover:bg-accent hover:text-accent-foreground transition-colors disabled:opacity-60"
           >
-            Subscribe <ArrowRight className="w-3.5 h-3.5" />
+            {loading ? "…" : "Subscribe"} <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </form>
       </div>

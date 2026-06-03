@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>companies — Mining Intel Admin</title>
+<link rel="stylesheet" href="/admin/css/admin.css" />
+<style>
+nav li a { color: inherit; text-decoration: none; display: flex; align-items: center; gap: 8px; width: 100%; }
+.cron-builder { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.cron-preview { font-size: 12px; color: var(--muted); margin-top: 6px; }
+</style>
+</head>
+<body data-page="companies">
+<aside class="sidebar">
+  <div class="logo">⛏ Mining Intel<span>SEDAR+ Filing Tracker</span></div>
+  <nav><ul>
+      <li><a href="dashboard.html"><span class="icon">📊</span>Dashboard</a></li>
+      <li class="active"><a href="companies.html"><span class="icon">🏢</span>Companies</a></li>
+      <li><a href="filings.html"><span class="icon">📄</span>Filings</a></li>
+      <li><a href="import.html"><span class="icon">📥</span>Import Data</a></li>
+      <li><a href="scraper.html"><span class="icon">🤖</span>Run Scraper</a></li>
+      <li><a href="pipeline.html"><span class="icon">⚙️</span>Pipeline</a></li>
+      <li><a href="processes.html"><span class="icon">🖥</span>System</a></li>
+  </ul></nav>
+  <div style="margin-top:auto;padding:14px 16px;border-top:1px solid var(--border);">
+    <a href="/admin/logout" style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;text-decoration:none;">🚪 Logout</a>
+  </div>
+</aside>
+<main class="main">
+<!-- ── COMPANIES ── -->
+  <div id="page-companies" class="tab-content active">
+    <div class="page-header">
+      <h1>Companies</h1>
+      <p>All tracked mining companies</p>
+    </div>
+
+    <div class="toolbar">
+      <input type="search" id="co-search" placeholder="Search name / ticker…" oninput="_coPage=1;loadCompanies()" />
+      <select id="co-exchange" onchange="_coPage=1;loadCompanies()">
+        <option value="">All exchanges</option>
+      </select>
+      <select id="co-missing" onchange="_coPage=1;loadCompanies()" title="Filter companies missing enrichment data">
+        <option value="">All companies</option>
+        <option value="any">Missing any field</option>
+        <option value="description">Missing description</option>
+        <option value="website">Missing website</option>
+        <option value="headquarters">Missing headquarters</option>
+        <option value="transfer_agent">Missing transfer agent</option>
+        <option value="people">No managers/directors</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="openAddCompanyModal()">+ Add company</button>
+      <button class="btn btn-ghost btn-sm" onclick="_coPage=1;loadCompanies()">↻ Refresh</button>
+      <span id="co-count" class="text-muted" style="margin-left:auto;font-size:12px;"></span>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Name</th><th>Exchange</th><th>Ticker</th><th>SEDAR Ticker</th><th>Market Cap (C$M)</th><th>Enrichment</th><th>Actions</th></tr></thead>
+        <tbody id="companies-body"><tr class="empty-row"><td colspan="7">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div id="co-pagination" style="display:flex;align-items:center;gap:10px;margin-top:14px;justify-content:flex-end;">
+      <span id="co-page-info" style="font-size:12px;color:var(--muted);"></span>
+      <button class="btn btn-ghost btn-sm" id="co-prev" onclick="coChangePage(-1)">← Prev</button>
+      <button class="btn btn-ghost btn-sm" id="co-next" onclick="coChangePage(1)">Next →</button>
+    </div>
+  </div>
+
+  
+</main>
+<!-- ── FILING DETAIL MODAL ── -->
+<div class="modal-backdrop" id="filing-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modal-title">Filing Detail</h2>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body">Loading…</div>
+  </div>
+</div>
+
+<!-- ── EDIT COMPANY PROFILE MODAL ── -->
+<div class="modal-backdrop" id="profile-modal" onclick="if(event.target===this)closeProfileModal()">
+  <div class="modal" style="max-width:900px;">
+    <div class="modal-header">
+      <h2 id="profile-modal-title">Edit Company Profile</h2>
+      <button class="modal-close" onclick="closeProfileModal()">✕</button>
+    </div>
+    <div class="modal-body" id="profile-modal-body">Loading…</div>
+  </div>
+</div>
+
+
+
+<div class="modal-backdrop" id="add-co-modal" onclick="if(event.target===this)closeAddCompanyModal()">
+  <div class="modal" style="max-width:820px;">
+    <div class="modal-header"><h2>Add Company</h2><button class="modal-close" onclick="closeAddCompanyModal()">✕</button></div>
+    <div class="modal-body">
+      <form id="add-co-form" onsubmit="submitAddCompany(event)">
+        <div class="form-section">
+          <div class="form-section-title">Identity</div>
+          <div class="form-grid">
+            <div class="config-field span-2"><label for="add-co-name">Company name *</label><input id="add-co-name" required /></div>
+            <div class="config-field"><label for="add-co-ticker">Ticker *</label><input id="add-co-ticker" required placeholder="e.g. SCZ" /></div>
+            <div class="config-field"><label for="add-co-exchange">Exchange *</label>
+              <select id="add-co-exchange" required>
+                <option value="TSXV">TSXV</option><option value="TSX">TSX</option><option value="CSE">CSE</option><option value="ASX">ASX</option>
+              </select>
+            </div>
+            <div class="config-field"><label for="add-co-sedar">SEDAR ticker</label><input id="add-co-sedar" placeholder="If different from ticker" /></div>
+            <div class="config-field"><label for="add-co-ms-slug">Morningstar slug</label><input id="add-co-ms-slug" placeholder="Optional" /></div>
+          </div>
+        </div>
+        <div class="form-section">
+          <div class="form-section-title">Market &amp; listing</div>
+          <div class="form-grid">
+            <div class="config-field"><label for="add-co-market-cap">Market cap (C$M)</label><input id="add-co-market-cap" type="number" step="any" placeholder="e.g. 125.5" /></div>
+            <div class="config-field"><label for="add-co-total-float">Total float (M shares)</label><input id="add-co-total-float" type="number" step="any" /></div>
+            <div class="config-field"><label for="add-co-shares">Shares outstanding</label><input id="add-co-shares" type="number" step="1" /></div>
+            <div class="config-field"><label for="add-co-sector">Sector</label><input id="add-co-sector" placeholder="e.g. Gold" /></div>
+            <div class="config-field"><label for="add-co-listing-date">Listing date</label><input id="add-co-listing-date" placeholder="YYYY-MM-DD or free text" /></div>
+            <div class="config-field"><label for="add-co-region">Region</label><input id="add-co-region" placeholder="e.g. North America" /></div>
+          </div>
+        </div>
+        <div class="form-section">
+          <div class="form-section-title">Commodities</div>
+          <div class="form-checks">
+            <label><input type="checkbox" id="add-co-gold" /> Gold</label>
+            <label><input type="checkbox" id="add-co-silver" /> Silver</label>
+            <label><input type="checkbox" id="add-co-copper" /> Copper</label>
+          </div>
+        </div>
+        <div class="form-section">
+          <div class="form-section-title">Profile &amp; contact</div>
+          <div class="form-grid">
+            <div class="config-field span-2"><label for="add-co-description">Description</label><textarea id="add-co-description" rows="3" placeholder="Business summary"></textarea></div>
+            <div class="config-field"><label for="add-co-website">Website</label><input id="add-co-website" type="url" placeholder="https://…" /></div>
+            <div class="config-field"><label for="add-co-phone">Phone</label><input id="add-co-phone" placeholder="+1 …" /></div>
+            <div class="config-field span-2"><label for="add-co-headquarters">Headquarters</label><input id="add-co-headquarters" placeholder="City, province/state, country" /></div>
+            <div class="config-field span-2"><label for="add-co-transfer-agent">Transfer agent</label><input id="add-co-transfer-agent" placeholder="e.g. Computershare Trust Company" /></div>
+          </div>
+        </div>
+        <div class="form-section">
+          <div class="add-co-people-head">
+            <div class="form-section-title" style="margin:0;border:none;padding:0;">Managers &amp; directors</div>
+            <button type="button" class="btn btn-primary btn-sm" onclick="addCoPersonRow()">+ Add person</button>
+          </div>
+          <div class="add-co-people-wrap table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th style="width:72px;">Role</th>
+                  <th>Title</th>
+                  <th style="width:52px;">Age</th>
+                  <th style="width:62px;">Since</th>
+                  <th style="width:88px;">Kind</th>
+                  <th style="width:40px;"></th>
+                </tr>
+              </thead>
+              <tbody id="add-co-people-body">
+                <tr class="empty-row"><td colspan="7">Optional — click &ldquo;+ Add person&rdquo; to add managers or directors.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="add-co-form-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeAddCompanyModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add company</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+<script src="/admin/js/cron-schedule.js"></script>
+<script src="/admin/js/legacy-admin.js"></script>
+</body>
+</html>

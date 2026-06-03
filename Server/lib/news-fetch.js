@@ -1,0 +1,359 @@
+const db = require('../db');
+
+const RSS_FEEDS = [
+  { name: 'Newsfile Mining', url: 'https://feeds.newsfilecorp.com/industry/mining-metals', source: 'TMX Newsfile' },
+  { name: 'Newsfile Energy Metals', url: 'https://feeds.newsfilecorp.com/industry/energy-metals', source: 'TMX Newsfile' },
+  { name: 'GlobeNewsWire Mining', url: 'https://www.globenewswire.com/RssFeed/industry/1775-General+Mining/feedTitle/GlobeNewsWire+-+Industry+Tag+-+General+Mining', source: 'GlobeNewsWire' },
+];
+
+function parseRssItems(xml, defaultSource) {
+  const items = [];
+  const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+  let match;
+  while ((match = itemRegex.exec(xml)) !== null) {
+    const block = match[1];
+    const title = (block.match(/<title>([\s\S]*?)<\/title>/) || [])[1]?.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/, '$1')?.trim() || '';
+    const link = (block.match(/<link>([\s\S]*?)<\/link>/) || [])[1]?.trim() || '';
+    const pubDate = (block.match(/<pubDate>([\s\S]*?)<\/pubDate>/) || [])[1]?.trim() || '';
+    const source = (block.match(/<source[^>]*>([\s\S]*?)<\/source>/) || [])[1]?.trim() || defaultSource || '';
+    const description = (block.match(/<description>([\s\S]*?)<\/description>/) || [])[1]
+      ?.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/, '$1')
+      ?.replace(/<[^>]+>/g, '')
+      ?.trim() || '';
+
+    if (title && link) {
+      items.push({ title, link, pubDate, source: source || defaultSource, description: description.slice(0, 500) });
+    }
+  }
+  return items;
+}
+
+async function fetchRssFeed(url) {
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT  10.0; Win64; x64) AppleWebKit/537.36' },
+  });
+  if (!res.ok) throw new Error(`RSS ${res.status} for ${url}`);
+  return res.text();
+}
+
+let companyLookup = { byTicker: new Map(), byName: [] };
+let lookupLoadedAt = 0;
+const LOOKUP_TTL = 10 * 60 * 1000;
+
+async function loadCompanyLookup() {
+  if (Date.now() - lookupLoadedAt < LOOKUP_TTL) return;
+  const result = await db.query(`SELECT id, name, ticker, exchange FROM companies WHERE ticker IS NOT NULL`);
+  const byTicker = new Map();
+  const byName = [];
+
+  for (const row of result.rows) {
+    if (row.ticker) {
+      byTicker.set(row.ticker.toUpperCase(), row);
+      const variants = [
+        `${row.ticker}.V`, `${row.ticker}.TO`, `${row.ticker}.CN`,
+        `${row.ticker}:TSXV`, `${row.ticker}:TSX`, `${row.ticker}:CSE`, `${row.ticker}:ASX`,
+      ];
+      for (const v of variants) byTicker.set(v.toUpperCase(), row);
+    }
+    if (row.name) {
+      byName.push({ id: row.id, name: row.name.toLowerCase(), ticker: row.ticker, exchange: row.exchange });
+    }
+  }
+
+  companyLookup = { byTicker, byName };
+  lookupLoadedAt = Date.now();
+}
+
+function matchCompany(title, description) {
+  const text = `${title} ${description || ''}`.toUpperCase();
+
+  for (const [ticker, company] of companyLookup.byTicker) {
+    if (ticker.length < 2) continue;
+    const regex = new RegExp(`\\b${ticker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+    if (regex.test(text)) return company;
+  }
+
+  const lowerText = `${title} ${description || ''}`.toLowerCase();
+  for (const entry of companyLookup.byName) {
+    if (entry.name.length < 5) continue;
+    if (lowerText.includes(entry.name)) return { id: entry.id, ticker: entry.ticker, exchange: entry.exchange };
+  }
+
+  return null;
+}
+
+async function callOllama(prompt) {
+  const base = process.env.OLLAMA_HOST || 'https://ollama.com';
+  const model = process.env.OLLAMA_MODEL || 'kimi';
+  const apiKey = process.env.OLLAMA_API_KEY;
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  const res = await fetch(`${base}/api/chat`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model,
+      stream: false,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a mining investment news analyst for a platform tracking junior mining stocks on TSX-V, CSE, and ASX. Given news headlines and descriptions, produce a JSON array. Each item: "title" (clean headline — remove source suffix), "summary" (1-2 sentence summary for mining investors), "commodity" (Gold, Silver, Copper, Lithium, Uranium, Nickel, Zinc, or null), "sentiment" ("bullish", "bearish", or "neutral"). Return ONLY a valid JSON array.',
+        },
+        { role: 'user', content: prompt },
+      ],
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Ollama ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return data.message?.content || '[]';
+}
+
+function parseJson(raw) {
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  return JSON.parse(cleaned);
+}
+
+async function enrichNewsRows(rows) {
+  if (!rows.length) return 0;
+
+  const prompt = rows
+    .map((r, i) => `${i + 1}. "${r.title}" — ${r.description || 'No description'}`)
+    .join('\n');
+
+  const aiRaw = await callOllama(prompt);
+  const aiItems = parseJson(aiRaw);
+  let enriched = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const ai = aiItems[i] || {};
+    try {
+      await db.query(
+        `UPDATE news SET summary = $1, commodity = $2, sentiment = $3, ai_processed = TRUE WHERE id = $4`,
+        [ai.summary || null, ai.commodity || null, ai.sentiment || 'neutral', row.id]
+      );
+      try {
+        const { queueWatchlistNewsEmail } = require('./watchlist-news-alerts');
+        queueWatchlistNewsEmail(row.id);
+      } catch {
+        /* non-fatal */
+      }
+      enriched++;
+    } catch (err) {
+      console.error(`[News] Failed to save enrichment for id=${row.id}:`, err?.message || err);
+    }
+  }
+  return enriched;
+}
+
+async function enrichNewsByIds(ids) {
+  if (!ids?.length) return 0;
+  const result = await db.query(
+    `SELECT id, title, description FROM news WHERE id = ANY($1::int[]) AND ai_processed = FALSE`,
+    [ids]
+  );
+  if (result.rows.length === 0) return 0;
+  return enrichNewsRows(result.rows);
+}
+
+async function enrichUnprocessedNews(limit = 25) {
+  const unprocessed = await db.query(
+    `SELECT id, title, description FROM news WHERE ai_processed = FALSE ORDER BY pub_date DESC LIMIT $1`,
+    [limit]
+  );
+  if (unprocessed.rows.length === 0) return 0;
+  return enrichNewsRows(unprocessed.rows);
+}
+
+/** Process all pending AI enrichment in batches (non-blocking callers should fire-and-forget). */
+async function drainUnprocessedNews(batchSize = 25) {
+  let total = 0;
+  for (;;) {
+    const n = await enrichUnprocessedNews(batchSize);
+    total += n;
+    if (n < batchSize) break;
+  }
+  return total;
+}
+
+/**
+ * Fetch Google News RSS for one company. Returns count of newly inserted rows.
+ */
+async function fetchCompanyNews(companyName, ticker, companyId = null, { skipCooldown = false } = {}) {
+  if (!companyName && !ticker) return { inserted: 0, newIds: [] };
+
+  const key = `company:${ticker || companyName}`;
+  if (!skipCooldown) {
+    const companyFetchTimestamps = fetchCompanyNews._timestamps || (fetchCompanyNews._timestamps = new Map());
+    const COMPANY_FETCH_COOLDOWN = 60 * 60 * 1000;
+    const lastFetch = companyFetchTimestamps.get(key) || 0;
+    if (Date.now() - lastFetch < COMPANY_FETCH_COOLDOWN) {
+      return { inserted: 0, newIds: [], skippedCooldown: true };
+    }
+    companyFetchTimestamps.set(key, Date.now());
+  }
+
+  const queries = [];
+  if (ticker) queries.push(`"${ticker}" mining stock`);
+  queries.push(`"${companyName}" mining`);
+
+  let allItems = [];
+  for (const q of queries) {
+    try {
+      const encoded = encodeURIComponent(q);
+      const url = `https://news.google.com/rss/search?q=${encoded}&hl=en&gl=US&ceid=US:en`;
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      });
+      if (res.ok) {
+        const xml = await res.text();
+        allItems.push(...parseRssItems(xml, 'Google News'));
+      }
+    } catch {
+      /* skip */
+    }
+    if (allItems.length >= 6) break;
+  }
+
+  const seen = new Set();
+  allItems = allItems
+    .filter((item) => {
+      if (seen.has(item.link)) return false;
+      seen.add(item.link);
+      return true;
+    })
+    .slice(0, 10);
+
+  const category = `company:${ticker || companyName}`;
+  const newIds = [];
+  let inserted = 0;
+
+  for (const item of allItems) {
+    try {
+      const result = await db.query(
+        `INSERT INTO news (title, link, source, pub_date, description, category, company_id, ticker)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (link) DO NOTHING
+         RETURNING id`,
+        [
+          item.title,
+          item.link,
+          item.source || 'News',
+          item.pubDate ? new Date(item.pubDate) : new Date(),
+          item.description,
+          category,
+          companyId,
+          ticker,
+        ]
+      );
+      if (result.rows.length > 0) {
+        inserted++;
+        newIds.push(result.rows[0].id);
+      }
+    } catch (err) {
+      console.error('[News] Insert failed:', err?.message || err);
+    }
+  }
+
+  let enriched = 0;
+  if (newIds.length > 0) {
+    try {
+      enriched = await enrichNewsByIds(newIds);
+      if (enriched > 0) {
+        console.log(
+          `[News] Company ${category}: ${inserted} new articles, AI enriched ${enriched} (saved to DB)`
+        );
+      }
+    } catch (err) {
+      console.error('[News] AI enrichment failed:', err?.message || err);
+    }
+  }
+
+  return { inserted, newIds, enriched };
+}
+
+async function fetchAndStoreRssFeeds() {
+  await loadCompanyLookup();
+
+  let allItems = [];
+  for (const feed of RSS_FEEDS) {
+    try {
+      const xml = await fetchRssFeed(feed.url);
+      allItems.push(...parseRssItems(xml, feed.source));
+    } catch (err) {
+      console.error(`[News] Failed to fetch ${feed.name}:`, err?.message || err);
+    }
+  }
+
+  const seen = new Set();
+  allItems = allItems.filter((item) => {
+    if (seen.has(item.link)) return false;
+    seen.add(item.link);
+    return true;
+  });
+
+  let inserted = 0;
+  let matched = 0;
+  const insertedIds = [];
+
+  for (const item of allItems) {
+    const company = matchCompany(item.title, item.description);
+    try {
+      const result = await db.query(
+        `INSERT INTO news (title, link, source, pub_date, description, category, company_id, ticker)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (link) DO NOTHING
+         RETURNING id`,
+        [
+          item.title,
+          item.link,
+          item.source || 'News',
+          item.pubDate ? new Date(item.pubDate) : new Date(),
+          item.description,
+          company ? `company:${company.ticker || company.id}` : 'general',
+          company?.id || null,
+          company?.ticker || null,
+        ]
+      );
+      if (result.rows.length > 0) {
+        inserted++;
+        insertedIds.push(result.rows[0].id);
+        if (company) matched++;
+      }
+    } catch (err) {
+      console.error('[News] RSS insert failed:', err?.message || err);
+    }
+  }
+
+  let enriched = 0;
+  if (insertedIds.length > 0) {
+    try {
+      enriched = await enrichNewsByIds(insertedIds);
+      if (enriched > 0) {
+        console.log(`[News] AI enriched ${enriched} items (saved to DB)`);
+      }
+    } catch (err) {
+      console.error('[News] AI enrichment failed:', err?.message || err);
+    }
+  }
+
+  return { inserted, matched, total: allItems.length, enriched, insertedIds };
+}
+
+module.exports = {
+  RSS_FEEDS,
+  parseRssItems,
+  fetchRssFeed,
+  loadCompanyLookup,
+  matchCompany,
+  enrichNewsByIds,
+  enrichUnprocessedNews,
+  drainUnprocessedNews,
+  enrichNewsRows,
+  fetchCompanyNews,
+  fetchAndStoreRssFeeds,
+};

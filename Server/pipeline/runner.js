@@ -595,6 +595,7 @@ async function runPipeline() {
 
   const cfg = loadConfig();
   state.status        = 'running';
+  state.activePipeline = 'main';
   state.startedAt     = new Date().toISOString();
   state.stoppedAt     = null;
   state.stopRequested = false;
@@ -658,6 +659,7 @@ async function runPipeline() {
     addLog('err', `[Pipeline] Fatal: ${err.message}`);
   } finally {
     state.status       = 'idle';
+    state.activePipeline = null;
     state.currentPhase = null;
     state.stoppedAt    = new Date().toISOString();
   }
@@ -667,14 +669,26 @@ async function runPipeline() {
 // ASX-only pipeline
 // ---------------------------------------------------------------------------
 
+function asxRunConfig(cfg) {
+  return {
+    concurrency: cfg.asxConcurrency != null ? cfg.asxConcurrency : cfg.concurrency,
+    analysisConcurrency: cfg.asxAnalysisConcurrency != null ? cfg.asxAnalysisConcurrency : cfg.analysisConcurrency,
+    daysBack: cfg.asxDaysBack != null ? cfg.asxDaysBack : cfg.daysBack,
+    analyze: cfg.asxAnalyze !== undefined ? cfg.asxAnalyze : cfg.analyze,
+    seedOnStart: cfg.asxSeedOnStart !== undefined ? cfg.asxSeedOnStart : true,
+  };
+}
+
 async function runAsxPipeline() {
   if (state.status === 'running') {
     addLog('warn', '[ASX Pipeline] Already running — ignoring start request');
     return;
   }
 
-  const cfg = loadConfig();
+  const baseCfg = loadConfig();
+  const cfg = { ...baseCfg, ...asxRunConfig(baseCfg) };
   state.status        = 'running';
+  state.activePipeline = 'asx';
   state.startedAt     = new Date().toISOString();
   state.stoppedAt     = null;
   state.stopRequested = false;
@@ -740,6 +754,7 @@ async function runAsxPipeline() {
     addLog('err', `[ASX Pipeline] Fatal: ${err.message}`);
   } finally {
     state.status       = 'idle';
+    state.activePipeline = null;
     state.currentPhase = null;
     state.stoppedAt    = new Date().toISOString();
   }

@@ -1,5 +1,8 @@
 import { LogOut, Menu, UserRound } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import NotificationsMenu from "@/components/site/NotificationsMenu";
+import NavSearch from "@/components/site/NavSearch";
+import ThemeToggle from "@/components/site/ThemeToggle";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,7 +35,7 @@ const Nav = () => {
 
   return (
     <header className="sticky top-0 z-40 bg-background/85 backdrop-blur-md border-b border-border">
-      <div className="max-w-[1440px] mx-auto px-4 lg:px-6 h-14 flex items-center gap-6">
+      <div className="max-w-[1440px] mx-auto px-4 lg:px-6 h-14 flex items-center gap-4">
         <Link to="/" className="flex items-center gap-2.5 group shrink-0">
           <div className="relative w-8 h-8 bg-foreground grid place-items-center">
             <span className="font-display text-background text-base font-extrabold leading-none">O</span>
@@ -46,7 +49,7 @@ const Nav = () => {
           </div>
         </Link>
 
-        <nav className="hidden md:flex items-center gap-1 text-sm flex-1">
+        <nav className="hidden lg:flex items-center gap-1 text-sm shrink-0">
           {NAV_ITEMS.map((item) => (
             <Link
               key={item.to}
@@ -61,7 +64,11 @@ const Nav = () => {
           ))}
         </nav>
 
-        <div className="flex items-center gap-2 ml-auto md:ml-0">
+        <NavSearch />
+
+        <div className="flex items-center gap-2 ml-auto shrink-0">
+          <NotificationsMenu />
+          <ThemeToggle />
           {isAuthenticated ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

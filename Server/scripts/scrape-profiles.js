@@ -13,8 +13,11 @@ require('dotenv').config();
 const db = require('../db');
 const exch = require('../pipeline/exchanges');
 const { addLog } = require('../pipeline/state');
+const {
+  isJobRunning, syncJob, startJob, endJob,
+} = require('../lib/job-tracker');
 
-let _running = false;
+const JOB_ID = 'profiles';
 
 function parseArgs(argv) {
   const args = { limit: null, ticker: null, refreshDays: null, delay: 2500, dryRun: false };
@@ -113,8 +116,11 @@ async function savePeople(companyId, people) {
   return saved;
 }
 
+let _running = false;
+
 function isRunning() {
-  return _running;
+  syncJob(JOB_ID);
+  return _running || isJobRunning(JOB_ID);
 }
 
 /**
@@ -122,7 +128,8 @@ function isRunning() {
  * Logs progress through pipeline state's addLog so the admin panel log viewer shows it.
  */
 async function runProfileScrape(opts = {}) {
-  if (_running) {
+  syncJob(JOB_ID);
+  if (isRunning()) {
     const err = new Error('Profile scrape already running');
     err.code = 'ALREADY_RUNNING';
     throw err;
@@ -136,6 +143,7 @@ async function runProfileScrape(opts = {}) {
     dryRun: !!opts.dryRun,
   };
   addLog('out', `[Profiles] Starting exchange profile scrape (CSE/ASX/TMX): ${JSON.stringify(args)}`);
+  startJob(JOB_ID, { label: 'Profile scrape (CSE/ASX/TMX)', pid: process.pid, type: 'in-process', meta: args });
   try {
     const companies = await fetchCompaniesToScrape(args);
     addLog('out', `[Profiles] ${companies.length} companies queued`);
@@ -169,7 +177,11 @@ async function runProfileScrape(opts = {}) {
     }
     const summary = { total: companies.length, ok, miss, fail };
     addLog('out', `[Profiles] Done. ok=${ok} miss=${miss} fail=${fail}`);
+    endJob(JOB_ID, 'completed');
     return summary;
+  } catch (err) {
+    endJob(JOB_ID, 'failed');
+    throw err;
   } finally {
     _running = false;
   }

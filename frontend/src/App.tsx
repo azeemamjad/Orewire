@@ -19,6 +19,8 @@ import FilingDetail from "./pages/FilingDetail.tsx";
 import FilingsList from "./pages/FilingsList.tsx";
 import Profile from "./pages/Profile.tsx";
 import NotFound from "./pages/NotFound.tsx";
+import WatchlistAlertsRunner from "@/components/site/WatchlistAlertsRunner";
+import ScrollToTop from "@/components/ScrollToTop";
 
 const queryClient = new QueryClient();
 
@@ -27,7 +29,9 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
+      <WatchlistAlertsRunner />
       <BrowserRouter>
+        <ScrollToTop />
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/companies" element={<Companies />} />

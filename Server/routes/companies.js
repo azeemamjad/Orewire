@@ -265,7 +265,11 @@ router.get('/', async (req, res) => {
   });
   } catch (err) {
     console.error('Companies list query failed:', err?.message || err);
-    res.status(503).json({ data: [], pagination: { page: 1, limit: 20, total: 0, totalPages: 0, hasNext: false, hasPrev: false } });
+    res.status(503).json({
+      error: err?.message || 'Database unavailable',
+      data: [],
+      pagination: { page: 1, limit: 20, total: 0, totalPages: 0, hasNext: false, hasPrev: false },
+    });
   }
 });
 
@@ -294,6 +298,131 @@ router.get('/filters', async (_req, res) => {
     ],
     statuses:   ['Trading', 'Halted', 'Upcoming', 'Delisted'],
   });
+});
+
+// POST /api/companies — admin: add a new company manually
+function strOrNull(v) {
+  const s = (v ?? '').toString().trim();
+  return s || null;
+}
+function numOrNull(v) {
+  if (v === '' || v == null) return null;
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : null;
+}
+function intOrNull(v) {
+  if (v === '' || v == null) return null;
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? n : null;
+}
+function boolFlag(v) {
+  return (v === true || v === 1 || v === '1' || v === 'true') ? 1 : 0;
+}
+
+function _normalizePerson(body) {
+  return {
+    name: (body?.name || '').trim(),
+    role_code: body?.role_code ? String(body.role_code).trim().toUpperCase().slice(0, 8) : null,
+    title: body?.title ? String(body.title).trim() : null,
+    age: body?.age != null && body.age !== '' ? parseInt(body.age, 10) : null,
+    since_year: body?.since_year != null && body.since_year !== '' ? parseInt(body.since_year, 10) : null,
+    kind: body?.kind === 'director' ? 'director' : 'manager',
+  };
+}
+
+async function upsertCompanyPerson(companyId, body) {
+  const p = _normalizePerson(body);
+  if (!p.name) return null;
+  const r = await db.query(
+    `INSERT INTO company_people (company_id, name, role_code, title, age, since_year, kind, source, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'manual', NOW())
+     ON CONFLICT (company_id, name, kind) DO UPDATE SET
+       role_code  = EXCLUDED.role_code,
+       title      = EXCLUDED.title,
+       age        = EXCLUDED.age,
+       since_year = EXCLUDED.since_year,
+       source     = 'manual',
+       updated_at = NOW()
+     RETURNING id, name, role_code, title, age, since_year, kind, source, updated_at`,
+    [companyId, p.name, p.role_code, p.title, p.age, p.since_year, p.kind]
+  );
+  return r.rows[0];
+}
+
+router.post('/', express.json(), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const name = strOrNull(body.name);
+    const ticker = strOrNull(body.ticker)?.toUpperCase();
+    const exchange = normalizeExchange(strOrNull(body.exchange));
+    const sedar_ticker = strOrNull(body.sedar_ticker)?.toUpperCase() || null;
+
+    if (!name) return res.status(400).json({ error: 'Company name is required' });
+    if (!ticker) return res.status(400).json({ error: 'Ticker is required' });
+    if (!exchange) return res.status(400).json({ error: 'Exchange is required (e.g. TSXV, CSE, ASX, TSX)' });
+
+    const dup = await db.query(
+      'SELECT id FROM companies WHERE UPPER(ticker) = $1 AND exchange = $2 LIMIT 1',
+      [ticker, exchange]
+    );
+    if (dup.rows.length > 0) {
+      return res.status(409).json({ error: `Company ${exchange}:${ticker} already exists` });
+    }
+
+    const fields = {
+      market_cap: numOrNull(body.market_cap),
+      total_float: numOrNull(body.total_float),
+      sector: strOrNull(body.sector),
+      listing_date: strOrNull(body.listing_date),
+      region: strOrNull(body.region),
+      has_gold: boolFlag(body.has_gold),
+      has_silver: boolFlag(body.has_silver),
+      has_copper: boolFlag(body.has_copper),
+      description: strOrNull(body.description),
+      website: strOrNull(body.website),
+      headquarters: strOrNull(body.headquarters),
+      transfer_agent: strOrNull(body.transfer_agent),
+      phone: strOrNull(body.phone),
+      shares_outstanding: intOrNull(body.shares_outstanding),
+      ms_slug: strOrNull(body.ms_slug),
+      profile_source: strOrNull(body.profile_source) || 'manual',
+    };
+
+    const r = await db.query(
+      `INSERT INTO companies (
+         name, ticker, exchange, sedar_ticker,
+         market_cap, total_float, sector, listing_date, region,
+         has_gold, has_silver, has_copper,
+         description, website, headquarters, transfer_agent, phone,
+         shares_outstanding, ms_slug, profile_source, updated_at
+       ) VALUES (
+         $1, $2, $3, $4,
+         $5, $6, $7, $8, $9,
+         $10, $11, $12,
+         $13, $14, $15, $16, $17,
+         $18, $19, $20, NOW()
+       )
+       RETURNING *`,
+      [
+        name, ticker, exchange, sedar_ticker,
+        fields.market_cap, fields.total_float, fields.sector, fields.listing_date, fields.region,
+        fields.has_gold, fields.has_silver, fields.has_copper,
+        fields.description, fields.website, fields.headquarters, fields.transfer_agent, fields.phone,
+        fields.shares_outstanding, fields.ms_slug, fields.profile_source,
+      ]
+    );
+    const companyId = r.rows[0].id;
+    const peopleIn = Array.isArray(body.people) ? body.people : [];
+    const people = [];
+    for (const raw of peopleIn) {
+      const row = await upsertCompanyPerson(companyId, raw);
+      if (row) people.push(row);
+    }
+    res.status(201).json({ ...enrichCompany(r.rows[0]), people });
+  } catch (err) {
+    console.error('Company create failed:', err?.message || err);
+    res.status(503).json({ error: err.message || 'Database unavailable' });
+  }
 });
 
 // GET /api/companies/:idOrSlug  — accepts numeric ID or "EXCHANGE-TICKER" slug (e.g. "TSXV-SCZ")
@@ -445,17 +574,6 @@ router.put('/:id/profile', express.json(), async (req, res) => {
   }
 });
 
-function _normalizePerson(body) {
-  return {
-    name:       (body?.name || '').trim(),
-    role_code:  body?.role_code ? String(body.role_code).trim().toUpperCase().slice(0, 8) : null,
-    title:      body?.title ? String(body.title).trim() : null,
-    age:        body?.age != null && body.age !== '' ? parseInt(body.age, 10) : null,
-    since_year: body?.since_year != null && body.since_year !== '' ? parseInt(body.since_year, 10) : null,
-    kind:       body?.kind === 'director' ? 'director' : 'manager',
-  };
-}
-
 // POST /api/companies/:id/people — add a person
 router.post('/:id/people', express.json(), async (req, res) => {
   try {
@@ -464,20 +582,8 @@ router.post('/:id/people', express.json(), async (req, res) => {
     if (!p.name) return res.status(400).json({ error: 'name required' });
     const exists = await db.query('SELECT 1 FROM companies WHERE id = $1', [id]);
     if (exists.rows.length === 0) return res.status(404).json({ error: 'Company not found' });
-    const r = await db.query(
-      `INSERT INTO company_people (company_id, name, role_code, title, age, since_year, kind, source, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'manual', NOW())
-       ON CONFLICT (company_id, name, kind) DO UPDATE SET
-         role_code  = EXCLUDED.role_code,
-         title      = EXCLUDED.title,
-         age        = EXCLUDED.age,
-         since_year = EXCLUDED.since_year,
-         source     = 'manual',
-         updated_at = NOW()
-       RETURNING id, name, role_code, title, age, since_year, kind, source, updated_at`,
-      [id, p.name, p.role_code, p.title, p.age, p.since_year, p.kind]
-    );
-    res.json(r.rows[0]);
+    const row = await upsertCompanyPerson(id, req.body);
+    res.json(row);
   } catch (err) {
     console.error('Person add failed:', err?.message || err);
     res.status(503).json({ error: err.message || 'Database unavailable' });

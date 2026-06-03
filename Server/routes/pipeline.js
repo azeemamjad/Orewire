@@ -1,112 +1,127 @@
 const express = require('express');
-const router  = express.Router();
-const cron    = require('node-cron');
+const router = express.Router();
 
-const { state, addLog }           = require('../pipeline/state');
+const { state, addLog } = require('../pipeline/state');
 const { load: loadConfig, save: saveConfig } = require('../pipeline/config');
+const { describeSchedule } = require('../pipeline/cron-utils');
 const { runPipeline, runAsxPipeline } = require('../pipeline/runner');
 const { runProfileScrape, isRunning: profilesRunning } = require('../scripts/scrape-profiles');
+const { runTransferAgentScrape, isRunning: taRunning, stopTransferAgentScrape } = require('../scripts/scrape-transfer-agents');
+const { getJob } = require('../lib/job-tracker');
+const { filterLogs, getLogSourcesPayload } = require('../lib/log-sources');
+const { applyConfig, bootstrapSchedulers, runAllSeeders, runNewsPipeline } = require('../lib/pipeline-schedulers');
+const { isNewsPipelineRunning } = require('../lib/news-pipeline');
 
-let mainCronTask = null;
-let asxCronTask  = null;
-
-// ---------------------------------------------------------------------------
-// Cron management
-// ---------------------------------------------------------------------------
-
-function setupMainCron(schedule, enabled) {
-  if (mainCronTask) { mainCronTask.stop(); mainCronTask = null; }
-  if (!schedule || !cron.validate(schedule)) return;
-
-  mainCronTask = cron.schedule(schedule, () => {
-    addLog('out', `[Pipeline] Main cron fired at ${new Date().toISOString()}`);
-    runPipeline();
-  }, { scheduled: false });
-
-  if (enabled) mainCronTask.start();
-}
-
-function setupAsxCron(schedule, enabled) {
-  if (asxCronTask) { asxCronTask.stop(); asxCronTask = null; }
-  if (!schedule || !cron.validate(schedule)) return;
-
-  asxCronTask = cron.schedule(schedule, () => {
-    addLog('out', `[ASX Pipeline] Cron fired at ${new Date().toISOString()}`);
-    runAsxPipeline();
-  }, { scheduled: false });
-
-  if (enabled) asxCronTask.start();
-}
-
-// Bootstrap on startup
-const _initCfg = loadConfig();
-setupMainCron(_initCfg.schedule, _initCfg.enabled);
-setupAsxCron(_initCfg.asxSchedule, _initCfg.asxEnabled);
-addLog('out', `[Pipeline] Server started. Main schedule: "${_initCfg.schedule}", enabled: ${_initCfg.enabled} | ASX schedule: "${_initCfg.asxSchedule}", enabled: ${_initCfg.asxEnabled}`);
-
-// ---------------------------------------------------------------------------
-// Routes
-// ---------------------------------------------------------------------------
+// Schedulers start after initPipelineConfig() in index.js
 
 // GET /api/pipeline/status
 router.get('/status', (req, res) => {
   const cfg = loadConfig();
   res.json({
-    status:       state.status,
+    status: state.status,
     currentPhase: state.currentPhase,
-    startedAt:    state.startedAt,
-    stoppedAt:    state.stoppedAt,
-    progress:     state.progress,
+    startedAt: state.startedAt,
+    stoppedAt: state.stoppedAt,
+    progress: state.progress,
     analysisProgress: state.analysisProgress,
-    cronEnabled:  cfg.enabled,
+    cronEnabled: cfg.enabled,
     cronAsxEnabled: cfg.asxEnabled,
-    schedule:     cfg.schedule,
-    asxSchedule:  cfg.asxSchedule,
-    logCount:     state.logs.length,
+    schedule: cfg.schedule,
+    asxSchedule: cfg.asxSchedule,
+    newsEnabled: cfg.newsEnabled,
+    newsSchedule: cfg.newsSchedule,
+    profilesEnabled: cfg.profilesEnabled,
+    profilesSchedule: cfg.profilesSchedule,
+    seederEnabled: cfg.seederEnabled,
+    seederSchedule: cfg.seederSchedule,
+    scheduleDescription: describeSchedule(cfg.mainScheduleParts),
+    asxScheduleDescription: describeSchedule(cfg.asxScheduleParts),
+    newsScheduleDescription: describeSchedule(cfg.newsScheduleParts),
+    profilesScheduleDescription: describeSchedule(cfg.profilesScheduleParts),
+    seederScheduleDescription: describeSchedule(cfg.seederScheduleParts),
+    newsRunning: isNewsPipelineRunning(),
+    logCount: state.logs.length,
   });
 });
 
-// POST /api/pipeline/start
 router.post('/start', (req, res) => {
   if (state.status === 'running') {
     return res.status(409).json({ error: 'Pipeline already running' });
   }
-  runPipeline();   // intentionally not awaited — runs in background
+  runPipeline();
   res.json({ ok: true, message: 'Pipeline started' });
 });
 
-// POST /api/pipeline/asx/start
 router.post('/asx/start', (req, res) => {
   if (state.status === 'running') {
     return res.status(409).json({ error: 'Pipeline already running' });
   }
-  runAsxPipeline();   // ASX-only pipeline
+  runAsxPipeline();
   res.json({ ok: true, message: 'ASX pipeline started' });
 });
 
-// POST /api/pipeline/profiles/start — scrape MarketScreener company profiles + people
+router.post('/news/start', (req, res) => {
+  if (isNewsPipelineRunning()) {
+    return res.status(409).json({ error: 'News pipeline already running' });
+  }
+  runNewsPipeline();
+  res.json({ ok: true, message: 'News pipeline started' });
+});
+
+router.post('/seeders/start', (req, res) => {
+  runAllSeeders();
+  res.json({ ok: true, message: 'Seeders started' });
+});
+
 router.post('/profiles/start', express.json(), (req, res) => {
   if (profilesRunning()) {
     return res.status(409).json({ error: 'Profile scrape already running' });
   }
   const opts = {
-    limit:       req.body?.limit ?? null,
-    ticker:      req.body?.ticker || null,
+    limit: req.body?.limit ?? null,
+    ticker: req.body?.ticker || null,
     refreshDays: req.body?.refreshDays ?? null,
-    delay:       req.body?.delay ?? 2500,
-    dryRun:      !!req.body?.dryRun,
+    delay: req.body?.delay ?? 2500,
+    dryRun: !!req.body?.dryRun,
   };
-  // Fire and forget — logs flow into the existing pipeline state.
   runProfileScrape(opts).catch((err) => addLog('err', `[Profiles] Fatal: ${err.message}`));
   res.json({ ok: true, message: 'Profile scrape started', opts });
 });
 
-// GET /api/pipeline/profiles/status — just whether the profile job is currently running
 router.get('/profiles/status', (_req, res) => {
   res.json({ running: profilesRunning() });
 });
 
-// POST /api/pipeline/stop
+router.post('/transfer-agents/start', express.json(), (req, res) => {
+  if (taRunning()) {
+    return res.status(409).json({
+      error: 'Transfer-agent scrape already running',
+      running: true,
+      job: getJob('transfer-agents'),
+    });
+  }
+  const opts = {
+    limit: req.body?.limit ?? null,
+    ticker: req.body?.ticker || null,
+    all: !!req.body?.all,
+    dryRun: !!req.body?.dryRun,
+  };
+  runTransferAgentScrape(opts).catch((err) => addLog('err', `[TA] Fatal: ${err.message}`));
+  res.json({ ok: true, message: 'Transfer-agent scrape started', opts });
+});
+
+router.get('/transfer-agents/status', (_req, res) => {
+  res.json({ running: taRunning(), job: getJob('transfer-agents') });
+});
+
+router.post('/transfer-agents/stop', (_req, res) => {
+  if (!taRunning()) {
+    return res.status(409).json({ error: 'Transfer-agent scrape is not running' });
+  }
+  stopTransferAgentScrape();
+  res.json({ ok: true, message: 'Stop signal sent' });
+});
+
 router.post('/stop', (req, res) => {
   if (state.status !== 'running') {
     return res.status(409).json({ error: 'Pipeline is not running' });
@@ -116,40 +131,67 @@ router.post('/stop', (req, res) => {
   res.json({ ok: true, message: 'Stop signal sent — finishing current workers' });
 });
 
-// GET /api/pipeline/logs?offset=N
+router.get('/log-sources', (_req, res) => {
+  res.json(getLogSourcesPayload(state.logs));
+});
+
 router.get('/logs', (req, res) => {
-  const offset = Math.max(0, parseInt(req.query.offset) || 0);
+  const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+  const source = (req.query.source || 'all').toString();
+  const filtered = filterLogs(state.logs, source);
   res.json({
-    logs:  state.logs.slice(offset),
-    total: state.logs.length,
+    logs: filtered.slice(offset),
+    total: filtered.length,
+    source,
   });
 });
 
-// GET /api/pipeline/config
 router.get('/config', (req, res) => {
-  res.json(loadConfig());
+  res.json({ ...loadConfig(), storage: 'database' });
 });
 
-// POST /api/pipeline/config
-router.post('/config', express.json(), (req, res) => {
-  const { schedule, concurrency, analysisConcurrency, daysBack, seedOnStart, asxSeedOnStart, analyze, enabled, asxSchedule, asxEnabled } = req.body;
+router.post('/config', express.json(), async (req, res) => {
+  const body = req.body || {};
   const updates = {};
-  if (schedule    !== undefined) updates.schedule    = schedule;
-  if (concurrency !== undefined) updates.concurrency = Math.max(1, Math.min(20, parseInt(concurrency)));
-  if (analysisConcurrency !== undefined) updates.analysisConcurrency = Math.max(1, Math.min(10, parseInt(analysisConcurrency)));
-  if (daysBack    !== undefined) updates.daysBack     = Math.max(1, parseInt(daysBack));
-  if (seedOnStart !== undefined) updates.seedOnStart  = Boolean(seedOnStart);
-  if (asxSeedOnStart !== undefined) updates.asxSeedOnStart = Boolean(asxSeedOnStart);
-  if (analyze     !== undefined) updates.analyze      = Boolean(analyze);
-  if (enabled     !== undefined) updates.enabled      = Boolean(enabled);
-  if (asxSchedule !== undefined) updates.asxSchedule  = asxSchedule;
-  if (asxEnabled  !== undefined) updates.asxEnabled   = Boolean(asxEnabled);
 
-  const cfg = saveConfig(updates);
-  setupMainCron(cfg.schedule, cfg.enabled);
-  setupAsxCron(cfg.asxSchedule, cfg.asxEnabled);
-  addLog('out', `[Pipeline] Config updated: ${JSON.stringify(updates)}`);
-  res.json(cfg);
+  const num = (v, min, max) => Math.max(min, Math.min(max, parseInt(v, 10)));
+
+  if (body.schedule !== undefined) updates.schedule = body.schedule;
+  if (body.mainScheduleParts !== undefined) updates.mainScheduleParts = body.mainScheduleParts;
+  if (body.concurrency !== undefined) updates.concurrency = num(body.concurrency, 1, 20);
+  if (body.analysisConcurrency !== undefined) updates.analysisConcurrency = num(body.analysisConcurrency, 1, 10);
+  if (body.daysBack !== undefined) updates.daysBack = Math.max(1, parseInt(body.daysBack, 10));
+  if (body.seedOnStart !== undefined) updates.seedOnStart = Boolean(body.seedOnStart);
+  if (body.asxSeedOnStart !== undefined) updates.asxSeedOnStart = Boolean(body.asxSeedOnStart);
+  if (body.analyze !== undefined) updates.analyze = Boolean(body.analyze);
+  if (body.enabled !== undefined) updates.enabled = Boolean(body.enabled);
+
+  if (body.asxSchedule !== undefined) updates.asxSchedule = body.asxSchedule;
+  if (body.asxScheduleParts !== undefined) updates.asxScheduleParts = body.asxScheduleParts;
+  if (body.asxEnabled !== undefined) updates.asxEnabled = Boolean(body.asxEnabled);
+  if (body.asxSeedOnStart !== undefined) updates.asxSeedOnStart = Boolean(body.asxSeedOnStart);
+  if (body.asxAnalyze !== undefined) updates.asxAnalyze = Boolean(body.asxAnalyze);
+  if (body.asxConcurrency !== undefined) updates.asxConcurrency = num(body.asxConcurrency, 1, 20);
+  if (body.asxAnalysisConcurrency !== undefined) updates.asxAnalysisConcurrency = num(body.asxAnalysisConcurrency, 1, 10);
+  if (body.asxDaysBack !== undefined) updates.asxDaysBack = Math.max(1, parseInt(body.asxDaysBack, 10));
+
+  if (body.newsScheduleParts !== undefined) updates.newsScheduleParts = body.newsScheduleParts;
+  if (body.newsEnabled !== undefined) updates.newsEnabled = Boolean(body.newsEnabled);
+  if (body.profilesScheduleParts !== undefined) updates.profilesScheduleParts = body.profilesScheduleParts;
+  if (body.profilesEnabled !== undefined) updates.profilesEnabled = Boolean(body.profilesEnabled);
+  if (body.profilesDelay !== undefined) updates.profilesDelay = Math.max(0, parseInt(body.profilesDelay, 10));
+  if (body.seederScheduleParts !== undefined) updates.seederScheduleParts = body.seederScheduleParts;
+  if (body.seederEnabled !== undefined) updates.seederEnabled = Boolean(body.seederEnabled);
+
+  try {
+    const cfg = await saveConfig(updates);
+    applyConfig(cfg);
+    addLog('out', `[Pipeline] Config saved to database: ${JSON.stringify(updates)}`);
+    res.json({ ...cfg, storage: 'database' });
+  } catch (err) {
+    console.error('[Pipeline] Config save failed:', err?.message || err);
+    res.status(500).json({ error: err?.message || 'Failed to save config' });
+  }
 });
 
 module.exports = router;

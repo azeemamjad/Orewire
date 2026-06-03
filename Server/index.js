@@ -31,6 +31,8 @@ apiRouter.use('/news',        require('./routes/news'));
 apiRouter.use('/jobs',        require('./routes/jobs'));
 apiRouter.use('/applications', require('./routes/applications'));
 apiRouter.use('/watchlist',    require('./routes/watchlist'));
+apiRouter.use('/briefing',     require('./routes/briefing'));
+apiRouter.use('/system',       require('./routes/system'));
 app.use('/api', apiRouter);
 
 // ── Admin panel auth (cookie session) ──────────────────────────────────────
@@ -48,20 +50,59 @@ app.post('/admin/logout', auth.adminLogout);
 
 // Everything else under /admin requires a valid admin cookie.
 app.use('/admin', auth.requireAdminPage);
-app.use('/admin', express.static(path.join(__dirname, 'public')));
+app.use('/admin', express.static(path.join(__dirname, 'public', 'admin'), { index: 'dashboard.html' }));
 
-app.get('/', (_req, res) => res.redirect('/admin'));
+app.get('/', (_req, res) => res.redirect('/admin/dashboard.html'));
 
 const migrate = require('./db/migrate');
 
 async function start() {
   try {
     await migrate();
+    const { restoreLogs } = require('./pipeline/state');
+    restoreLogs();
+    const { getAllJobs, endJob, isPidAlive } = require('./lib/job-tracker');
+    for (const job of getAllJobs()) {
+      if (job.status === 'running') {
+        endJob(job.id, 'interrupted');
+        if (job.pid && job.pid !== process.pid && isPidAlive(job.pid)) {
+          try { process.kill(job.pid); } catch { /* ignore */ }
+        }
+      }
+    }
   } catch (err) {
     console.error('[DB] Migration failed (non-fatal):', err?.message || err);
   }
+
+  try {
+    const { initPipelineConfig } = require('./pipeline/config');
+    const { bootstrapSchedulers } = require('./lib/pipeline-schedulers');
+    const cfg = await initPipelineConfig();
+    bootstrapSchedulers(cfg);
+  } catch (err) {
+    console.error('[pipeline] Config/schedulers failed to start:', err?.message || err);
+  }
+
   app.listen(PORT, () => {
     console.log(`Mining Intel server running → http://localhost:${PORT}`);
+    try {
+      const { startDailyBriefingScheduler } = require('./lib/daily-briefing-scheduler');
+      startDailyBriefingScheduler();
+    } catch (err) {
+      console.error('[briefing] Scheduler failed to start:', err?.message || err);
+    }
+    try {
+      const { startWatchlistNewsAlertsScheduler } = require('./lib/watchlist-news-alerts-scheduler');
+      startWatchlistNewsAlertsScheduler();
+    } catch (err) {
+      console.error('[watchlist-news] Scheduler failed to start:', err?.message || err);
+    }
+    try {
+      const { startWatchlistFilingAlertsScheduler } = require('./lib/watchlist-filing-alerts-scheduler');
+      startWatchlistFilingAlertsScheduler();
+    } catch (err) {
+      console.error('[watchlist-filing] Scheduler failed to start:', err?.message || err);
+    }
   });
 }
 

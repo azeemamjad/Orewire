@@ -75,10 +75,9 @@ async function migrate() {
   `);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_discussion_votes_disc ON discussion_votes(discussion_id)`);
 
-  // News — drop and recreate to fix schema mismatch
-  await db.query(`DROP TABLE IF EXISTS news CASCADE`);
+  // News — preserve rows across restarts; add columns if missing
   await db.query(`
-    CREATE TABLE news (
+    CREATE TABLE IF NOT EXISTS news (
       id          SERIAL PRIMARY KEY,
       title       TEXT NOT NULL,
       link        TEXT UNIQUE NOT NULL,
@@ -96,10 +95,19 @@ async function migrate() {
       created_at  TIMESTAMPTZ DEFAULT NOW()
     )
   `);
-  await safeQuery(`CREATE INDEX idx_news_pub_date ON news(pub_date DESC)`);
-  await safeQuery(`CREATE INDEX idx_news_category ON news(category)`);
-  await safeQuery(`CREATE INDEX idx_news_link ON news(link)`);
-  await safeQuery(`CREATE INDEX idx_news_company_id ON news(company_id)`);
+  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS summary TEXT`);
+  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS commodity TEXT`);
+  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS sentiment TEXT DEFAULT 'neutral'`);
+  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS relevant BOOLEAN DEFAULT TRUE`);
+  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS ai_processed BOOLEAN DEFAULT FALSE`);
+  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS company_id INTEGER`);
+  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS ticker TEXT`);
+  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'general'`);
+  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()`);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_news_pub_date ON news(pub_date DESC)`);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_news_category ON news(category)`);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_news_link ON news(link)`);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_news_company_id ON news(company_id)`);
 
   // Jobs
   await db.query(`
@@ -233,6 +241,51 @@ async function migrate() {
     )
   `);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_insider_tx_company ON insider_transactions(company_id, transaction_date DESC)`);
+
+  await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS briefing_enabled BOOLEAN DEFAULT TRUE`);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS briefing_subscribers (
+      id              SERIAL PRIMARY KEY,
+      email           TEXT UNIQUE NOT NULL,
+      created_at      TIMESTAMPTZ DEFAULT NOW(),
+      unsubscribed_at TIMESTAMPTZ
+    )
+  `);
+
+  await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS watchlist_alerts_enabled BOOLEAN DEFAULT TRUE`);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS watchlist_news_email_sent (
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      news_id    INTEGER NOT NULL REFERENCES news(id) ON DELETE CASCADE,
+      sent_at    TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (user_id, news_id)
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_watchlist_news_sent_news ON watchlist_news_email_sent(news_id)`);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS watchlist_filing_email_sent (
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      filing_id  INTEGER NOT NULL REFERENCES filings(id) ON DELETE CASCADE,
+      sent_at    TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (user_id, filing_id)
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_watchlist_filing_sent_filing ON watchlist_filing_email_sent(filing_id)`);
+
+  await safeQuery(`ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS alerts_enabled BOOLEAN DEFAULT FALSE`);
+  await safeQuery(`ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS alert_move_notified_date DATE`);
+
+  // Admin / pipeline configuration (JSON per key — e.g. pipeline schedules & workers)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key         TEXT PRIMARY KEY,
+      value       JSONB NOT NULL DEFAULT '{}',
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
 
   console.log('[DB] All migrations complete');
 }

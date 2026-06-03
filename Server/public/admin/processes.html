@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>System — Mining Intel Admin</title>
+<link rel="stylesheet" href="/admin/css/admin.css" />
+</head>
+<body data-page="processes">
+<aside class="sidebar">
+  <div class="logo">⛏ Mining Intel<span>SEDAR+ Filing Tracker</span></div>
+  <nav><ul>
+      <li><a href="dashboard.html"><span class="icon">📊</span>Dashboard</a></li>
+      <li><a href="companies.html"><span class="icon">🏢</span>Companies</a></li>
+      <li><a href="filings.html"><span class="icon">📄</span>Filings</a></li>
+      <li><a href="import.html"><span class="icon">📥</span>Import Data</a></li>
+      <li><a href="scraper.html"><span class="icon">🤖</span>Run Scraper</a></li>
+      <li><a href="pipeline.html"><span class="icon">⚙️</span>Pipeline</a></li>
+      <li class="active"><a href="processes.html"><span class="icon">🖥</span>System</a></li>
+  </ul></nav>
+  <div style="margin-top:auto;padding:14px 16px;border-top:1px solid var(--border);">
+    <a href="/admin/logout" style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;text-decoration:none;">🚪 Logout</a>
+  </div>
+</aside>
+<main class="main">
+  <div class="page-header">
+    <h1>System Monitor</h1>
+    <p>Running OreWire jobs, server memory, and host resources</p>
+  </div>
+
+  <div class="toolbar" style="margin-bottom:16px;">
+    <button class="btn btn-ghost btn-sm" onclick="refreshSystemMonitor()">↻ Refresh</button>
+    <button class="btn btn-ghost btn-sm" onclick="clearStaleJobs()">Clear stale jobs</button>
+    <a class="btn btn-primary btn-sm" href="pipeline.html">View live logs →</a>
+    <span id="sys-updated" style="margin-left:auto;font-size:12px;color:var(--muted);"></span>
+  </div>
+
+  <div class="section-title">Host</div>
+  <div class="sys-grid" id="sys-host-grid">
+    <div class="sys-card"><div class="label">RAM used</div><div class="value" id="sys-ram-used">—</div><div class="sub" id="sys-ram-sub">—</div></div>
+    <div class="sys-card"><div class="label">Server RAM</div><div class="value" id="sys-server-ram">—</div><div class="sub" id="sys-server-uptime">—</div></div>
+    <div class="sys-card"><div class="label">CPU cores</div><div class="value" id="sys-cpus">—</div><div class="sub" id="sys-load">—</div></div>
+    <div class="sys-card"><div class="label">Platform</div><div class="value" style="font-size:14px;" id="sys-platform">—</div><div class="sub" id="sys-host-uptime">—</div></div>
+  </div>
+
+  <div class="section-title" style="margin-top:8px;">Disk</div>
+  <div class="table-wrap" style="margin-bottom:20px;">
+    <table>
+      <thead><tr><th>Drive</th><th>Total</th><th>Free</th><th>Used</th></tr></thead>
+      <tbody id="sys-disk-body"><tr class="empty-row"><td colspan="4">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="section-title">Processes &amp; jobs</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Job</th><th>Status</th><th>PID</th><th>RAM</th><th>CPU</th><th>Running</th><th></th></tr></thead>
+      <tbody id="sys-proc-body"><tr class="empty-row"><td colspan="7">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</main>
+<div id="toast"></div>
+<script src="/admin/js/cron-schedule.js"></script>
+<script src="/admin/js/legacy-admin.js"></script>
+</body>
+</html>

@@ -15,8 +15,7 @@ const ACCESS_TTL_MS  = 5 * 60 * 60 * 1000;
 const REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const OTP_TTL_MINUTES = 10;
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
-const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
-const AUTH_FROM_EMAIL = process.env.AUTH_FROM_EMAIL || 'auth@orewire.com';
+const { sendOtpEmail, sendWelcomeEmail } = require('../lib/email');
 
 // In-memory store for admin sessions and revoked refresh tokens.
 // (Admin still uses opaque tokens — only user auth migrates to JWT.)
@@ -73,24 +72,6 @@ function verifyRefreshToken(token) {
   catch { return null; }
 }
 
-async function sendEmailViaResend(to, subject, html) {
-  if (!RESEND_API_KEY) throw new Error('RESEND_API_KEY not configured');
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${RESEND_API_KEY}`,
-    },
-    body: JSON.stringify({
-      from: AUTH_FROM_EMAIL,
-      to: [to],
-      subject,
-      html,
-    }),
-  });
-  if (!res.ok) throw new Error(`Resend failed: ${res.status}`);
-}
-
 async function issueAndSendOtp({ userId, email, purpose }) {
   const code = generateOtpCode();
   const now = Date.now();
@@ -100,21 +81,7 @@ async function issueAndSendOtp({ userId, email, purpose }) {
      VALUES ($1, $2, $3, $4, $5)`,
     [userId || null, email.toLowerCase(), purpose, sha256(code), expiresAt]
   );
-  const purposeText =
-    purpose === 'register'
-      ? 'verify your account'
-      : purpose === 'login_2fa'
-        ? 'complete your sign in'
-        : 'reset your password';
-  const html = `
-    <div style="font-family: Arial, sans-serif; line-height:1.5;">
-      <h2>Orewire verification code</h2>
-      <p>Use the code below to ${purposeText}:</p>
-      <p style="font-size:24px;font-weight:bold;letter-spacing:2px;">${code}</p>
-      <p>This code expires in ${OTP_TTL_MINUTES} minutes.</p>
-    </div>
-  `;
-  await sendEmailViaResend(email.toLowerCase(), 'Your Orewire verification code', html);
+  await sendOtpEmail({ email, code, purpose, ttlMinutes: OTP_TTL_MINUTES });
 }
 
 async function canResendOtp(email, purpose) {
@@ -264,11 +231,15 @@ router.post('/verify-otp', express.json(), async (req, res) => {
     const userResult = await db.query(
       `UPDATE users SET email_verified = TRUE
         WHERE id = $1
-      RETURNING id, email, username`,
+      RETURNING id, email, username, first_name`,
       [verify.userId]
     );
     const user = userResult.rows[0];
     if (!user) return res.status(404).json({ error: 'User not found' });
+
+    sendWelcomeEmail({ email: user.email, firstName: user.first_name }).catch((err) => {
+      console.error('Welcome email failed:', err?.message || err);
+    });
 
     const { accessToken, refreshToken } = issueTokens(user);
     res.json({
@@ -610,7 +581,7 @@ function adminLoginSubmit(req, res) {
   }
   const token = createAdminSession();
   setAdminCookie(res, token);
-  const target = (typeof nextUrl === 'string' && nextUrl.startsWith('/admin')) ? nextUrl : '/admin/';
+  const target = (typeof nextUrl === 'string' && nextUrl.startsWith('/admin')) ? nextUrl : '/admin/dashboard.html';
   res.redirect(target);
 }
 
