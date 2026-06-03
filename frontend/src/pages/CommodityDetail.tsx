@@ -252,7 +252,7 @@ const CommodityDetail = () => {
                 }`}
               >
                 {inWatchlist ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-                {inWatchlist ? "Watching" : "+ Watchlist"}
+                {inWatchlist ? "Watching" : "Watchlist"}
               </button>
               <SetAlertButton
                 itemType="commodity"
