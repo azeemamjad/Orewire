@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Relay — Live browser</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      background: #0f1419;
+      color: #e8eaed;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      background: #1a2332;
+      border-bottom: 1px solid #2d3a4d;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 15px; font-weight: 600; color: #c9a227; }
+    header .meta { font-size: 12px; color: #8b9cb3; flex: 1; }
+    header .status { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: #243044; }
+    header .status.ok { background: #1e3a2f; color: #6ee7a0; }
+    header .status.err { background: #3a1e1e; color: #f87171; }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      padding: 8px 16px;
+      background: #151c26;
+      border-bottom: 1px solid #2d3a4d;
+    }
+    .toolbar input {
+      flex: 1;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid #2d3a4d;
+      background: #0f1419;
+      color: #e8eaed;
+      font-size: 13px;
+    }
+    .toolbar button {
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: none;
+      background: #c9a227;
+      color: #0f1419;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .stage {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      overflow: auto;
+    }
+    #frame-wrap {
+      position: relative;
+      box-shadow: 0 8px 32px rgba(0,0,0,.45);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #000;
+      cursor: crosshair;
+      max-width: 100%;
+      line-height: 0;
+      touch-action: none;
+    }
+    #frame-wrap:focus { outline: 2px solid #c9a227; outline-offset: 2px; }
+    #frame {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      user-select: none;
+      pointer-events: none;
+    }
+    .hint {
+      font-size: 11px;
+      color: #6b7c93;
+      padding: 8px 16px 12px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>⛏ OreWire Relay</h1>
+    <span class="meta" id="label">Connecting…</span>
+    <span class="status" id="status">Connecting</span>
+  </header>
+  <div class="toolbar">
+    <input type="url" id="url-bar" placeholder="Navigate this browser…" />
+    <button type="button" id="go-btn">Go</button>
+    <button type="button" id="refresh-btn">Refresh</button>
+    <button type="button" id="stop-nav-btn" style="background:#5c3d3d;color:#f0e0e0;">Stop load</button>
+  </div>
+  <div class="stage">
+    <div id="frame-wrap" tabindex="0" title="Click here to control the remote browser">
+      <img id="frame" alt="Live browser" draggable="false" />
+    </div>
+  </div>
+  <p class="hint">Click, type, and scroll in the frame — input is sent to the server browser in real time.</p>
+
+  <script>
+    const TOKEN = __TOKEN__;
+    const statusEl = document.getElementById('status');
+    const labelEl = document.getElementById('label');
+    const frame = document.getElementById('frame');
+    const wrap = document.getElementById('frame-wrap');
+    const urlBar = document.getElementById('url-bar');
+
+    let viewport = { width: 1280, height: 900 };
+    let ws;
+
+    function setStatus(text, ok) {
+      statusEl.textContent = text;
+      statusEl.className = 'status' + (ok ? ' ok' : ok === false ? ' err' : '');
+    }
+
+    function wsUrl() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${proto}//${location.host}/relay/ws?token=${encodeURIComponent(TOKEN)}`;
+    }
+
+    function send(obj) {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+    }
+
+    function displaySize() {
+      const r = wrap.getBoundingClientRect();
+      return {
+        displayW: r.width > 0 ? r.width : viewport.width,
+        displayH: r.height > 0 ? r.height : viewport.height,
+      };
+    }
+
+    function pointerPayload(e, event) {
+      const r = wrap.getBoundingClientRect();
+      const x = e.clientX - r.left;
+      const y = e.clientY - r.top;
+      const d = displaySize();
+      return { type: 'mouse', event, x, y, button: e.button, ...d };
+    }
+
+    wrap.addEventListener('pointerdown', (e) => {
+      if (e.button > 2) return;
+      e.preventDefault();
+      wrap.setPointerCapture(e.pointerId);
+      wrap.focus();
+      send(pointerPayload(e, 'down'));
+    });
+    wrap.addEventListener('pointerup', (e) => {
+      send(pointerPayload(e, 'up'));
+      try { wrap.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    });
+    wrap.addEventListener('pointermove', (e) => {
+      if (!wrap.hasPointerCapture(e.pointerId) && !(e.buttons & 1)) return;
+      send(pointerPayload(e, 'move'));
+    });
+    wrap.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const r = wrap.getBoundingClientRect();
+      const d = displaySize();
+      send({
+        type: 'mouse',
+        event: 'wheel',
+        x: e.clientX - r.left,
+        y: e.clientY - r.top,
+        deltaY: e.deltaY,
+        button: 0,
+        ...d,
+      });
+    }, { passive: false });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.target === urlBar) return;
+      if (document.activeElement !== wrap && !wrap.contains(document.activeElement)) {
+        wrap.focus();
+      }
+      e.preventDefault();
+      let key = e.key;
+      if (key === 'Enter') key = 'Enter';
+      else if (key === 'Backspace') key = 'Backspace';
+      else if (key === 'Tab') { e.preventDefault(); key = 'Tab'; }
+      else if (key.length > 1 && !['Enter','Backspace','Tab','Escape','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(key)) return;
+      send({ type: 'key', event: 'keydown', key });
+    });
+
+    function navigateFromBar() {
+      const url = urlBar.value.trim();
+      if (!url) return;
+      setStatus('Navigating…', null);
+      send({ type: 'navigate', url });
+    }
+
+    document.getElementById('go-btn').addEventListener('click', navigateFromBar);
+    urlBar.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        navigateFromBar();
+      }
+    });
+    document.getElementById('refresh-btn').addEventListener('click', () => {
+      setStatus('Refreshing…', null);
+      send({ type: 'refresh' });
+    });
+    document.getElementById('stop-nav-btn').addEventListener('click', () => {
+      setStatus('Stopping…', null);
+      send({ type: 'cancel_navigate' });
+    });
+
+    function connect() {
+      ws = new WebSocket(wsUrl());
+      ws.onopen = () => setStatus('Connected', true);
+      ws.onclose = () => setStatus('Disconnected', false);
+      ws.onerror = () => setStatus('Error', false);
+      ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'ready') {
+          labelEl.textContent = msg.label || 'Relay session';
+          if (msg.url) urlBar.value = msg.url;
+          if (msg.viewport) viewport = msg.viewport;
+          setStatus('Live', true);
+        } else if (msg.type === 'frame') {
+          frame.src = 'data:image/jpeg;base64,' + msg.data;
+          if (msg.w) viewport.width = msg.w;
+          if (msg.h) viewport.height = msg.h;
+        } else if (msg.type === 'url') {
+          urlBar.value = msg.url;
+          setStatus('Live', true);
+        } else if (msg.type === 'navigating') {
+          urlBar.value = msg.url;
+          setStatus('Navigating…', null);
+        } else if (msg.type === 'cancelled') {
+          setStatus('Load cancelled', true);
+        } else if (msg.type === 'error') {
+          setStatus(msg.message, false);
+        }
+      };
+    }
+    connect();
+  </script>
+</body>
+</html>

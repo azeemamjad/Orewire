@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Relay — Mining Intel Admin</title>
+<link rel="stylesheet" href="/admin/css/admin.css" />
+<style>
+.relay-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-top: 20px; }
+.relay-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px;
+}
+.relay-card h3 { font-size: 16px; margin-bottom: 6px; }
+.relay-live-url-wrap { margin: 10px 0 12px; }
+.relay-live-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.relay-live-url {
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-all;
+}
+.relay-live-url a { color: var(--gold); text-decoration: none; }
+.relay-live-url a:hover { text-decoration: underline; }
+.relay-url-muted { color: var(--muted); font-style: italic; }
+.relay-task-line { font-size: 11px; color: #58a6ff; margin-bottom: 8px; word-break: break-word; }
+.relay-status {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 3px 8px;
+  border-radius: 4px;
+  margin-bottom: 12px;
+}
+.relay-status.active { background: rgba(46, 160, 67, .15); color: #3fb950; }
+.relay-status.needs_human { background: rgba(201, 162, 39, .2); color: var(--gold); }
+.relay-status.inactive { background: rgba(139, 148, 158, .15); color: var(--muted); }
+.relay-status.starting { background: rgba(88, 166, 255, .15); color: #58a6ff; }
+.relay-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.relay-view-url {
+  margin-top: 12px;
+  padding: 10px;
+  background: var(--bg);
+  border-radius: 6px;
+  font-size: 12px;
+  word-break: break-all;
+}
+.relay-view-url a { color: var(--gold); }
+.relay-toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+.relay-proxy-banner {
+  margin-top: 16px;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.relay-proxy-banner strong { color: var(--text); }
+.relay-proxy-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.relay-proxy-tag.dc { background: rgba(88, 166, 255, .2); color: #58a6ff; }
+.relay-proxy-tag.res { background: rgba(201, 162, 39, .25); color: var(--gold); }
+.relay-proxy-tag.local { background: rgba(139, 148, 158, .2); color: #c9d1d9; }
+.relay-card .proxy-line { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+.relay-tasks-wrap { margin-top: 32px; }
+.relay-tasks-wrap h2 { font-size: 18px; margin-bottom: 8px; }
+.relay-tasks-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 12px; }
+.relay-tasks-table th, .relay-tasks-table td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; vertical-align: top; }
+.relay-tasks-table th { background: var(--card); color: var(--muted); font-weight: 600; }
+.relay-tasks-table tr.no-browser { opacity: 0.55; }
+.tag-yes { color: #3fb950; font-weight: 600; }
+.tag-captcha { color: var(--gold); font-weight: 600; }
+.tag-no { color: var(--muted); }
+</style>
+</head>
+<body data-page="relay">
+<aside class="sidebar">
+  <div class="logo">⛏ Mining Intel<span>SEDAR+ Filing Tracker</span></div>
+  <nav><ul>
+      <li><a href="dashboard.html"><span class="icon">📊</span>Dashboard</a></li>
+      <li><a href="companies.html"><span class="icon">🏢</span>Companies</a></li>
+      <li><a href="filings.html"><span class="icon">📄</span>Filings</a></li>
+      <li><a href="import.html"><span class="icon">📥</span>Import Data</a></li>
+      <li><a href="scraper.html"><span class="icon">🤖</span>Run Scraper</a></li>
+      <li><a href="pipeline.html"><span class="icon">⚙️</span>Pipeline</a></li>
+      <li class="active"><a href="relay.html"><span class="icon">🌐</span>Relay</a></li>
+      <li><a href="processes.html"><span class="icon">🖥</span>System</a></li>
+  </ul></nav>
+  <div style="margin-top:auto;padding:14px 16px;border-top:1px solid var(--border);">
+    <a href="/admin/logout" style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;text-decoration:none;">🚪 Logout</a>
+  </div>
+</aside>
+<main class="main">
+  <div class="page-header">
+    <h1>OreWire Relay</h1>
+    <p>10 browsers — 5 datacenter, 3 residential, 2 local IP (no proxy).</p>
+  </div>
+
+  <div class="relay-proxy-banner" id="proxy-banner">Connecting to API…</div>
+  <p id="relay-api-hint" style="font-size:12px;color:var(--muted);margin-top:8px;"></p>
+
+  <div class="relay-toolbar">
+    <button type="button" class="btn btn-primary" id="btn-start-demo">Start pool (10 browsers)</button>
+    <button type="button" class="btn btn-secondary" id="btn-stop-demo">Stop all</button>
+    <button type="button" class="btn btn-secondary" id="btn-refresh">Refresh list</button>
+  </div>
+
+  <div class="relay-grid" id="relay-grid">
+    <p style="color:var(--muted);grid-column:1/-1;">No workers running. Click “Start pool (10 browsers)”.</p>
+  </div>
+
+  <div class="relay-tasks-wrap">
+    <h2>Browser task catalog</h2>
+    <p style="color:var(--muted);font-size:13px;max-width:720px;">
+      Which pipeline jobs need Playwright. <strong>Captcha</strong> tasks (SEDAR+) should use residential workers;
+      ASX uses datacenter — not the same browser session while SEDAR is waiting for a human.
+    </p>
+    <p id="tasks-summary" style="font-size:13px;margin-top:8px;"></p>
+    <div class="table-wrap">
+      <table class="relay-tasks-table">
+        <thead>
+          <tr>
+            <th>Task</th>
+            <th>Category</th>
+            <th>Exchange</th>
+            <th>Browser</th>
+            <th>Captcha</th>
+            <th>Relay tier</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody id="tasks-body"><tr><td colspan="7">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+<script>
+const API_BASE = (window.location.origin || 'http://localhost:3000') + '/api/relay';
+document.getElementById('relay-api-hint').textContent =
+  'API: ' + API_BASE + ' — open this page at http://localhost:3000/admin/relay.html (not the Vite app on :8080).';
+
+async function api(path, opts = {}) {
+  const url = API_BASE + path;
+  const r = await fetch(url, {
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    ...opts,
+  });
+  const text = await r.text();
+  let data;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error('API returned HTML, not JSON (' + r.status + '). Log in at /admin/login then open relay.html');
+  }
+  if (r.status === 401) {
+    throw new Error('Not logged in — open /admin/login first, then return to Relay.');
+  }
+  if (!r.ok) throw new Error(data.error || 'HTTP ' + r.status);
+  return data;
+}
+
+function showGridError(msg) {
+  document.getElementById('relay-grid').innerHTML =
+    '<p style="color:#f87171;grid-column:1/-1;"><strong>Cannot load browsers:</strong> ' + escapeHtml(msg) + '</p>';
+}
+
+function statusClass(s) {
+  return 'relay-status ' + (s || 'inactive').replace(/_/g, '_');
+}
+
+function formatLiveUrl(url) {
+  if (!url || url === 'about:blank') {
+    return '<span class="relay-url-muted">about:blank</span>';
+  }
+  const safe = escapeHtml(url);
+  return `<a href="${safe}" target="_blank" rel="noopener noreferrer">${safe}</a>`;
+}
+
+function renderWorkers(workers) {
+  const grid = document.getElementById('relay-grid');
+  if (!workers.length) {
+    grid.innerHTML = '<p style="color:var(--muted);grid-column:1/-1;">No workers running. Click “Start pool (10 browsers)”.</p>';
+    return;
+  }
+  grid.innerHTML = workers.map((w) => {
+    const tier = w.proxy?.tier || '';
+    const tag = tier === 'datacenter'
+      ? '<span class="relay-proxy-tag dc">DC</span>'
+      : tier === 'residential'
+        ? '<span class="relay-proxy-tag res">RES</span>'
+        : tier === 'direct'
+          ? '<span class="relay-proxy-tag local">LOCAL</span>'
+          : '';
+    const proxyLine = w.proxy?.label
+      ? `<div class="proxy-line">${tag}${escapeHtml(w.proxy.label)}${w.proxy.server ? ' · ' + escapeHtml(w.proxy.server) : ''}</div>`
+      : '';
+    return `
+    <div class="relay-card" data-id="${w.id}">
+      <h3>${escapeHtml(w.label)}</h3>
+      ${proxyLine}
+      <span class="${statusClass(w.status)}">${escapeHtml(w.status)}</span>
+      ${w.busy && w.currentTask ? `<div class="relay-task-line">Running: ${escapeHtml(w.currentTask)}</div>` : ''}
+      <div class="relay-live-url-wrap">
+        <span class="relay-live-label">Current page (live)</span>
+        <div class="relay-live-url" data-worker-id="${escapeHtml(w.id)}">${formatLiveUrl(w.url)}</div>
+      </div>
+      <div class="relay-actions">
+        <button type="button" class="btn btn-primary btn-view">View (temp link)</button>
+        <button type="button" class="btn btn-secondary btn-reset">Reset browser</button>
+        <button type="button" class="btn btn-secondary btn-human">Mark needs human</button>
+        <button type="button" class="btn btn-secondary btn-active">Mark active</button>
+      </div>
+      <div class="relay-view-url" id="url-${w.id}" hidden></div>
+    </div>
+    `;
+  }).join('');
+
+  grid.querySelectorAll('.btn-view').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.closest('.relay-card').dataset.id;
+      btn.disabled = true;
+      try {
+        const res = await api(`/workers/${id}/view`, { method: 'POST' });
+        if (!res.ok) throw new Error(res.error || 'Failed');
+        const box = document.getElementById('url-' + id);
+        box.hidden = false;
+        const exp = new Date(res.expiresAt).toLocaleString();
+        box.innerHTML = `<strong>Temporary link</strong> (expires ${exp}):<br>
+          <a class="relay-open-link" href="#" target="_blank" rel="noopener"></a>
+          <button type="button" class="btn btn-secondary btn-copy-link" style="margin-top:8px">Copy link</button>
+          <button type="button" class="btn btn-primary btn-open-link" style="margin-top:8px">Open</button>`;
+        const link = box.querySelector('.relay-open-link');
+        link.href = res.url;
+        link.textContent = res.url;
+        box.querySelector('.btn-copy-link').addEventListener('click', () => navigator.clipboard.writeText(res.url));
+        box.querySelector('.btn-open-link').addEventListener('click', () => window.open(res.url, '_blank', 'noopener'));
+      } catch (e) {
+        alert(e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  grid.querySelectorAll('.btn-reset').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.closest('.relay-card').dataset.id;
+      if (!confirm('Reset ' + id + '? Stops any hung page load and opens about:blank.')) return;
+      btn.disabled = true;
+      try {
+        await api(`/workers/${id}/reset`, { method: 'POST' });
+        await loadWorkers();
+      } catch (e) {
+        alert(e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  grid.querySelectorAll('.btn-human').forEach((btn) => {
+    btn.addEventListener('click', () => setStatus(btn, 'needs_human'));
+  });
+  grid.querySelectorAll('.btn-active').forEach((btn) => {
+    btn.addEventListener('click', () => setStatus(btn, 'active'));
+  });
+}
+
+async function setStatus(btn, status) {
+  const id = btn.closest('.relay-card').dataset.id;
+  await api(`/workers/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+  loadWorkers();
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
+}
+
+function patchLiveUrls(workers) {
+  for (const w of workers) {
+    const urlEl = document.querySelector(`.relay-live-url[data-worker-id="${CSS.escape(w.id)}"]`);
+    if (urlEl) urlEl.innerHTML = formatLiveUrl(w.url);
+    const card = document.querySelector(`.relay-card[data-id="${CSS.escape(w.id)}"]`);
+    if (!card) continue;
+    const statusEl = card.querySelector('.relay-status');
+    if (statusEl) {
+      statusEl.className = statusClass(w.status);
+      statusEl.textContent = w.status || '';
+    }
+    let taskEl = card.querySelector('.relay-task-line');
+    if (w.busy && w.currentTask) {
+      if (!taskEl) {
+        taskEl = document.createElement('div');
+        taskEl.className = 'relay-task-line';
+        statusEl?.insertAdjacentElement('afterend', taskEl);
+      }
+      taskEl.textContent = 'Running: ' + w.currentTask;
+      taskEl.hidden = false;
+    } else if (taskEl) {
+      taskEl.hidden = true;
+    }
+  }
+}
+
+async function loadWorkers(fullRender = true) {
+  try {
+    const res = await api('/workers');
+    const list = res.workers || [];
+    if (!list.length) {
+      const health = await api('/health').catch(() => ({}));
+      if (health.starting) {
+        showGridError('Pool is still starting (' + (health.running || 0) + ' ready)…');
+        return;
+      }
+    }
+    const hasCards = document.querySelector('.relay-card');
+    if (fullRender || !hasCards || list.length !== document.querySelectorAll('.relay-card').length) {
+      renderWorkers(list);
+    } else {
+      patchLiveUrls(list);
+    }
+  } catch (e) {
+    console.error('[Relay UI]', e);
+    showGridError(e.message);
+  }
+}
+
+async function loadProxyBanner() {
+  const el = document.getElementById('proxy-banner');
+  try {
+    const data = await api('/proxies');
+    const inv = data.inventory;
+    if (!inv) {
+      el.textContent = 'Proxy info unavailable — restart the server after pulling latest Relay code.';
+      return;
+    }
+    const dc = inv.datacenter;
+    const residential = inv.residential;
+    el.innerHTML = `
+      <strong>Proxy layout</strong><br>
+      <span class="relay-proxy-tag dc">DC</span> <strong>${dc.workers}</strong> browsers → Oxylabs datacenter ports
+      <strong>${(dc.ports || []).join(', ')}</strong> on ${escapeHtml(dc.host || 'dc.oxylabs.io')}
+      ${dc.enabled ? '' : ' <em>(USE_PROXY is off)</em>'}<br>
+      <span class="relay-proxy-tag res">RES</span> <strong>${residential.workers}</strong> browsers →
+      ${residential.credentialsSet ? escapeHtml(residential.host || 'pr.oxylabs.io') + ' port(s) ' + (residential.ports || []).join(', ') : '<em>credentials missing</em>'}.
+      ${escapeHtml(residential.note || '')}<br>
+      <span class="relay-proxy-tag local">LOCAL</span> <strong>${inv.direct?.workers ?? 0}</strong> browsers →
+      ${escapeHtml(inv.direct?.note || 'No proxy')}`;
+  } catch {
+    el.textContent = 'Could not load proxy info.';
+  }
+}
+
+document.getElementById('btn-start-demo').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-start-demo');
+  btn.disabled = true;
+  btn.textContent = 'Starting…';
+  try {
+    await api('/pool/start', { method: 'POST' });
+    await loadWorkers();
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Start pool (10 browsers)';
+  }
+});
+
+document.getElementById('btn-stop-demo').addEventListener('click', async () => {
+  await api('/demo/stop', { method: 'POST' });
+  loadWorkers();
+});
+
+document.getElementById('btn-refresh').addEventListener('click', refreshAll);
+
+async function loadTasks() {
+  const body = document.getElementById('tasks-body');
+  const summary = document.getElementById('tasks-summary');
+  try {
+    const res = await api('/tasks');
+    const s = res.summary || {};
+    summary.textContent =
+      `${s.needsBrowser} need a browser · ${s.needsCaptcha} may need captcha · ${s.noBrowser} are HTTP/API only`;
+    body.innerHTML = (res.tasks || []).map((t) => {
+      const rowClass = t.needs_browser ? '' : ' class="no-browser"';
+      return `<tr${rowClass}>
+        <td><strong>${escapeHtml(t.slug)}</strong><br><span style="color:var(--muted)">${escapeHtml(t.name)}</span></td>
+        <td>${escapeHtml(t.category)}</td>
+        <td>${escapeHtml(t.exchange || '—')}</td>
+        <td>${t.needs_browser ? '<span class="tag-yes">Yes</span>' : '<span class="tag-no">No</span>'}</td>
+        <td>${t.needs_captcha ? '<span class="tag-captcha">Yes</span>' : '<span class="tag-no">No</span>'}</td>
+        <td>${escapeHtml(t.preferred_relay_tier || '—')}${t.relay_worker_id ? '<br>' + escapeHtml(t.relay_worker_id) : ''}</td>
+        <td style="max-width:280px">${escapeHtml(t.notes || '')}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    body.innerHTML = `<tr><td colspan="7">${escapeHtml(e.message)}</td></tr>`;
+  }
+}
+
+async function refreshAll() {
+  await Promise.all([loadProxyBanner(), loadWorkers(), loadTasks()]);
+}
+
+refreshAll();
+setInterval(() => {
+  loadProxyBanner();
+  loadWorkers(false);
+}, 2000);
+</script>
+</body>
+</html>

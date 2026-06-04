@@ -287,6 +287,40 @@ async function migrate() {
     )
   `);
 
+  // Relay — which pipeline jobs need a browser / captcha (see Server/relay/task-registry.js)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS browser_tasks (
+      slug                  TEXT PRIMARY KEY,
+      name                  TEXT NOT NULL,
+      category              TEXT NOT NULL,
+      script_entry          TEXT,
+      exchange              TEXT,
+      needs_browser         BOOLEAN NOT NULL DEFAULT TRUE,
+      needs_captcha         BOOLEAN NOT NULL DEFAULT FALSE,
+      captcha_site          TEXT,
+      preferred_relay_tier  TEXT,
+      relay_worker_id       TEXT,
+      notes                 TEXT,
+      enabled               BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS relay_task_events (
+      id              SERIAL PRIMARY KEY,
+      task_slug       TEXT REFERENCES browser_tasks(slug) ON DELETE SET NULL,
+      worker_id       TEXT,
+      status          TEXT NOT NULL,
+      message         TEXT,
+      company_ticker  TEXT,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_relay_task_events_created ON relay_task_events(created_at DESC)`);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_relay_task_events_slug ON relay_task_events(task_slug)`);
+
   console.log('[DB] All migrations complete');
 }
 

@@ -153,6 +153,26 @@ async function syncAnalyses() {
   return stats;
 }
 
+function useRelayScrapers() {
+  return process.env.RELAY_ENABLED === 'true' && process.env.RELAY_WIRE_SCRAPERS !== 'false';
+}
+
+async function finishScrapeEntry(entry, code, mode) {
+  entry.status = code === 0 ? 'done' : 'error';
+  entry.exitCode = code;
+  if (code === 0 && mode !== 'scrape-only') {
+    try {
+      const result = await syncAnalyses();
+      entry.logs.push({
+        t: 'out',
+        msg: `[server] Auto-synced: ${result.imported} new filing(s), ${result.skipped} skipped\n`,
+      });
+    } catch (err) {
+      entry.logs.push({ t: 'err', msg: `[server] Auto-sync failed: ${err.message}\n` });
+    }
+  }
+}
+
 // POST /api/scraper/run
 router.post('/run', express.json(), (req, res) => {
   const { company, mode = 'both', exchange, daysBack } = req.body;
@@ -161,22 +181,67 @@ router.post('/run', express.json(), (req, res) => {
   if (!company) return res.status(400).json({ error: 'Company name / ticker is required' });
 
   const id = Date.now().toString();
-  let script, args;
+  const label = company;
+  const entry = {
+    company: label,
+    exchange: exchange || 'SEDAR',
+    mode,
+    logs: [],
+    status: 'running',
+    startedAt: new Date().toISOString(),
+  };
+  activeScrapes.set(id, entry);
 
+  if (mode !== 'analyze-only' && useRelayScrapers()) {
+    const slot = isASX ? (proxyRotor++ % 5) + 1 : (proxyRotor++ % 3) + 1;
+    const { runSedarManual, runAsxManual } = require('../relay/scrape');
+    entry.logs.push({ t: 'out', msg: `[Relay] ${isASX ? 'DC' : 'RES'}-${slot} → ${label}\n` });
+
+    (async () => {
+      try {
+        if (isASX) {
+          await runAsxManual(company, {
+            daysBack: daysBack || 30,
+            relaySlot: slot,
+            downloadDir: downloadsDir,
+          });
+        } else {
+          await runSedarManual(company, slot);
+        }
+        if (mode !== 'scrape-only') {
+          const { analyzeDirectory } = require(path.join(scraperPath, 'src/modules/analyzer'));
+          const dirName = isASX
+            ? company.toUpperCase()
+            : company.replace(/[^\w\s-]/g, '_').trim();
+          const companyDir = path.join(downloadsDir, dirName);
+          const meta = isASX
+            ? { exchange: 'ASX', ticker: company.toUpperCase(), company_name: company }
+            : { company_name: company, exchange: 'SEDAR+ (Canada)' };
+          await analyzeDirectory(companyDir, meta);
+        }
+        await finishScrapeEntry(entry, 0, mode);
+      } catch (err) {
+        entry.logs.push({ t: 'err', msg: `${err.message}\n` });
+        await finishScrapeEntry(entry, 1, mode);
+      }
+    })();
+
+    return res.json({ id, message: `Relay scraper started for "${label}"` });
+  }
+
+  let script, args;
   if (isASX) {
     script = 'asx-filings.js';
-    args   = [company];
-    if (daysBack)            args.push('--days', String(daysBack));
-    if (mode === 'scrape-only')  args.push('--no-analyze');
+    args = [company];
+    if (daysBack) args.push('--days', String(daysBack));
+    if (mode === 'scrape-only') args.push('--no-analyze');
     if (mode === 'analyze-only') args.push('--analyze-only');
   } else {
     script = 'index.js';
-    args   = [company];
-    if (mode === 'scrape-only')  args.push('--no-analyze');
+    args = [company];
+    if (mode === 'scrape-only') args.push('--no-analyze');
     if (mode === 'analyze-only') args.push('--analyze-only');
   }
-
-  const label = company;
 
   const proc = spawn('node', [script, ...args], {
     cwd: scraperPath,
@@ -184,24 +249,9 @@ router.post('/run', express.json(), (req, res) => {
     shell: false,
   });
 
-  const entry = { company: label, exchange: exchange || 'SEDAR', mode, logs: [], status: 'running', startedAt: new Date().toISOString() };
-  activeScrapes.set(id, entry);
-
-  proc.stdout.on('data', d => entry.logs.push({ t: 'out', msg: d.toString() }));
-  proc.stderr.on('data', d => entry.logs.push({ t: 'err', msg: d.toString() }));
-  proc.on('close', async code => {
-    entry.status   = code === 0 ? 'done' : 'error';
-    entry.exitCode = code;
-    // Auto-sync analysis JSON files into the DB when a scrape+analyze run finishes
-    if (code === 0 && mode !== 'scrape-only') {
-      try {
-        const result = await syncAnalyses();
-        entry.logs.push({ t: 'out', msg: `[server] Auto-synced: ${result.imported} new filing(s), ${result.skipped} skipped\n` });
-      } catch (err) {
-        entry.logs.push({ t: 'err', msg: `[server] Auto-sync failed: ${err.message}\n` });
-      }
-    }
-  });
+  proc.stdout.on('data', (d) => entry.logs.push({ t: 'out', msg: d.toString() }));
+  proc.stderr.on('data', (d) => entry.logs.push({ t: 'err', msg: d.toString() }));
+  proc.on('close', async (code) => finishScrapeEntry(entry, code, mode));
 
   res.json({ id, message: `Scraper started for "${label}"` });
 });

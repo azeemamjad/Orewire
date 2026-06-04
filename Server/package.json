@@ -9,7 +9,10 @@
     "dev": "node --watch index.js",
     "scrape:profiles": "node scripts/scrape-profiles.js",
     "briefing:send": "node scripts/send-daily-briefing.js",
-    "watchlist-filings:send": "node scripts/send-watchlist-filing-alerts.js"
+    "watchlist-filings:send": "node scripts/send-watchlist-filing-alerts.js",
+    "relay:test-proxies": "node scripts/test-relay-proxies.js",
+    "relay:test-security": "node scripts/test-relay-security.js",
+    "relay:test-wire": "node scripts/test-relay-wire.js"
   },
   "dependencies": {
     "cheerio": "^1.2.0",
@@ -20,6 +23,7 @@
     "multer": "^1.4.5-lts.1",
     "node-cron": "^4.2.1",
     "pg": "^8.21.0",
+    "ws": "^8.21.0",
     "xlsx": "^0.18.5"
   }
 }

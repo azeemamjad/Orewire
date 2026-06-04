@@ -16,14 +16,18 @@ const DOWNLOADS_DIR  = path.resolve(
 );
 
 // ---------------------------------------------------------------------------
-// Proxy — pass all proxy env vars to workers; scrapers handle fallback internally
+// Browser — OreWire Relay pool when enabled, else spawn Playwright per job
 // ---------------------------------------------------------------------------
 
 const PROXY_PORTS = [8001, 8002, 8003, 8004, 8005];
 
+function useRelayScrapers() {
+  return process.env.RELAY_ENABLED === 'true' && process.env.RELAY_WIRE_SCRAPERS !== 'false';
+}
+
 function workerEnv(workerId) {
   const env = { ...process.env, HEADLESS: 'true' };
-  // Set datacenter proxy with port rotation as PROXY_SERVER
+  if (useRelayScrapers()) return env;
   if (env.USE_PROXY === 'true' && env.PROXY_SERVER) {
     const server = env.PROXY_SERVER || 'dc.oxylabs.io';
     const host = server.replace(/^https?:\/\//, '').replace(/:\d+$/, '');
@@ -31,8 +35,6 @@ function workerEnv(workerId) {
     env.PROXY_SERVER = `http://${host}:${port}`;
     addLog('out', `[Pipeline] Worker ${workerId} → datacenter proxy ${env.PROXY_SERVER}`);
   }
-  // Residential proxy vars (PROXY_SERVER_2 etc.) are inherited from process.env
-  // — scrapers use them as fallback via proxy-fallback.js
   return env;
 }
 
@@ -42,30 +44,46 @@ function workerEnv(workerId) {
 
 // company = { name, ticker, exchange }
 function spawnWorker(company, workerId, cfg) {
-  return new Promise((resolve) => {
-    const isASX = company.exchange === 'ASX';
-    const script = isASX ? 'asx-filings.js' : 'index.js';
-    const arg    = isASX ? (company.ticker || company.name) : company.name;
-    // Always scrape-only; analysis runs separately in the pipeline
-    const args   = [arg, '--no-analyze'];
-    if (isASX && cfg.daysBack) args.push('--days', String(cfg.daysBack));
+  const isASX = company.exchange === 'ASX';
+  const arg = isASX ? (company.ticker || company.name) : company.name;
+  const tag = `[W${workerId}|${arg.substring(0, 22)}]`;
 
-    const env = workerEnv(workerId);
+  if (useRelayScrapers()) {
+    const { runPipelineScrape } = require('../relay/scrape');
+    const relaySlot = isASX
+      ? ((workerId - 1) % 5) + 1
+      : ((workerId - 1) % 3) + 1;
+    addLog('out', `${tag} → Relay ${isASX ? 'DC' : 'RES'}-${relaySlot}`);
+    return runPipelineScrape(company, relaySlot, cfg).then((code) => {
+      if (code === 0) {
+        state.progress.done++;
+        addLog('out', `${tag} ✓ download done (relay)`);
+      } else {
+        state.progress.errors++;
+        addLog('err', `${tag} ✗ relay scrape failed`);
+      }
+      return code;
+    });
+  }
+
+  return new Promise((resolve) => {
+    const script = isASX ? 'asx-filings.js' : 'index.js';
+    const args = [arg, '--no-analyze'];
+    if (isASX && cfg.daysBack) args.push('--days', String(cfg.daysBack));
 
     const proc = spawn('node', [script, ...args], {
       cwd: SCRAPER_DIR,
-      env,
+      env: workerEnv(workerId),
       shell: false,
     });
 
-    const tag = `[W${workerId}|${arg.substring(0, 22)}]`;
-    proc.stdout.on('data', d => {
+    proc.stdout.on('data', (d) => {
       for (const l of d.toString().split('\n')) if (l.trim()) addLog('out', `${tag} ${l}`);
     });
-    proc.stderr.on('data', d => {
+    proc.stderr.on('data', (d) => {
       for (const l of d.toString().split('\n')) if (l.trim()) addLog('log', `${tag} ${l}`);
     });
-    proc.on('close', code => {
+    proc.on('close', (code) => {
       if (code === 0) {
         state.progress.done++;
         addLog('out', `${tag} ✓ download done`);
@@ -75,7 +93,7 @@ function spawnWorker(company, workerId, cfg) {
       }
       resolve(code);
     });
-    proc.on('error', err => {
+    proc.on('error', (err) => {
       state.progress.errors++;
       addLog('err', `${tag} ✗ spawn error: ${err.message}`);
       resolve(1);

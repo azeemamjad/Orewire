@@ -154,7 +154,30 @@ function attachScraperStreams(proc, dryRun) {
   };
 }
 
+function useRelayScrapers() {
+  return process.env.RELAY_ENABLED === 'true' && process.env.RELAY_WIRE_SCRAPERS !== 'false';
+}
+
+async function runScraperViaRelay(companies, dryRun) {
+  const { runTransferAgentBatch } = require('../relay/scrape');
+  const stats = { ok: 0, miss: 0, fail: 0 };
+  const pending = [];
+  addLog('out', '[TA] Using OreWire Relay (RES worker 1)');
+  const results = await runTransferAgentBatch(companies, 1);
+  for (const row of results) {
+    const line = `${TA_RESULT_MARKER}${JSON.stringify(row)}`;
+    handleScraperLine(line, dryRun, stats, pending);
+  }
+  await Promise.allSettled(pending);
+  return { results, stats };
+}
+
 function runScraper(inputPath, outputPath, dryRun = false) {
+  if (useRelayScrapers()) {
+    const companies = JSON.parse(fs.readFileSync(inputPath, 'utf8'));
+    return runScraperViaRelay(companies, dryRun);
+  }
+
   return new Promise((resolve, reject) => {
     const proc = spawn(process.execPath, [TA_SCRIPT, '--input', inputPath, '--output', outputPath], {
       cwd: SCRAPER_DIR,

@@ -35,10 +35,18 @@ apiRouter.use('/briefing',     require('./routes/briefing'));
 apiRouter.use('/system',       require('./routes/system'));
 app.use('/api', apiRouter);
 
+// Relay API — admin-only (view links use signed tokens on /relay/view)
+if (process.env.RELAY_ENABLED === 'true') {
+  app.use('/api/relay', auth.requireAdminApi, require('./relay/routes'));
+}
+
 // ── Admin panel auth (cookie session) ──────────────────────────────────────
 // Login page is the only /admin path that is open without a cookie.
 app.get('/admin/login', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+app.get('/admin/relay', (_req, res) => {
+  res.redirect('/admin/relay.html');
 });
 app.post(
   '/admin/login',
@@ -83,8 +91,9 @@ async function start() {
     console.error('[pipeline] Config/schedulers failed to start:', err?.message || err);
   }
 
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`Mining Intel server running → http://localhost:${PORT}`);
+    console.log(`Admin Relay → http://localhost:${PORT}/admin/relay.html`);
     try {
       const { startDailyBriefingScheduler } = require('./lib/daily-briefing-scheduler');
       startDailyBriefingScheduler();
@@ -102,6 +111,13 @@ async function start() {
       startWatchlistFilingAlertsScheduler();
     } catch (err) {
       console.error('[watchlist-filing] Scheduler failed to start:', err?.message || err);
+    }
+
+    if (process.env.RELAY_ENABLED === 'true') {
+      const { initRelay } = require('./relay');
+      initRelay(app, server).catch((err) => {
+        console.error('[Relay] Failed to start:', err?.message || err);
+      });
     }
   });
 }
