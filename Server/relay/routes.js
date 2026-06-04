@@ -19,6 +19,18 @@ function baseUrl(req) {
   return `${proto}://${host}`;
 }
 
+function isRelayEnabled() {
+  return process.env.RELAY_ENABLED === 'true';
+}
+
+function requireRelayEnabled(req, res, next) {
+  if (isRelayEnabled()) return next();
+  return res.status(503).json({
+    ok: false,
+    error: 'Relay is disabled on this server. Set RELAY_ENABLED=true in .env and restart.',
+  });
+}
+
 function workerIdMiddleware(req, res, next) {
   try {
     req.relayWorkerId = assertValidWorkerId(req.params.id);
@@ -33,16 +45,22 @@ router.get('/health', (_req, res) => {
   const workers = pool.listWorkers();
   res.json({
     ok: true,
-    enabled: process.env.RELAY_ENABLED === 'true',
+    enabled: isRelayEnabled(),
     running: workers.length,
     pool: getPoolCounts(),
     starting: pool.isStarting(),
+    baseUrl: process.env.RELAY_BASE_URL || null,
   });
 });
 
-// GET /api/relay/workers
+// GET /api/relay/workers — live page URL per browser (admin UI polls this)
 router.get('/workers', (_req, res) => {
-  res.json({ ok: true, workers: pool.listWorkers(), pool: getPoolCounts() });
+  res.json({
+    ok: true,
+    enabled: isRelayEnabled(),
+    workers: pool.listWorkers(),
+    pool: getPoolCounts(),
+  });
 });
 
 // GET /api/relay/proxies
@@ -104,7 +122,7 @@ router.post('/tasks/:slug/event', async (req, res) => {
 });
 
 // POST /api/relay/pool/start
-router.post('/pool/start', async (_req, res) => {
+router.post('/pool/start', requireRelayEnabled, async (_req, res) => {
   try {
     const workers = await pool.startPool();
     res.json({ ok: true, workers, pool: getPoolCounts(), inventory: getProxyInventory() });
@@ -113,7 +131,7 @@ router.post('/pool/start', async (_req, res) => {
   }
 });
 
-router.post('/demo/start', async (_req, res) => {
+router.post('/demo/start', requireRelayEnabled, async (_req, res) => {
   try {
     const workers = await pool.startPool();
     res.json({ ok: true, workers, pool: getPoolCounts(), inventory: getProxyInventory() });
@@ -122,7 +140,7 @@ router.post('/demo/start', async (_req, res) => {
   }
 });
 
-router.post('/demo/stop', async (_req, res) => {
+router.post('/demo/stop', requireRelayEnabled, async (_req, res) => {
   try {
     await pool.shutdown();
     res.json({ ok: true, workers: [] });
@@ -131,7 +149,7 @@ router.post('/demo/stop', async (_req, res) => {
   }
 });
 
-router.post('/workers/:id/view', workerIdMiddleware, (req, res) => {
+router.post('/workers/:id/view', requireRelayEnabled, workerIdMiddleware, (req, res) => {
   const worker = pool.getWorker(req.relayWorkerId);
   if (!worker) {
     return res.status(404).json({ ok: false, error: 'Worker not found' });
@@ -147,7 +165,7 @@ router.post('/workers/:id/view', workerIdMiddleware, (req, res) => {
   });
 });
 
-router.post('/workers/:id/reset', workerIdMiddleware, async (req, res) => {
+router.post('/workers/:id/reset', requireRelayEnabled, workerIdMiddleware, async (req, res) => {
   try {
     const w = await pool.resetPage(req.relayWorkerId);
     res.json({
@@ -160,7 +178,7 @@ router.post('/workers/:id/reset', workerIdMiddleware, async (req, res) => {
   }
 });
 
-router.patch('/workers/:id/status', workerIdMiddleware, (req, res) => {
+router.patch('/workers/:id/status', requireRelayEnabled, workerIdMiddleware, (req, res) => {
   const { status } = req.body || {};
   if (!Object.values(STATUS).includes(status)) {
     return res.status(400).json({ ok: false, error: 'Invalid status' });

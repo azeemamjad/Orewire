@@ -35,10 +35,8 @@ apiRouter.use('/briefing',     require('./routes/briefing'));
 apiRouter.use('/system',       require('./routes/system'));
 app.use('/api', apiRouter);
 
-// Relay API — admin-only (view links use signed tokens on /relay/view)
-if (process.env.RELAY_ENABLED === 'true') {
-  app.use('/api/relay', auth.requireAdminApi, require('./relay/routes'));
-}
+// Relay API — always mounted; pool starts only when RELAY_ENABLED=true (admin auth required)
+app.use('/api/relay', auth.requireAdminApi, require('./relay/routes'));
 
 // ── Admin panel auth (cookie session) ──────────────────────────────────────
 // Login page is the only /admin path that is open without a cookie.

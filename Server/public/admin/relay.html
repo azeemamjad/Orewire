@@ -159,7 +159,7 @@
 <script>
 const API_BASE = (window.location.origin || 'http://localhost:3000') + '/api/relay';
 document.getElementById('relay-api-hint').textContent =
-  'API: ' + API_BASE + ' — open this page at http://localhost:3000/admin/relay.html (not the Vite app on :8080).';
+  'API: ' + API_BASE + ' (admin login required — use this site while logged in, not a bare browser tab).';
 
 async function api(path, opts = {}) {
   const url = API_BASE + path;
@@ -330,6 +330,12 @@ function patchLiveUrls(workers) {
 async function loadWorkers(fullRender = true) {
   try {
     const res = await api('/workers');
+    if (res.enabled === false) {
+      showGridError(
+        'Relay is disabled on this server. Add RELAY_ENABLED=true (and RELAY_BASE_URL=https://backend.orewire.com) to the VPS .env, then restart node.'
+      );
+      return;
+    }
     const list = res.workers || [];
     if (!list.length) {
       const health = await api('/health').catch(() => ({}));
