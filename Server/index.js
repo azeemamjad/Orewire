@@ -11,6 +11,9 @@ process.on('unhandledRejection', (err) => {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Behind nginx / Cloudflare — needed for correct wss:// and view link host
+app.set('trust proxy', 1);
+
 app.use(cors());
 app.use(express.json());
 

@@ -1,21 +1,26 @@
 const path = require('path');
 const fs   = require('fs');
 const os   = require('os');
-const { withProxyFallback } = require('../../utils/proxy-fallback');
+const { withBrowserSession } = require('../../utils/browser-session');
 
 const CSE_URL = 'https://thecse.com/industry/mining/';
 
 // Primary XPath for the download menu button (headlessUI ID — try first)
 const MENU_BTN_XPATH = '//*[@id="headlessui-menu-button-:Rp6dl5m:"]';
 
-async function downloadCseExcel() {
-  return withProxyFallback(async (browser) => {
-    const context = await browser.newContext({
-      acceptDownloads: true,
-      viewport: { width: 1280, height: 900 },
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    });
-    const page = await context.newPage();
+async function downloadCseExcel(options = {}) {
+  return withBrowserSession(
+    'cse_seed',
+    {
+      relaySlot: options.relaySlot || 1,
+      contextOptions: {
+        acceptDownloads: true,
+        viewport: { width: 1280, height: 900 },
+        userAgent:
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      },
+    },
+    async ({ page }) => {
 
     console.error('[CSE] Navigating to', CSE_URL);
     // Retry navigation up to 3 times
@@ -68,7 +73,8 @@ async function downloadCseExcel() {
     console.error(`[CSE] Saved to: ${savePath}`);
 
     return savePath;
-  });
+    }
+  );
 }
 
 module.exports = { downloadCseExcel };

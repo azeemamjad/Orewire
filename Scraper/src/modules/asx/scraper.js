@@ -1,20 +1,25 @@
 require('dotenv').config();
 const path = require('path');
 const os   = require('os');
-const { withProxyFallback } = require('../../utils/proxy-fallback');
+const { withBrowserSession } = require('../../utils/browser-session');
 
 const ASX_URL  = 'https://www.asx.com.au/markets/trade-our-cash-market/directory';
 const DL_XPATH = '//*[@id="company_directory"]/div/div[1]/div[2]/div[2]/a';
 
-async function downloadAsxCsv() {
-  return withProxyFallback(async (browser) => {
-    const context = await browser.newContext({
-      acceptDownloads: true,
-      viewport: { width: 1280, height: 900 },
-      userAgent: process.env.USER_AGENT ||
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    });
-    const page = await context.newPage();
+async function downloadAsxCsv(options = {}) {
+  return withBrowserSession(
+    'asx_seed',
+    {
+      relaySlot: options.relaySlot || 1,
+      contextOptions: {
+        acceptDownloads: true,
+        viewport: { width: 1280, height: 900 },
+        userAgent:
+          process.env.USER_AGENT ||
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      },
+    },
+    async ({ page }) => {
 
     console.error('[ASX] Navigating to', ASX_URL);
     let lastErr;
@@ -52,7 +57,8 @@ async function downloadAsxCsv() {
     console.error(`[ASX] Saved to: ${savePath}`);
 
     return savePath;
-  });
+    }
+  );
 }
 
 module.exports = { downloadAsxCsv };

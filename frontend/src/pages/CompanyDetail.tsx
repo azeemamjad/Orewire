@@ -190,10 +190,10 @@ const CompanyDetail = () => {
           </div>
         </header>
 
-        <div className="grid lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 flex flex-col gap-6">
-            <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
-              <div className="space-y-1.5 p-6 pb-3 flex flex-row items-center justify-between gap-3 flex-wrap">
+        <div className="grid lg:grid-cols-3 gap-6 items-stretch">
+          <div className="lg:col-span-2 min-h-0">
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm h-full flex flex-col">
+              <div className="space-y-1.5 p-6 pb-3 flex flex-row items-center justify-between gap-3 flex-wrap shrink-0">
                 <h3 className="font-semibold tracking-tight font-display text-xl">Price</h3>
                 {tvSymbol(data.exchange, data.ticker) && (
                   <span className="font-mono text-[11px] text-muted-foreground">
@@ -201,23 +201,13 @@ const CompanyDetail = () => {
                   </span>
                 )}
               </div>
-              <div className="p-6 pt-0">
+              <div className="p-6 pt-0 flex-1 min-h-0">
                 <TradingViewChart symbol={tvSymbol(data.exchange, data.ticker)} />
               </div>
             </div>
-            <AboutCard
-              ticker={data.ticker || data.name}
-              description={
-                data.description ||
-                md?.description ||
-                `${data.name} is a ${data.sector || "mining"} company listed on the ${data.exchange || "exchange"}.`
-              }
-              website={data.website || null}
-              headquarters={data.headquarters || null}
-            />
           </div>
 
-          <aside className="flex flex-col gap-6">
+          <aside className="flex flex-col gap-6 min-h-0 lg:h-full">
             <KeyStatsCard
               volume={md?.volume ?? null}
               marketCap={data.market_cap}
@@ -231,9 +221,26 @@ const CompanyDetail = () => {
               sedarTicker={data.sedar_ticker}
               transferAgent={data.transfer_agent}
               isAsx={(data.exchange || "").toUpperCase() === "ASX"}
+              className="flex-1"
             />
           </aside>
         </div>
+
+        <section className="mt-10">
+          <h2 className="font-display text-2xl tracking-tight mb-4 pb-2 border-b border-border flex items-center gap-2">
+            <Building2 className="h-5 w-5" />
+            About {data.ticker || data.name}
+          </h2>
+          <AboutPanel
+            description={
+              data.description ||
+              md?.description ||
+              `${data.name} is a ${data.sector || "mining"} company listed on the ${data.exchange || "exchange"}.`
+            }
+            website={data.website || null}
+            headquarters={data.headquarters || null}
+          />
+        </section>
 
         <section className="mt-10">
           <h2 className="font-display text-2xl tracking-tight mb-4 pb-2 border-b border-border flex items-center gap-2">
@@ -337,12 +344,12 @@ const KeyStatsCard = ({
   high52: number | null;
   low52: number | null;
 }) => (
-  <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
-    <div className="flex flex-col space-y-1.5 p-6 pb-2">
+  <div className="rounded-lg border bg-card text-card-foreground shadow-sm shrink-0">
+    <div className="flex flex-col space-y-1.5 p-6 pb-3">
       <h3 className="font-semibold font-display text-base uppercase tracking-wider">Key stats</h3>
     </div>
     <div className="p-6 pt-0">
-      <dl className="grid grid-cols-2 gap-y-3 text-sm">
+      <dl className="grid grid-cols-2 gap-y-2.5 text-sm leading-normal">
         <dt className="text-xs uppercase tracking-wider text-muted-foreground">Volume</dt>
         <dd className="font-mono text-right font-semibold">{volume != null ? fmtNum(volume) : "—"}</dd>
         <dt className="text-xs uppercase tracking-wider text-muted-foreground">Avg Vol (30D)</dt>
@@ -366,21 +373,23 @@ const IdentifiersCard = ({
   sedarTicker,
   transferAgent,
   isAsx,
+  className = "",
 }: {
   exchange?: string | null;
   ticker?: string | null;
   sedarTicker?: string | null;
   transferAgent?: string | null;
   isAsx?: boolean;
+  className?: string;
 }) => (
-  <div className="rounded-lg border bg-card text-card-foreground shadow-sm flex-1 flex flex-col">
-    <div className="flex flex-col space-y-1.5 p-6 pb-2">
+  <div className={`rounded-lg border bg-card text-card-foreground shadow-sm flex flex-col min-h-0 ${className}`.trim()}>
+    <div className="flex flex-col space-y-1.5 p-6 pb-3 shrink-0">
       <h3 className="font-semibold font-display text-base uppercase tracking-wider flex items-center gap-2">
         <Building2 className="h-4 w-4" />
         Identifiers
       </h3>
     </div>
-    <div className="p-6 pt-0 space-y-3 text-sm">
+    <div className="p-6 pt-0 space-y-2.5 text-sm leading-normal flex-1">
       <div>
         <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Exchanges &amp; Symbols</div>
         <ul className="space-y-1">
@@ -396,7 +405,7 @@ const IdentifiersCard = ({
           )}
         </ul>
       </div>
-      <div className="border-t border-border pt-3 space-y-1.5">
+      <div className="border-t border-border pt-2.5 space-y-1.5">
         <div className="flex justify-between font-mono text-xs">
           <span className="text-muted-foreground">ISIN</span>
           <span className="font-semibold">—</span>
@@ -407,24 +416,22 @@ const IdentifiersCard = ({
         </div>
       </div>
       {transferAgent && (
-        <div className="border-t border-border pt-3">
+        <div className="border-t border-border pt-2.5">
           <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
             {isAsx ? "Share Registry" : "Transfer Agent / Share Registry"}
           </div>
-          <p className="text-xs leading-relaxed font-medium">{transferAgent}</p>
+          <p className="text-xs leading-normal font-medium">{transferAgent}</p>
         </div>
       )}
     </div>
   </div>
 );
 
-const AboutCard = ({
-  ticker,
+const AboutPanel = ({
   description,
   website,
   headquarters,
 }: {
-  ticker: string;
   description: string;
   website: string | null;
   headquarters?: string | null;
@@ -432,37 +439,29 @@ const AboutCard = ({
   const { href, host } = websiteParts(website);
 
   return (
-    <div className="rounded-lg border bg-card text-card-foreground shadow-sm flex-1 flex flex-col">
-      <div className="flex flex-col space-y-1.5 p-6 pb-2">
-        <h3 className="font-semibold font-display text-base uppercase tracking-wider flex items-center gap-2">
-          <Building2 className="h-4 w-4" />
-          About {ticker}
-        </h3>
-      </div>
-      <div className="p-6 pt-0 space-y-3 text-sm leading-relaxed">
-        <p>{description}</p>
-        {href && host && (
-          <a
-            href={href}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-sm font-medium underline underline-offset-4"
-          >
-            <Globe className="h-3.5 w-3.5" />
-            {host}
-            <ExternalLink className="h-3 w-3" />
-          </a>
-        )}
-        {headquarters && (
-          <div className="flex items-start gap-2 text-sm">
-            <Building2 className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground" />
-            <div>
-              <div className="text-xs uppercase tracking-wider text-muted-foreground mb-0.5">Headquarters</div>
-              <p>{headquarters}</p>
-            </div>
+    <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 space-y-3 text-sm leading-relaxed">
+      <p>{description}</p>
+      {href && host && (
+        <a
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-sm font-medium underline underline-offset-4"
+        >
+          <Globe className="h-3.5 w-3.5" />
+          {host}
+          <ExternalLink className="h-3 w-3" />
+        </a>
+      )}
+      {headquarters && (
+        <div className="flex items-start gap-2 text-sm">
+          <Building2 className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+          <div>
+            <div className="text-xs uppercase tracking-wider text-muted-foreground mb-0.5">Headquarters</div>
+            <p>{headquarters}</p>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

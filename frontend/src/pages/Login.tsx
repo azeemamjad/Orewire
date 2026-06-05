@@ -244,6 +244,9 @@ const Login = () => {
 
               {(stage === "verify-register" || stage === "verify-login" || stage === "reset-verify") && (
                 <div>
+                  <p className="font-mono text-[11px] text-foreground/80 mb-4">
+                    OTP sent to <span className="text-accent">{email.trim()}</span>
+                  </p>
                   <label htmlFor="otp" className="block font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
                     OTP code
                   </label>
@@ -326,7 +329,9 @@ const Login = () => {
                       ? "Send reset code"
                       : stage === "reset-verify"
                         ? "Reset password"
-                        : "Enter terminal"}
+                        : mode === "register"
+                          ? "Sign up"
+                          : "Login"}
               </button>
 
               {mode === "signin" && stage === "form" && (

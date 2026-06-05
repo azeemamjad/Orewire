@@ -1,11 +1,10 @@
 require('dotenv').config();
-const { chromium } = require('playwright');
 const path  = require('path');
 const fs    = require('fs');
 const https = require('https');
 const http  = require('http');
 
-const { withProxyFallback } = require('../../utils/proxy-fallback');
+const { withBrowserSession } = require('../../utils/browser-session');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -113,112 +112,114 @@ async function downloadAnnouncement(context, href, ticker, dateTag, idsId, downl
 // Scrape filings for one company using per-company announcements page
 // ---------------------------------------------------------------------------
 
+async function scrapeAsxFilingsOnPage(page, context, ticker, { downloadDir, daysBack }) {
+  const cutoff = Date.now() - daysBack * 24 * 60 * 60 * 1000;
+  const results = [];
+  const url = `https://www.asx.com.au/markets/trade-our-cash-market/announcements.${ticker.toLowerCase()}`;
+  console.error(`[ASX] Loading announcements for ${ticker}…`);
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+  try {
+    await page.waitForSelector('#onetrust-accept-btn-handler', { timeout: 5000, state: 'visible' });
+    console.error('[ASX] Accepting cookie consent…');
+    await page.click('#onetrust-accept-btn-handler');
+    await page.waitForTimeout(1000);
+  } catch { /* no banner */ }
+
+  await page.waitForTimeout(5000);
+
+  const tableXPath = '//*[@id="markets_announcements"]/div[1]/div[3]/table[1]';
+  try {
+    await page.waitForSelector(`xpath=${tableXPath}`, { timeout: 30000, state: 'visible' });
+  } catch {
+    const hasSection = await page.locator('#markets_announcements').count();
+    console.error(`[ASX] ${ticker}: table not found (markets_announcements present: ${hasSection > 0})`);
+    if (!hasSection) {
+      const snippet = (await page.content()).substring(0, 800);
+      console.error(`[ASX] Page snippet: ${snippet}`);
+    }
+    return results;
+  }
+
+  const rows = page.locator(`xpath=${tableXPath}/tbody/tr`);
+  const rowCount = await rows.count();
+  console.error(`[ASX] ${ticker}: ${rowCount} rows found`);
+  if (rowCount === 0) return results;
+
+  const companyDir = path.join(downloadDir, ticker);
+  fs.mkdirSync(companyDir, { recursive: true });
+
+  for (let i = 0; i < rowCount; i++) {
+    const row = rows.nth(i);
+    const tds = row.locator('td');
+    const cellCount = await tds.count();
+    if (cellCount < 6) continue;
+
+    const rawDate = (await tds.nth(0).textContent() || '').trim();
+    const annDate = parseAsxDate(rawDate);
+    if (annDate && annDate.getTime() < cutoff) {
+      console.error(`[ASX] ${ticker}: skipping old row (${rawDate.split('\n')[0].trim()})`);
+      continue;
+    }
+
+    let link = tds.nth(5).locator('a').first();
+    if ((await link.count()) === 0) {
+      link = row.locator('a[href*=".pdf"], a[href*="markitdigital"], a[href*="displayAnnouncement"]').first();
+    }
+    if ((await link.count()) === 0) continue;
+
+    const href = await link.getAttribute('href');
+    if (!href) continue;
+
+    const rawText = (await link.textContent()) || '';
+    const headline = cleanHeadline(rawText);
+    const priceSens = (await tds.nth(4).textContent() || '').trim();
+
+    const cleanHref = href.replace(/&v=undefined$/i, '');
+    const idsId =
+      cleanHref.match(/idsId=([^&]+)/)?.[1] ??
+      cleanHref.match(/\/file\/([^/?&]+)/)?.[1] ??
+      cleanHref.split('/').pop()?.replace(/[^a-zA-Z0-9_-]/g, '_') ??
+      `${Date.now()}_${i}`;
+    const dateTag = annDate ? formatDateTag(annDate) : Date.now().toString();
+
+    try {
+      console.error(`[ASX] ${ticker}: ${headline.substring(0, 60)}`);
+      const r = await downloadAnnouncement(context, href, ticker, dateTag, idsId, companyDir);
+      if (r) results.push({ ticker, headline, date: rawDate, priceSens, ...r });
+    } catch (err) {
+      console.error(`[ASX] Error on ${idsId}: ${err.message}`);
+    }
+  }
+
+  return results;
+}
+
 async function scrapeAsxFilingsForCompany(ticker, options = {}) {
   const {
     downloadDir = path.join(__dirname, '../../../downloads'),
     daysBack = 30,
+    relaySlot = 1,
+    taskSlug = 'asx_filings',
   } = options;
 
   ticker = ticker.toUpperCase().trim();
-  const cutoff = Date.now() - daysBack * 24 * 60 * 60 * 1000;
 
-  return withProxyFallback(async (browser) => {
-    const context = await browser.newContext({
-      viewport:  { width: 1280, height: 900 },
-      userAgent: process.env.USER_AGENT ||
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    });
-
-    const results = [];
-    const page = await context.newPage();
-    const url  = `https://www.asx.com.au/markets/trade-our-cash-market/announcements.${ticker.toLowerCase()}`;
-    console.error(`[ASX] Loading announcements for ${ticker}…`);
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-
-    // Accept cookie consent banner if present (OneTrust — common on ASX)
-    try {
-      await page.waitForSelector('#onetrust-accept-btn-handler', { timeout: 5000, state: 'visible' });
-      console.error('[ASX] Accepting cookie consent…');
-      await page.click('#onetrust-accept-btn-handler');
-      await page.waitForTimeout(1000);
-    } catch { /* no banner — carry on */ }
-
-    // Give the SPA time to hydrate and render the announcements table
-    await page.waitForTimeout(5000);
-
-    // Wait for the announcements table (verified XPath from live DOM probe)
-    const tableXPath = '//*[@id="markets_announcements"]/div[1]/div[3]/table[1]';
-    try {
-      await page.waitForSelector(`xpath=${tableXPath}`, { timeout: 30000, state: 'visible' });
-    } catch {
-      // Diagnostics: check if the container at least loaded
-      const hasSection = await page.locator('#markets_announcements').count();
-      console.error(`[ASX] ${ticker}: table not found (markets_announcements present: ${hasSection > 0})`);
-      if (!hasSection) {
-        const snippet = (await page.content()).substring(0, 800);
-        console.error(`[ASX] Page snippet: ${snippet}`);
-      }
-      await context.close();
-      return results;
-    }
-
-    const rows     = page.locator(`xpath=${tableXPath}/tbody/tr`);
-    const rowCount = await rows.count();
-    console.error(`[ASX] ${ticker}: ${rowCount} rows found`);
-
-    if (rowCount === 0) return results;
-
-    const companyDir = path.join(downloadDir, ticker);
-    fs.mkdirSync(companyDir, { recursive: true });
-
-    // Each row has 8 td cells (responsive duplicates):
-    //  0: date+time  1: time (mobile)  2: code+name  3: name (mobile)
-    //  4: price-sensitive  5: headline + PDF link  6: doc size  7: type
-    for (let i = 0; i < rowCount; i++) {
-      const row       = rows.nth(i);
-      const tds       = row.locator('td');
-      const cellCount = await tds.count();
-      if (cellCount < 6) continue;
-
-      const rawDate = (await tds.nth(0).textContent() || '').trim();
-      const annDate = parseAsxDate(rawDate);
-      if (annDate && annDate.getTime() < cutoff) {
-        console.error(`[ASX] ${ticker}: skipping old row (${rawDate.split('\n')[0].trim()})`);
-        continue;
-      }
-
-      // Find the headline link — try cell 5 first, then any cell with a link
-      let link = tds.nth(5).locator('a').first();
-      if ((await link.count()) === 0) link = row.locator('a[href*=".pdf"], a[href*="markitdigital"], a[href*="displayAnnouncement"]').first();
-      if ((await link.count()) === 0) continue;
-
-      const href = await link.getAttribute('href');
-      if (!href) continue;
-
-      const rawText   = (await link.textContent()) || '';
-      const headline  = cleanHeadline(rawText);
-      const priceSens = (await tds.nth(4).textContent() || '').trim();
-
-      // Extract a stable ID from the href
-      const cleanHref = href.replace(/&v=undefined$/i, '');
-      const idsId = cleanHref.match(/idsId=([^&]+)/)?.[1]
-                 ?? cleanHref.match(/\/file\/([^/?&]+)/)?.[1]
-                 ?? cleanHref.split('/').pop()?.replace(/[^a-zA-Z0-9_-]/g, '_')
-                 ?? `${Date.now()}_${i}`;
-      const dateTag = annDate ? formatDateTag(annDate) : Date.now().toString();
-
-      try {
-        console.error(`[ASX] ${ticker}: ${headline.substring(0, 60)}`);
-        const r = await downloadAnnouncement(context, href, ticker, dateTag, idsId, companyDir);
-        if (r) results.push({ ticker, headline, date: rawDate, priceSens, ...r });
-      } catch (err) {
-        console.error(`[ASX] Error on ${idsId}: ${err.message}`);
-      }
-    }
-
-    await context.close();
-    return results;
-  });
+  return withBrowserSession(
+    taskSlug,
+    {
+      relaySlot,
+      contextOptions: {
+        acceptDownloads: true,
+        viewport: { width: 1280, height: 900 },
+        userAgent:
+          process.env.USER_AGENT ||
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      },
+    },
+    async ({ page, context }) =>
+      scrapeAsxFilingsOnPage(page, context, ticker, { downloadDir, daysBack })
+  );
 }
 
 module.exports = { scrapeAsxFilingsForCompany };

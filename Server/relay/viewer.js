@@ -163,7 +163,25 @@ function attachRelayViewer(app, httpServer) {
     res.type('html').send(html);
   });
 
-  const wss = new WebSocketServer({ server: httpServer, path: '/relay/ws' });
+  const wss = new WebSocketServer({ noServer: true });
+  const WS_PATH = '/relay/ws';
+
+  httpServer.on('upgrade', (request, socket, head) => {
+    let pathname = '/';
+    try {
+      pathname = new URL(request.url || '/', 'http://localhost').pathname;
+    } catch {
+      socket.destroy();
+      return;
+    }
+    if (pathname !== WS_PATH) {
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit('connection', ws, request);
+    });
+  });
 
   wss.on('connection', async (ws, req) => {
     let workerId = null;

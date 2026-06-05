@@ -1,24 +1,13 @@
 require('dotenv').config();
-const fs   = require('fs');
+const fs = require('fs');
 const path = require('path');
 
-const { withProxyFallback, isNetworkError } = require('./src/utils/proxy-fallback');
-const { humanDelay } = require('./src/utils/human');
-const {
-  buildContextOptions,
-  loadCookies,
-  saveCookies,
-  STEALTH_INIT,
-  scrapeTransferAgentForCompany,
-} = require('./src/modules/sedar/transfer-agent');
+const { runTransferAgentBatchOnSession } = require('./src/modules/sedar/transfer-agent-batch');
 
 // ---------------------------------------------------------------------------
 // CLI:
 //   node transfer-agents.js --input companies.json --output results.json
-//   node transfer-agents.js "Company Name" ["Another Co"]   (ad-hoc, prints JSON)
-//
-// Input JSON: [{ "id": 1, "name": "Trigon Metals Inc.", "ticker": "TM", "exchange": "TSXV" }, ...]
-// Output JSON: [{ "id": 1, "name": "...", "ticker": "...", "transfer_agent": "..."|null, "error": "..."? }, ...]
+//   node transfer-agents.js "Company Name" ["Another Co"]
 // ---------------------------------------------------------------------------
 
 const TA_RESULT_MARKER = '__OREWIRE_TA_RESULT__';
@@ -53,45 +42,12 @@ async function main() {
     process.exit(1);
   }
 
-  const delay = parseInt(process.env.TA_DELAY_MS || '2500', 10);
-
-  // Results are built inside the proxy-fallback fn so a tier switch starts clean.
-  const results = await withProxyFallback(async (browser) => {
-    const out = [];
-    let anySuccess = false;
-    const context = await browser.newContext(buildContextOptions());
-    await context.addInitScript(STEALTH_INIT);
-    await loadCookies(context);
-    const page = await context.newPage();
-
-    for (let i = 0; i < companies.length; i++) {
-      const c = companies[i];
-      const tag = `[${i + 1}/${companies.length}] ${c.exchange || ''}:${c.ticker || ''} ${c.name}`;
-      try {
-        const ta = await scrapeTransferAgentForCompany(page, c.name);
-        anySuccess = true;
-        const row = { id: c.id ?? null, name: c.name, ticker: c.ticker ?? null, transfer_agent: ta || null };
-        out.push(row);
-        emitResult(row);
-        console.error(`${tag} — ${ta ? `TA: ${ta}` : 'no transfer agent found'}`);
-      } catch (err) {
-        // If this proxy tier can't reach SEDAR+ at all (and nothing has worked
-        // yet), bubble the error so withProxyFallback switches tiers instead of
-        // hammering every company on a dead proxy.
-        if (isNetworkError(err) && !anySuccess) {
-          console.error(`${tag} — proxy unreachable (${err.message}); switching proxy tier…`);
-          throw err;
-        }
-        const row = { id: c.id ?? null, name: c.name, ticker: c.ticker ?? null, transfer_agent: null, error: err.message };
-        out.push(row);
-        emitResult(row);
-        console.error(`${tag} — ERROR: ${err.message}`);
-      }
-      await saveCookies(context);
-      if (i < companies.length - 1) await humanDelay(delay, delay + 1200);
-    }
-    return out;
+  const results = await runTransferAgentBatchOnSession(companies, {
+    taskSlug: 'sedar_transfer_agent',
+    relaySlot: parseInt(process.env.RELAY_SLOT || '1', 10),
   });
+
+  for (const row of results) emitResult(row);
 
   if (args.output) {
     fs.writeFileSync(path.resolve(args.output), JSON.stringify(results, null, 2));

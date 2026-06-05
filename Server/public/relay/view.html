@@ -219,8 +219,13 @@
     function connect() {
       ws = new WebSocket(wsUrl());
       ws.onopen = () => setStatus('Connected', true);
-      ws.onclose = () => setStatus('Disconnected', false);
-      ws.onerror = () => setStatus('Error', false);
+      ws.onclose = (ev) => {
+        const hint = ev.code === 1006
+          ? ' (often nginx: enable WebSocket proxy — see Server/deploy/nginx-backend.example.conf)'
+          : '';
+        setStatus('Disconnected' + hint, false);
+      };
+      ws.onerror = () => setStatus('WebSocket failed — check nginx Upgrade headers', false);
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.type === 'ready') {

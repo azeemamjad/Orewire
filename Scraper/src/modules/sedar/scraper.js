@@ -1,10 +1,9 @@
 require('dotenv').config();
-const { chromium } = require('playwright');
 const fs   = require('fs');
 const path = require('path');
 
 const { humanDelay, humanClick, humanType, randomViewport, STEALTH_INIT } = require('../../utils/human');
-const { withProxyFallback } = require('../../utils/proxy-fallback');
+const { withBrowserSession } = require('../../utils/browser-session');
 
 const BASE_URL    = 'https://www.sedarplus.ca/home/';
 const COOKIE_FILE = path.resolve(process.env.COOKIE_FILE || './data/cookies.json');
@@ -256,60 +255,70 @@ async function downloadPage(page, companyDir, pageNum, saved) {
 // Main
 // ---------------------------------------------------------------------------
 
-async function scrapeSedar(companyName) {
+async function scrapeSedarOnPage(page, context, companyName) {
   const downloadBase = path.resolve(process.env.DOWNLOAD_DIR || './downloads');
   const companyDir   = path.join(downloadBase, companyName.replace(/[^\w\s-]/g, '_').trim());
   fs.mkdirSync(companyDir, { recursive: true });
 
-  return withProxyFallback(async (browser) => {
-    const context = await browser.newContext(buildContextOptions());
+  console.log('[SEDAR] Navigating to Documents search…');
+  await navigateToDocumentsSearch(page, context);
 
-    await context.addInitScript(STEALTH_INIT);
-    await loadCookies(context);
+  console.log(`[SEDAR] Searching for "${companyName}"…`);
+  await searchCompany(page, companyName);
 
-    const page = await context.newPage();
+  await saveCookies(context);
+
+  const firstCount = await page.locator('td.appTblCell2 a.appDocumentLink').count();
+  if (firstCount === 0) {
+    console.log('[SEDAR] No documents found. Saving page snapshot.');
+    fs.writeFileSync(path.join(companyDir, 'page_snapshot.html'), await page.content());
+    return [];
+  }
+
+  console.log(`[SEDAR] Downloading to: ${companyDir} (max ${MAX_PAGES} pages)`);
+  const saved = [];
+
+  for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
+    await downloadPage(page, companyDir, pageNum, saved);
+
+    const nextBtn = await getNextButton(page);
+    if (!nextBtn) {
+      console.log('[SEDAR] No more pages.');
+      break;
+    }
+
+    console.log(`[SEDAR] Going to page ${pageNum + 1}…`);
+    await humanDelay(800, 1500);
+    await humanClick(page, nextBtn);
+    await page.waitForSelector('table.appTable', { state: 'visible', timeout: 30000 });
+    await humanDelay(800, 1400);
+  }
+
+  console.log(`[SEDAR] Done — ${saved.length} file(s) downloaded`);
+  return saved;
+}
+
+async function scrapeSedar(companyName, options = {}) {
+  const taskSlug = options.taskSlug || 'sedar_filings';
+
+  return withBrowserSession(
+    taskSlug,
+    { relaySlot: options.relaySlot || 1, contextOptions: buildContextOptions() },
+    async ({ page, context }) => {
+    if (process.env.OREWIRE_RELAY !== 'in-process') {
+      await context.addInitScript(STEALTH_INIT);
+      await loadCookies(context);
+    } else {
+      await loadCookies(context);
+    }
 
     try {
-      console.log('[SEDAR] Navigating to Documents search…');
-      await navigateToDocumentsSearch(page, context);
-
-      console.log(`[SEDAR] Searching for "${companyName}"…`);
-      await searchCompany(page, companyName);
-
-      await saveCookies(context);
-
-      const firstCount = await page.locator('td.appTblCell2 a.appDocumentLink').count();
-      if (firstCount === 0) {
-        console.log('[SEDAR] No documents found. Saving page snapshot.');
-        fs.writeFileSync(path.join(companyDir, 'page_snapshot.html'), await page.content());
-        return [];
-      }
-
-      console.log(`[SEDAR] Downloading to: ${companyDir} (max ${MAX_PAGES} pages)`);
-      const saved = [];
-
-      for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
-        await downloadPage(page, companyDir, pageNum, saved);
-
-        const nextBtn = await getNextButton(page);
-        if (!nextBtn) {
-          console.log('[SEDAR] No more pages.');
-          break;
-        }
-
-        console.log(`[SEDAR] Going to page ${pageNum + 1}…`);
-        await humanDelay(800, 1500);
-        await humanClick(page, nextBtn);
-        await page.waitForSelector('table.appTable', { state: 'visible', timeout: 30000 });
-        await humanDelay(800, 1400);
-      }
-
-      console.log(`[SEDAR] Done — ${saved.length} file(s) downloaded`);
-      return saved;
+      return await scrapeSedarOnPage(page, context, companyName);
     } finally {
       await saveCookies(context);
     }
-  });
+    }
+  );
 }
 
-module.exports = { scrapeSedar };
+module.exports = { scrapeSedar, scrapeSedarOnPage };

@@ -11,13 +11,7 @@ const {
   logTaskEvent,
   getBrowserTask,
 } = require('./task-registry');
-
-function baseUrl(req) {
-  if (process.env.RELAY_BASE_URL) return process.env.RELAY_BASE_URL.replace(/\/$/, '');
-  const proto = req.get('x-forwarded-proto') || req.protocol;
-  const host = req.get('x-forwarded-host') || req.get('host');
-  return `${proto}://${host}`;
-}
+const { resolvePublicBaseUrl } = require('./urls');
 
 function isRelayEnabled() {
   return process.env.RELAY_ENABLED === 'true';
@@ -49,7 +43,7 @@ router.get('/health', (_req, res) => {
     running: workers.length,
     pool: getPoolCounts(),
     starting: pool.isStarting(),
-    baseUrl: process.env.RELAY_BASE_URL || null,
+    publicBaseUrl: resolvePublicBaseUrl(_req),
   });
 });
 
@@ -155,7 +149,7 @@ router.post('/workers/:id/view', requireRelayEnabled, workerIdMiddleware, (req, 
     return res.status(404).json({ ok: false, error: 'Worker not found' });
   }
   const { token, expiresAt } = createViewToken(worker.id);
-  const url = `${baseUrl(req)}/relay/view/${encodeURIComponent(token)}`;
+  const url = `${resolvePublicBaseUrl(req)}/relay/view/${encodeURIComponent(token)}`;
   res.json({
     ok: true,
     url,
