@@ -537,8 +537,7 @@ export interface MarketHistoryPoint {
 export interface MarketHistoryResponse {
   kind: string;
   key: string;
-  exchange: string;
-  ticker: string;
+  symbol?: string;
   intervalMs: number;
   windowMs: number;
   points: MarketHistoryPoint[];
@@ -553,7 +552,7 @@ export async function fetchMarketHistory(
   if (opts?.exchange) qs.set("exchange", opts.exchange);
   const res = await fetch(`${API_BASE}/market/history/${kind}/${encodeURIComponent(key)}${qs.toString() ? `?${qs.toString()}` : ""}`);
   if (!res.ok) {
-    return { kind, key, exchange: opts?.exchange || "", ticker: key, intervalMs: 30 * 60 * 1000, windowMs: 24 * 60 * 60 * 1000, points: [] };
+    return { kind, key, intervalMs: 30 * 60 * 1000, windowMs: 24 * 60 * 60 * 1000, points: [] };
   }
   return res.json();
 }

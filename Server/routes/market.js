@@ -1,70 +1,19 @@
 const express = require('express');
 const router  = express.Router();
 const db      = require('../db');
+const {
+  fetchCompanyQuote,
+  fetchListQuote,
+  yahooSymbolForCompany,
+  tvSymbolForCompany,
+} = require('../lib/market-quote');
 
-const TV_BASE = 'https://scanner.tradingview.com/symbol';
-
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const cache = new Map();
-
-const DEFAULT_FIELDS = [
-  'close', 'open', 'high', 'low', 'volume',
-  'change', 'change_abs',
-  'Perf.W', 'Perf.1M', 'Perf.3M', 'Perf.6M', 'Perf.Y', 'Perf.YTD',
-  'sector', 'country', 'market', 'description', 'name',
-  'Recommend.All', 'fundamental_currency_code',
-];
-
-function cacheKey(symbol) {
-  return symbol.toUpperCase();
-}
-
-function getCached(symbol) {
-  const key = cacheKey(symbol);
-  const entry = cache.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.ts > CACHE_TTL_MS) {
-    cache.delete(key);
-    return null;
-  }
-  return entry.data;
-}
-
-function setCached(symbol, data) {
-  cache.set(cacheKey(symbol), { ts: Date.now(), data });
-}
-
-function tvSymbol(exchange, ticker) {
-  const ex = exchange.toUpperCase().replace('-', '');
-  const tick = ticker.toUpperCase();
-  if (ex === 'TSX') return `TSX:${tick}`;
-  if (ex === 'TSXV') return `TSXV:${tick}`;
-  if (ex === 'CSE') return `CSE:${tick}`;
-  if (ex === 'ASX') return `ASX:${tick}`;
-  return `${ex}:${tick}`;
-}
-
+// Market data is sourced from Yahoo Finance with a TradingView fallback (see
+// lib/market-quote). The function keeps its historical name and (exchange,
+// ticker) signature so the company quote / movers / batch routes need no
+// changes; it returns the same TradingView-shaped fields normalizePrice() reads.
 async function fetchTradingView(exchange, ticker) {
-  const symbol = tvSymbol(exchange, ticker);
-  const cached = getCached(symbol);
-  if (cached) return cached;
-
-  const fields = DEFAULT_FIELDS.join(',');
-  const url = `${TV_BASE}?symbol=${encodeURIComponent(symbol)}&fields=${encodeURIComponent(fields)}&no_404=true`;
-
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!res.ok) throw new Error(`TV ${res.status}: ${await res.text()}`);
-  const data = await res.json();
-  if (data === null || typeof data !== 'object') throw new Error('TV returned null/empty');
-
-  setCached(symbol, data);
-  return data;
+  return fetchCompanyQuote(exchange, ticker);
 }
 
 function normalizePrice(data) {
@@ -222,22 +171,29 @@ router.get('/movers', async (req, res) => {
 // Commodities (TradingView spot / front-month futures)
 // ---------------------------------------------------------------------------
 // Each commodity has fallback symbols tried in order until one returns data.
+// Yahoo Finance symbols (fallbacks tried in order). Yahoo carries the major
+// futures and the metal ETFs; LME base metals (nickel/zinc/tin/cobalt/lead) and
+// iron ore have no clean Yahoo feed, so we fall back to a sector ETF proxy where
+// one exists and otherwise return no price (the UI shows "—").
+// y: Yahoo Finance symbols (tried first). tv: TradingView fallback symbols used
+// when Yahoo has no price — this is how the LME base metals (nickel/zinc/tin/
+// cobalt/lead) and iron ore, which Yahoo doesn't carry cleanly, get a price.
 const COMMODITY_SYMBOLS = [
-  { key: 'gold',      label: 'Gold',            unit: 'oz',  tv: ['COMEX:GC1!', 'TVC:GOLD', 'OANDA:XAUUSD'] },
-  { key: 'silver',    label: 'Silver',          unit: 'oz',  tv: ['COMEX:SI1!', 'TVC:SILVER', 'OANDA:XAGUSD'] },
-  { key: 'copper',    label: 'Copper',          unit: 'lb',  tv: ['COMEX:HG1!', 'TVC:COPPER', 'CAPITALCOM:COPPER'] },
-  { key: 'uranium',   label: 'Uranium',         unit: 'lb',  tv: ['NYMEX:UX1!', 'AMEX:URA', 'NYSEARCA:URA'] },
-  { key: 'lithium',   label: 'Lithium',         unit: 't',   tv: ['TVC:LITHIUM', 'AMEX:LIT', 'NYSEARCA:LIT'] },
-  { key: 'iron_ore',  label: 'Iron Ore',        unit: 't',   tv: ['TVC:IRONORE', 'SGX:FEF1!', 'NYMEX:TIO1!'] },
-  { key: 'nickel',    label: 'Nickel',          unit: 't',   tv: ['LME:NI1!', 'SHFE:NI1!', 'NYMEX:LN1!', 'TVC:NICKEL'] },
-  { key: 'zinc',      label: 'Zinc',            unit: 't',   tv: ['LME:ZN1!', 'SHFE:ZN1!'] },
-  { key: 'brent',     label: 'Brent Crude Oil', unit: 'bbl', tv: ['NYMEX:BB1!', 'TVC:UKOIL', 'ICEEUR:BRN1!'] },
-  { key: 'wti',       label: 'WTI Crude Oil',   unit: 'bbl', tv: ['NYMEX:CL1!', 'TVC:USOIL', 'CAPITALCOM:OIL_CRUDE'] },
-  { key: 'tin',       label: 'Tin',             unit: 't',   tv: ['LME:SN1!'] },
-  { key: 'cobalt',    label: 'Cobalt',          unit: 't',   tv: ['LME:CA1!'] },
-  { key: 'lead',      label: 'Lead',            unit: 't',   tv: ['LME:PB1!', 'SHFE:PB1!'] },
-  { key: 'platinum',  label: 'Platinum',        unit: 'oz',  tv: ['NYMEX:PL1!', 'TVC:PLATINUM', 'OANDA:XPTUSD'] },
-  { key: 'palladium', label: 'Palladium',       unit: 'oz',  tv: ['NYMEX:PA1!', 'TVC:PALLADIUM', 'OANDA:XPDUSD'] },
+  { key: 'gold',      label: 'Gold',            unit: 'oz',  y: ['GC=F', 'GLD'],        tv: ['COMEX:GC1!', 'TVC:GOLD', 'OANDA:XAUUSD'] },
+  { key: 'silver',    label: 'Silver',          unit: 'oz',  y: ['SI=F', 'SLV'],        tv: ['COMEX:SI1!', 'TVC:SILVER', 'OANDA:XAGUSD'] },
+  { key: 'copper',    label: 'Copper',          unit: 'lb',  y: ['HG=F', 'CPER'],       tv: ['COMEX:HG1!', 'TVC:COPPER', 'CAPITALCOM:COPPER'] },
+  { key: 'uranium',   label: 'Uranium',         unit: 'lb',  y: ['URA'],                tv: ['NYMEX:UX1!', 'AMEX:URA', 'NYSEARCA:URA'] },
+  { key: 'lithium',   label: 'Lithium',         unit: 't',   y: ['LIT'],                tv: ['TVC:LITHIUM', 'AMEX:LIT', 'NYSEARCA:LIT'] },
+  { key: 'iron_ore',  label: 'Iron Ore',        unit: 't',   y: [],                     tv: ['TVC:IRONORE', 'SGX:FEF1!', 'NYMEX:TIO1!'] },
+  { key: 'nickel',    label: 'Nickel',          unit: 't',   y: [],                     tv: ['LME:NI1!', 'SHFE:NI1!', 'NYMEX:LN1!', 'TVC:NICKEL'] },
+  { key: 'zinc',      label: 'Zinc',            unit: 't',   y: [],                     tv: ['LME:ZN1!', 'SHFE:ZN1!'] },
+  { key: 'brent',     label: 'Brent Crude Oil', unit: 'bbl', y: ['BZ=F'],               tv: ['NYMEX:BB1!', 'TVC:UKOIL', 'ICEEUR:BRN1!'] },
+  { key: 'wti',       label: 'WTI Crude Oil',   unit: 'bbl', y: ['CL=F'],               tv: ['NYMEX:CL1!', 'TVC:USOIL', 'CAPITALCOM:OIL_CRUDE'] },
+  { key: 'tin',       label: 'Tin',             unit: 't',   y: [],                     tv: ['LME:SN1!'] },
+  { key: 'cobalt',    label: 'Cobalt',          unit: 't',   y: [],                     tv: ['LME:CA1!'] },
+  { key: 'lead',      label: 'Lead',            unit: 't',   y: [],                     tv: ['LME:PB1!', 'SHFE:PB1!'] },
+  { key: 'platinum',  label: 'Platinum',        unit: 'oz',  y: ['PL=F', 'PPLT'],       tv: ['NYMEX:PL1!', 'TVC:PLATINUM', 'OANDA:XPTUSD'] },
+  { key: 'palladium', label: 'Palladium',       unit: 'oz',  y: ['PA=F', 'PALL'],       tv: ['NYMEX:PA1!', 'TVC:PALLADIUM', 'OANDA:XPDUSD'] },
 ];
 
 const COMMODITY_CACHE_TTL_MS = 30 * 60 * 1000;
@@ -249,25 +205,17 @@ async function getCommoditiesPayload() {
     return commoditiesCache;
   }
   const items = await Promise.all(COMMODITY_SYMBOLS.map(async (c) => {
-    for (const sym of c.tv) {
-      try {
-        const [ex, tick] = sym.split(':');
-        const data = await fetchTradingView(ex, tick);
-        const norm = normalizePrice(data);
-        if (norm.price == null) continue;
-        return {
-          key: c.key,
-          label: c.label,
-          unit: c.unit,
-          price: norm.price,
-          change_pct: norm.change_pct,
-          source: sym,
-        };
-      } catch {
-        // try next fallback
-      }
-    }
-    return { key: c.key, label: c.label, unit: c.unit, price: null, change_pct: null, source: null };
+    const r = await fetchListQuote(c.y, c.tv);
+    if (!r) return { key: c.key, label: c.label, unit: c.unit, price: null, change_pct: null, source: null };
+    const norm = normalizePrice(r.quote);
+    return {
+      key: c.key,
+      label: c.label,
+      unit: c.unit,
+      price: norm.price,
+      change_pct: norm.change_pct,
+      source: r.symbol,
+    };
   }));
   const payload = { updatedAt: new Date().toISOString(), items };
   commoditiesCache = payload;
@@ -288,21 +236,24 @@ router.get('/commodities', async (_req, res) => {
 // Indexes (Mining & Markets via TradingView)
 // ---------------------------------------------------------------------------
 
+// Yahoo Finance symbols. Index benchmarks use Yahoo's caret tickers; where an
+// index isn't on Yahoo (TSXV Composite, ASX 300 Metals & Mining) we proxy with
+// the closest tradeable ETF.
 const INDEX_SYMBOLS = [
-  { key: 'GDXJ', label: 'Junior Gold Miners ETF',   tv: ['AMEX:GDXJ', 'NYSEARCA:GDXJ'],          about: 'Junior gold miners ETF — small and mid-cap gold producers and explorers.' },
-  { key: 'TSXV', label: 'TSX Venture Composite',    tv: ['TSX:JX', 'TSX:TSXV', 'INDEX:JX'],      about: 'Composite benchmark of TSX Venture Exchange listings — heavily weighted to junior mining and exploration issuers in Canada.' },
-  { key: 'XMM',  label: 'ASX 300 Metals & Mining',  tv: ['ASX:XMM', 'INDEX:XMM', 'ASX:MVR'],     about: 'S&P/ASX 300 Metals & Mining Index — Australian-listed mining and metals producers. Live price proxied via ASX:MVR (VanEck Australian Resources ETF) when the index OHLC is unavailable.' },
-  { key: 'GDX',  label: 'Gold Miners ETF',          tv: ['AMEX:GDX', 'NYSEARCA:GDX'],            about: 'Large-cap gold miners ETF — tracks NYSE Arca Gold Miners Index.' },
-  { key: 'XGD',  label: 'S&P/TSX Gold Index',       tv: ['TSX:XGD', 'INDEX:XGD'],                about: 'S&P/TSX Gold Index — Canadian-listed gold producers.' },
-  { key: 'URA',  label: 'Uranium Miners ETF',       tv: ['AMEX:URA', 'NYSEARCA:URA'],            about: 'Uranium miners and nuclear fuel ETF.' },
-  { key: 'COPX', label: 'Copper Miners ETF',        tv: ['AMEX:COPX', 'NYSEARCA:COPX'],          about: 'Global copper miners ETF — pure-play exposure to copper producers worldwide.' },
-  { key: 'SIL',  label: 'Silver Miners ETF',        tv: ['AMEX:SIL', 'NYSEARCA:SIL'],            about: 'Global X Silver Miners ETF — primary-silver producers worldwide.' },
-  { key: 'LIT',  label: 'Lithium & Battery ETF',    tv: ['AMEX:LIT', 'NYSEARCA:LIT'],            about: 'Lithium miners and battery manufacturers ETF.' },
-  { key: 'PICK', label: 'Metal & Mining SPDR ETF',  tv: ['CBOE:PICK', 'AMEX:PICK', 'NYSEARCA:PICK'], about: 'iShares MSCI Global Metals & Mining Producers ETF.' },
-  { key: 'TSX',  label: 'S&P/TSX Composite',        tv: ['TSX:TSX', 'INDEX:TSX'],                about: 'S&P/TSX Composite Index — the benchmark for the Toronto Stock Exchange covering large-cap Canadian equities.' },
-  { key: 'XJO',  label: 'ASX 200',                  tv: ['ASX:XJO', 'INDEX:XJO'],                about: 'S&P/ASX 200 — Australian large-cap benchmark.' },
-  { key: 'SPX',  label: 'S&P 500',                  tv: ['SP:SPX', 'TVC:SPX', 'INDEX:SPX'],      about: 'S&P 500 — US large-cap benchmark.' },
-  { key: 'VIX',  label: 'Volatility Index',         tv: ['TVC:VIX', 'CBOE:VIX', 'INDEX:VIX'],    about: 'CBOE Volatility Index — implied 30-day S&P 500 volatility.' },
+  { key: 'GDXJ', label: 'Junior Gold Miners ETF',   y: ['GDXJ'],            tv: ['AMEX:GDXJ', 'NYSEARCA:GDXJ'],              about: 'Junior gold miners ETF — small and mid-cap gold producers and explorers.' },
+  { key: 'TSXV', label: 'TSX Venture Composite',    y: ['^SPCDNX'],         tv: ['TSX:JX', 'TSX:TSXV', 'INDEX:JX'],          about: 'Composite benchmark of TSX Venture Exchange listings — heavily weighted to junior mining and exploration issuers in Canada.' },
+  { key: 'XMM',  label: 'ASX 300 Metals & Mining',  y: ['^AXMM', 'MVR.AX'], tv: ['ASX:XMM', 'INDEX:XMM', 'ASX:MVR'],         about: 'S&P/ASX 300 Metals & Mining Index — Australian-listed mining and metals producers. Proxied via MVR (VanEck Australian Resources ETF) when the index is unavailable.' },
+  { key: 'GDX',  label: 'Gold Miners ETF',          y: ['GDX'],             tv: ['AMEX:GDX', 'NYSEARCA:GDX'],                about: 'Large-cap gold miners ETF — tracks NYSE Arca Gold Miners Index.' },
+  { key: 'XGD',  label: 'S&P/TSX Gold Index',       y: ['XGD.TO'],          tv: ['TSX:XGD', 'INDEX:XGD'],                    about: 'S&P/TSX Gold Index — Canadian-listed gold producers. Proxied via the iShares S&P/TSX Global Gold ETF (XGD).' },
+  { key: 'URA',  label: 'Uranium Miners ETF',       y: ['URA'],             tv: ['AMEX:URA', 'NYSEARCA:URA'],                about: 'Uranium miners and nuclear fuel ETF.' },
+  { key: 'COPX', label: 'Copper Miners ETF',        y: ['COPX'],            tv: ['AMEX:COPX', 'NYSEARCA:COPX'],              about: 'Global copper miners ETF — pure-play exposure to copper producers worldwide.' },
+  { key: 'SIL',  label: 'Silver Miners ETF',        y: ['SIL'],             tv: ['AMEX:SIL', 'NYSEARCA:SIL'],                about: 'Global X Silver Miners ETF — primary-silver producers worldwide.' },
+  { key: 'LIT',  label: 'Lithium & Battery ETF',    y: ['LIT'],             tv: ['AMEX:LIT', 'NYSEARCA:LIT'],                about: 'Lithium miners and battery manufacturers ETF.' },
+  { key: 'PICK', label: 'Metal & Mining SPDR ETF',  y: ['PICK'],            tv: ['CBOE:PICK', 'AMEX:PICK', 'NYSEARCA:PICK'], about: 'iShares MSCI Global Metals & Mining Producers ETF.' },
+  { key: 'TSX',  label: 'S&P/TSX Composite',        y: ['^GSPTSE'],         tv: ['TSX:TSX', 'INDEX:TSX'],                    about: 'S&P/TSX Composite Index — the benchmark for the Toronto Stock Exchange covering large-cap Canadian equities.' },
+  { key: 'XJO',  label: 'ASX 200',                  y: ['^AXJO'],           tv: ['ASX:XJO', 'INDEX:XJO'],                    about: 'S&P/ASX 200 — Australian large-cap benchmark.' },
+  { key: 'SPX',  label: 'S&P 500',                  y: ['^GSPC'],           tv: ['SP:SPX', 'TVC:SPX', 'INDEX:SPX'],          about: 'S&P 500 — US large-cap benchmark.' },
+  { key: 'VIX',  label: 'Volatility Index',         y: ['^VIX'],            tv: ['TVC:VIX', 'CBOE:VIX', 'INDEX:VIX'],        about: 'CBOE Volatility Index — implied 30-day S&P 500 volatility.' },
 ];
 
 let indexesCache = null;
@@ -313,16 +264,10 @@ async function getIndexesPayload() {
     return indexesCache;
   }
   const items = await Promise.all(INDEX_SYMBOLS.map(async (c) => {
-    for (const sym of c.tv) {
-      try {
-        const [ex, tick] = sym.split(':');
-        const data = await fetchTradingView(ex, tick);
-        const norm = normalizePrice(data);
-        if (norm.price == null) continue;
-        return { key: c.key, label: c.label, about: c.about, price: norm.price, change_pct: norm.change_pct, currency: norm.currency };
-      } catch { /* try next */ }
-    }
-    return { key: c.key, label: c.label, about: c.about, price: null, change_pct: null, currency: null };
+    const r = await fetchListQuote(c.y, c.tv);
+    if (!r) return { key: c.key, label: c.label, about: c.about, price: null, change_pct: null, currency: null };
+    const norm = normalizePrice(r.quote);
+    return { key: c.key, label: c.label, about: c.about, price: norm.price, change_pct: norm.change_pct, currency: norm.currency };
   }));
   const payload = { updatedAt: new Date().toISOString(), items };
   indexesCache = payload;
@@ -344,10 +289,10 @@ router.get('/indexes', async (_req, res) => {
 // ---------------------------------------------------------------------------
 
 const CURRENCY_SYMBOLS = [
-  { key: 'AUDCAD', label: 'AUD / CAD', tv: ['FX:AUDCAD', 'FX_IDC:AUDCAD', 'OANDA:AUDCAD'] },
-  { key: 'USDCAD', label: 'USD / CAD', tv: ['FX:USDCAD', 'FX_IDC:USDCAD', 'OANDA:USDCAD'] },
-  { key: 'AUDUSD', label: 'AUD / USD', tv: ['FX:AUDUSD', 'FX_IDC:AUDUSD', 'OANDA:AUDUSD'] },
-  { key: 'DXY',    label: 'DXY',       tv: ['TVC:DXY', 'INDEX:DXY'], subtitle: 'US Dollar Index' },
+  { key: 'AUDCAD', label: 'AUD / CAD', y: ['AUDCAD=X'],          tv: ['FX:AUDCAD', 'FX_IDC:AUDCAD', 'OANDA:AUDCAD'] },
+  { key: 'USDCAD', label: 'USD / CAD', y: ['USDCAD=X'],          tv: ['FX:USDCAD', 'FX_IDC:USDCAD', 'OANDA:USDCAD'] },
+  { key: 'AUDUSD', label: 'AUD / USD', y: ['AUDUSD=X'],          tv: ['FX:AUDUSD', 'FX_IDC:AUDUSD', 'OANDA:AUDUSD'] },
+  { key: 'DXY',    label: 'DXY',       y: ['DX-Y.NYB', 'DX=F'],  tv: ['TVC:DXY', 'INDEX:DXY'], subtitle: 'US Dollar Index' },
 ];
 
 let currenciesCache = null;
@@ -358,24 +303,16 @@ async function getCurrenciesPayload() {
     return currenciesCache;
   }
   const items = await Promise.all(CURRENCY_SYMBOLS.map(async (c) => {
-    for (const sym of c.tv) {
-      try {
-        const [ex, tick] = sym.split(':');
-        const data = await fetchTradingView(ex, tick);
-        const norm = normalizePrice(data);
-        if (norm.price == null) continue;
-        return {
-          key: c.key,
-          label: c.label,
-          subtitle: c.subtitle || null,
-          price: norm.price,
-          change_pct: norm.change_pct,
-        };
-      } catch {
-        // try next fallback
-      }
-    }
-    return { key: c.key, label: c.label, subtitle: c.subtitle || null, price: null, change_pct: null };
+    const r = await fetchListQuote(c.y, c.tv);
+    if (!r) return { key: c.key, label: c.label, subtitle: c.subtitle || null, price: null, change_pct: null };
+    const norm = normalizePrice(r.quote);
+    return {
+      key: c.key,
+      label: c.label,
+      subtitle: c.subtitle || null,
+      price: norm.price,
+      change_pct: norm.change_pct,
+    };
   }));
   const payload = { updatedAt: new Date().toISOString(), items };
   currenciesCache = payload;
@@ -399,14 +336,9 @@ const HISTORY_INTERVAL_MS = 30 * 60 * 1000;
 const HISTORY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const historyCache = new Map();
 
-function historyKey(exchange, ticker) {
-  return `${exchange.toUpperCase()}:${ticker.toUpperCase()}`;
-}
-
-function pushHistoryPoint(exchange, ticker, norm) {
-  const key = historyKey(exchange, ticker);
+function pushHistoryPoint(symbol, norm) {
   const now = Date.now();
-  const existing = historyCache.get(key) || { points: [], lastFetchTs: 0 };
+  const existing = historyCache.get(symbol) || { points: [], lastFetchTs: 0 };
   const point = {
     ts: now,
     open: norm.open ?? norm.price ?? null,
@@ -418,35 +350,23 @@ function pushHistoryPoint(exchange, ticker, norm) {
   const points = existing.points
     .filter((p) => now - p.ts <= HISTORY_WINDOW_MS)
     .concat(point);
-  historyCache.set(key, { points, lastFetchTs: now });
+  historyCache.set(symbol, { points, lastFetchTs: now });
 }
 
-function resolveTvSymbol(kind, key, exchange) {
+/** Resolve a (kind, key) pair to Yahoo + TradingView fallback symbol lists. */
+function resolveQuoteSymbols(kind, key, exchange) {
   const upperKey = (key || '').toUpperCase();
   if (kind === 'company') {
-    const ex = (exchange || '').toUpperCase().replace('-', '');
-    if (!ex || !upperKey) return null;
-    return { exchange: ex, ticker: upperKey };
+    const y = yahooSymbolForCompany(exchange, upperKey);
+    const tv = tvSymbolForCompany(exchange, upperKey);
+    return { y: y ? [y] : [], tv: tv ? [tv] : [] };
   }
-  if (kind === 'commodity') {
-    const c = COMMODITY_SYMBOLS.find((x) => x.key.toUpperCase() === upperKey);
-    if (!c || !c.tv?.length) return null;
-    const [ex, tick] = c.tv[0].split(':');
-    return { exchange: ex, ticker: tick };
-  }
-  if (kind === 'currency') {
-    const c = CURRENCY_SYMBOLS.find((x) => x.key.toUpperCase() === upperKey);
-    if (!c || !c.tv?.length) return null;
-    const [ex, tick] = c.tv[0].split(':');
-    return { exchange: ex, ticker: tick };
-  }
-  if (kind === 'index') {
-    const c = INDEX_SYMBOLS.find((x) => x.key.toUpperCase() === upperKey);
-    if (!c || !c.tv?.length) return null;
-    const [ex, tick] = c.tv[0].split(':');
-    return { exchange: ex, ticker: tick };
-  }
-  return null;
+  const lists = { commodity: COMMODITY_SYMBOLS, currency: CURRENCY_SYMBOLS, index: INDEX_SYMBOLS };
+  const list = lists[kind];
+  if (!list) return null;
+  const c = list.find((x) => x.key.toUpperCase() === upperKey);
+  if (!c) return null;
+  return { y: c.y || [], tv: c.tv || [] };
 }
 
 // GET /api/market/history/:kind/:key?exchange=TSXV
@@ -456,34 +376,37 @@ router.get('/history/:kind/:key', async (req, res) => {
     const kind = (req.params.kind || '').toLowerCase();
     const key = req.params.key;
     const exchange = req.query.exchange || '';
-    const resolved = resolveTvSymbol(kind, key, exchange);
-    if (!resolved) return res.status(400).json({ error: 'Unsupported history symbol' });
+    const syms = resolveQuoteSymbols(kind, key, exchange);
+    if (!syms || (!syms.y.length && !syms.tv.length)) {
+      return res.status(400).json({ error: 'Unsupported history symbol' });
+    }
 
-    const hKey = historyKey(resolved.exchange, resolved.ticker);
-    const existing = historyCache.get(hKey);
+    const cacheId = `${kind}:${(key || '').toUpperCase()}:${(exchange || '').toUpperCase()}`;
+    const existing = historyCache.get(cacheId);
     const now = Date.now();
     const shouldRefresh = !existing || now - existing.lastFetchTs >= HISTORY_INTERVAL_MS;
 
+    let usedSymbol = existing?.symbol || null;
     if (shouldRefresh) {
-      try {
-        const data = await fetchTradingView(resolved.exchange, resolved.ticker);
-        const norm = normalizePrice(data);
-        pushHistoryPoint(resolved.exchange, resolved.ticker, norm);
-      } catch (err) {
-        // If we have older cached points, still return them.
-        if (!existing) throw err;
+      const r = await fetchListQuote(syms.y, syms.tv);
+      if (r) {
+        usedSymbol = r.symbol;
+        pushHistoryPoint(cacheId, normalizePrice(r.quote));
+        const e = historyCache.get(cacheId);
+        if (e) e.symbol = usedSymbol;
+      } else if (!existing) {
+        return res.status(502).json({ error: 'No market data for symbol', points: [] });
       }
     }
 
-    const latest = historyCache.get(hKey) || { points: [] };
+    const latest = historyCache.get(cacheId) || { points: [] };
     const points = latest.points.filter((p) => now - p.ts <= HISTORY_WINDOW_MS);
-    historyCache.set(hKey, { ...latest, points });
+    historyCache.set(cacheId, { ...latest, points });
 
     res.json({
       kind,
       key,
-      exchange: resolved.exchange,
-      ticker: resolved.ticker,
+      symbol: usedSymbol,
       intervalMs: HISTORY_INTERVAL_MS,
       windowMs: HISTORY_WINDOW_MS,
       points,

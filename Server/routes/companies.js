@@ -11,30 +11,17 @@ function normalizeExchange(ex) {
   return upper;
 }
 
-const TV_BASE = 'https://scanner.tradingview.com/symbol';
-const tvCache = new Map();
-const TV_CACHE_TTL = 5 * 60 * 1000;
+const { fetchCompanyQuote } = require('../lib/market-quote');
 
-function tvCacheGet(key) {
-  const e = tvCache.get(key);
-  if (!e) return null;
-  if (Date.now() - e.ts > TV_CACHE_TTL) { tvCache.delete(key); return null; }
-  return e.data;
-}
-function tvCacheSet(key, data) { tvCache.set(key, { ts: Date.now(), data }); }
-
+// Company market data comes from Yahoo Finance, falling back to TradingView when
+// Yahoo has no price (see lib/market-quote). The returned object keeps the
+// TradingView-scanner field names this route reads (close/change/change_abs/
+// Perf.*/price_52_week_high/…). When the Yahoo path answers, the fields its
+// chart endpoint can't supply (sector/country/description/Recommend.All) are
+// null; the TradingView fallback fills them in.
 async function fetchTvSymbol(exchange, ticker) {
-  const sym = `${exchange.toUpperCase().replace('-', '')}:${ticker.toUpperCase()}`;
-  const cached = tvCacheGet(sym);
-  if (cached) return cached;
-  const fields = 'close,open,high,low,volume,change,change_abs,sector,country,market,description,name,fundamental_currency_code,Perf.W,Perf.1M,Perf.3M,Perf.6M,Perf.Y,Perf.YTD,Recommend.All,price_52_week_high,price_52_week_low';
-  const url = `${TV_BASE}?symbol=${encodeURIComponent(sym)}&fields=${encodeURIComponent(fields)}&no_404=true`;
-  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' } });
-  if (!res.ok) throw new Error(`TV ${res.status}`);
-  const data = await res.json();
-  if (!data || typeof data !== 'object') throw new Error('TV null');
-  tvCacheSet(sym, data);
-  return data;
+  // history:true → also pull 52-week high/low (shown in the detail Key stats).
+  return fetchCompanyQuote(exchange, ticker, { history: true });
 }
 
 // ---------------------------------------------------------------------------
