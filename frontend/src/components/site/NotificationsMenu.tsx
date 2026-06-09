@@ -6,9 +6,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAuth } from "@/hooks/use-auth";
 import {
   getNotifications,
   getUnreadCount,
@@ -28,14 +28,20 @@ function timeAgo(iso: string): string {
 }
 
 const NotificationsMenu = () => {
+  const { isAuthenticated } = useAuth();
   const [items, setItems] = useState<AppNotification[]>([]);
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
 
   const refresh = useCallback(() => {
+    if (!isAuthenticated) {
+      setItems([]);
+      setUnread(0);
+      return;
+    }
     setItems(getNotifications());
     setUnread(getUnreadCount());
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     refresh();
@@ -98,7 +104,21 @@ const NotificationsMenu = () => {
           )}
         </div>
         <div className="max-h-[min(360px,70vh)] overflow-y-auto">
-          {items.length === 0 ? (
+          {!isAuthenticated ? (
+            <div className="px-4 py-6 text-sm text-muted-foreground leading-relaxed">
+              <p className="mb-3">Sign in to get alerts.</p>
+              <p className="text-xs mb-4">
+                Set alerts on companies, commodities, indexes, or currencies and major updates show up here.
+              </p>
+              <Link
+                to="/login"
+                onClick={() => setOpen(false)}
+                className="inline-flex items-center justify-center bg-accent text-accent-foreground px-4 h-9 text-sm font-semibold hover:opacity-90 transition-opacity"
+              >
+                Sign in
+              </Link>
+            </div>
+          ) : items.length === 0 ? (
             <div className="px-4 py-6 text-sm text-muted-foreground leading-relaxed">
               <p className="mb-3">You&apos;re all caught up.</p>
               <p className="text-xs">

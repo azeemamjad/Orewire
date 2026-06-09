@@ -8,6 +8,7 @@ import {
 import Nav from "@/components/site/Nav";
 import MarketStrip from "@/components/site/MarketStrip";
 import MorningBrief from "@/components/site/MorningBrief";
+import SearchHeroBar from "@/components/site/SearchHeroBar";
 import Footer from "@/components/site/Footer";
 import { fetchJobs, postJob, applyToJob, fetchMyApplications, login as apiLogin, register as apiRegister, type JobListing, type MyApplication } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
@@ -50,6 +51,7 @@ const Jobs = () => {
       <Nav />
       <MarketStrip />
       <MorningBrief />
+      <SearchHeroBar />
 
       <section className="border-b border-border bg-gradient-to-br from-background via-background to-muted/40">
         <div className="max-w-[1440px] mx-auto px-4 lg:px-6 py-8 lg:py-10">

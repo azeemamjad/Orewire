@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, Plus, Search, Trash2, ArrowUpRight, ArrowDownRi
 import Nav from "@/components/site/Nav";
 import MarketStrip from "@/components/site/MarketStrip";
 import MorningBrief from "@/components/site/MorningBrief";
+import SearchHeroBar from "@/components/site/SearchHeroBar";
 import Footer from "@/components/site/Footer";
 import { fetchCompanies, fetchCommodities, fetchCurrencies, fetchIndexes, fetchWatchlist, addToWatchlist, removeFromWatchlist, companySlug, type Company } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
@@ -204,6 +205,7 @@ const Watchlist = () => {
       <Nav />
       <MarketStrip />
       <MorningBrief />
+      <SearchHeroBar />
 
       <section className="bg-background border-b border-border">
         <div className="max-w-[1200px] mx-auto px-4 lg:px-6 py-10 lg:py-14 flex flex-col lg:flex-row lg:items-end justify-between gap-6">

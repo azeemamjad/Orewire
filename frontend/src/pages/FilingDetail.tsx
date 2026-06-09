@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowUpRight, Clock, Sparkles } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import Nav from "@/components/site/Nav";
 import Footer from "@/components/site/Footer";
+import SearchHeroBar from "@/components/site/SearchHeroBar";
 import Disclaimer from "@/components/site/Disclaimer";
 import { companySlug, fetchFiling, filingDocumentUrl, type Verdict } from "@/lib/api";
 
@@ -59,6 +60,7 @@ const FilingDetail = () => {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Nav />
+      <SearchHeroBar />
       <main className="max-w-3xl mx-auto px-4 lg:px-6 py-8 lg:py-12">
         <Link to="/#feed" className="inline-flex items-center gap-1.5 text-[12px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground mb-6">
           <ArrowLeft className="w-3.5 h-3.5" /> Back to filings

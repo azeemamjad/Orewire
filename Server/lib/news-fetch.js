@@ -6,6 +6,27 @@ const RSS_FEEDS = [
   { name: 'GlobeNewsWire Mining', url: 'https://www.globenewswire.com/RssFeed/industry/1775-General+Mining/feedTitle/GlobeNewsWire+-+Industry+Tag+-+General+Mining', source: 'GlobeNewsWire' },
 ];
 
+// Google News (and some other feeds) ship the <description> as HTML with the
+// angle brackets entity-escaped, e.g. "&lt;a href=...&gt;Title&lt;/a&gt;&amp;nbsp;...".
+// We must DECODE the entities first, otherwise the tag-stripping regex (which
+// looks for literal <...>) sees only "&lt;"/"&gt;" and leaves the raw anchor —
+// link and all — in place. Decode -> strip tags -> collapse whitespace.
+function cleanRssText(raw) {
+  if (!raw) return '';
+  const decoded = raw
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&nbsp;/g, ' ');
+  return decoded
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function parseRssItems(xml, defaultSource) {
   const items = [];
   const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
@@ -16,10 +37,7 @@ function parseRssItems(xml, defaultSource) {
     const link = (block.match(/<link>([\s\S]*?)<\/link>/) || [])[1]?.trim() || '';
     const pubDate = (block.match(/<pubDate>([\s\S]*?)<\/pubDate>/) || [])[1]?.trim() || '';
     const source = (block.match(/<source[^>]*>([\s\S]*?)<\/source>/) || [])[1]?.trim() || defaultSource || '';
-    const description = (block.match(/<description>([\s\S]*?)<\/description>/) || [])[1]
-      ?.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/, '$1')
-      ?.replace(/<[^>]+>/g, '')
-      ?.trim() || '';
+    const description = cleanRssText((block.match(/<description>([\s\S]*?)<\/description>/) || [])[1]);
 
     if (title && link) {
       items.push({ title, link, pubDate, source: source || defaultSource, description: description.slice(0, 500) });
@@ -346,6 +364,7 @@ async function fetchAndStoreRssFeeds() {
 
 module.exports = {
   RSS_FEEDS,
+  cleanRssText,
   parseRssItems,
   fetchRssFeed,
   loadCompanyLookup,

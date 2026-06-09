@@ -1,6 +1,7 @@
 const { getChromium } = require('./playwright');
 const { STATUS } = require('./constants');
 const { buildWorkerPlans, getPoolCounts, maskProxyForApi } = require('./proxies');
+const { clearQueue } = require('./worker-queue');
 
 const DEFAULT_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
@@ -238,17 +239,22 @@ class RelayPool {
   incrementViewers(id) {
     const w = this.workers.get(id);
     if (w) w.viewerCount = (w.viewerCount || 0) + 1;
+    return w ? w.viewerCount : 0;
   }
 
+  /** @returns {number} viewers remaining after the decrement */
   decrementViewers(id) {
     const w = this.workers.get(id);
-    if (w && w.viewerCount > 0) w.viewerCount -= 1;
+    if (!w) return 0;
+    if (w.viewerCount > 0) w.viewerCount -= 1;
+    return w.viewerCount;
   }
 
   async closeWorker(id) {
     const w = this.workers.get(id);
     if (!w) return;
     this.workers.delete(id);
+    clearQueue(id);
     try {
       if (w.context) await w.context.close();
     } catch { /* ignore */ }

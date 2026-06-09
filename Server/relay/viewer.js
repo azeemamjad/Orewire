@@ -186,6 +186,10 @@ function attachRelayViewer(app, httpServer) {
   wss.on('connection', async (ws, req) => {
     let workerId = null;
     let screencastActive = false;
+    let viewerCounted = false;
+    let cdpRef = null;
+    let onFrame = null;
+    let cleanup = null;
 
     try {
       const url = new URL(req.url || '/', 'http://localhost');
@@ -202,11 +206,13 @@ function attachRelayViewer(app, httpServer) {
       workerId = verified.workerId;
       const worker = await pool.attachViewer(workerId);
       const { page, cdp, label, viewport } = worker;
+      cdpRef = cdp;
       pool.incrementViewers(workerId);
+      viewerCounted = true;
 
       ws.send(JSON.stringify({ type: 'ready', label, url: page.url(), viewport }));
 
-      const onFrame = (params) => {
+      onFrame = (params) => {
         if (ws.readyState !== ws.OPEN) return;
         try {
           ws.send(
@@ -221,20 +227,36 @@ function attachRelayViewer(app, httpServer) {
         cdp.send('Page.screencastFrameAck', { sessionId: params.sessionId }).catch(() => {});
       };
 
+      // Register the frame listener first; if startScreencast throws, the catch
+      // below removes it via cdpRef/onFrame so it does not leak.
       cdp.on('Page.screencastFrame', onFrame);
       await startScreencast(cdp, viewport);
       screencastActive = true;
 
-      const pushUrl = () => {
-        if (ws.readyState !== ws.OPEN) return;
+      const onNav = (frame) => {
+        if (frame !== page.mainFrame() || ws.readyState !== ws.OPEN) return;
         try {
           worker.url = page.url();
           ws.send(JSON.stringify({ type: 'url', url: page.url() }));
         } catch { /* ignore */ }
       };
-      page.on('framenavigated', (frame) => {
-        if (frame === page.mainFrame()) pushUrl();
-      });
+      page.on('framenavigated', onNav);
+
+      // Tear down only THIS viewer's resources. The CDP screencast is shared by
+      // every viewer of the worker, so it is stopped only when the last one
+      // leaves — otherwise one disconnect would freeze the others.
+      let cleanedUp = false;
+      cleanup = async () => {
+        if (cleanedUp) return;
+        cleanedUp = true;
+        page.off('framenavigated', onNav);
+        cdp.off('Page.screencastFrame', onFrame);
+        viewerCounted = false;
+        const remaining = pool.decrementViewers(workerId);
+        if (screencastActive && remaining === 0) {
+          await stopScreencast(cdp);
+        }
+      };
 
       ws.on('message', (raw) => {
         runQueued(workerId, async () => {
@@ -268,16 +290,19 @@ function attachRelayViewer(app, httpServer) {
         });
       });
 
-      ws.on('close', async () => {
-        page.removeAllListeners('framenavigated');
-        pool.decrementViewers(workerId);
-        cdp.off('Page.screencastFrame', onFrame);
-        if (screencastActive) {
-          await stopScreencast(cdp);
-        }
+      ws.on('close', () => {
+        cleanup().catch(() => {});
       });
     } catch (err) {
-      if (workerId) pool.decrementViewers(workerId);
+      if (cleanup) {
+        // Fully wired — let the normal teardown run.
+        cleanup().catch(() => {});
+      } else {
+        // Failed mid-setup: remove any partial listener and undo the view count
+        // so we never leak a listener on the shared CDP session.
+        try { cdpRef?.off?.('Page.screencastFrame', onFrame); } catch { /* ignore */ }
+        if (viewerCounted) pool.decrementViewers(workerId);
+      }
       ws.close(4002, err.message || 'Session error');
     }
   });

@@ -35,17 +35,39 @@ function isPrivateIpv4(host) {
   return false;
 }
 
+/**
+ * Detect non-canonical IP encodings that slip past net.isIP() but are still
+ * resolved by the OS to a real (often private) address — e.g. the decimal form
+ * http://2130706433/, hex 0x7f000001, octal 0177.0.0.1. These are classic SSRF
+ * bypasses, so we reject anything that is purely numeric/hex but not a canonical
+ * dotted-quad IPv4.
+ */
+function looksLikeObfuscatedIp(host) {
+  if (/^0x[0-9a-f]+$/i.test(host)) return true;        // hex integer
+  if (/^\d+$/.test(host)) return true;                 // decimal/octal integer
+  if (host.includes('.')) {
+    const labels = host.split('.');
+    const allNumericish = labels.every((l) => /^(0x[0-9a-f]+|\d+)$/i.test(l));
+    if (allNumericish && net.isIP(host) !== 4) return true; // octal/hex dotted form
+  }
+  return false;
+}
+
 function isBlockedHost(hostname) {
   const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
   if (!host) return true;
   if (host === 'localhost' || host.endsWith('.localhost')) return true;
   if (host === '0.0.0.0') return true;
+  if (looksLikeObfuscatedIp(host)) return true;
   if (net.isIP(host) === 4 && isPrivateIpv4(host)) return true;
   if (net.isIP(host) === 6) {
     if (host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80')) {
       return true;
     }
   }
+  // NOTE: residual SSRF risk remains via DNS rebinding (a public hostname that
+  // resolves to a private IP). Fully closing that requires resolving the host
+  // and re-checking the resolved address before navigation.
   return false;
 }
 

@@ -1,4 +1,4 @@
-import { LogOut, Menu, UserRound } from "lucide-react";
+import { LogOut, Menu, Star, UserRound } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import NotificationsMenu from "@/components/site/NotificationsMenu";
 import NavSearch from "@/components/site/NavSearch";
@@ -17,7 +17,7 @@ import { logout } from "@/lib/api";
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard" },
   { to: "/companies", label: "Companies" },
-  { to: "/watchlist", label: "Watchlist" },
+  { to: "/watchlist", label: "Watchlist", highlight: true },
   { to: "/jobs", label: "Jobs" },
 ];
 
@@ -54,10 +54,19 @@ const Nav = () => {
             <Link
               key={item.to}
               to={item.to}
-              className={`relative px-3 h-14 flex items-center font-medium transition-colors ${
-                isActive(item.to) ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+              className={`relative px-3 h-14 flex items-center gap-1.5 font-medium transition-colors ${
+                isActive(item.to)
+                  ? "text-foreground"
+                  : item.highlight
+                    ? "text-accent hover:text-accent/80"
+                    : "text-muted-foreground hover:text-foreground"
               }`}
             >
+              {item.highlight && (
+                <Star
+                  className={`w-3.5 h-3.5 ${isActive(item.to) ? "fill-accent text-accent" : "fill-accent/30 text-accent"}`}
+                />
+              )}
               {item.label}
               {isActive(item.to) && <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-accent" />}
             </Link>

@@ -32,12 +32,10 @@ function resolvePublicBaseUrl(req) {
 
   if (explicit && !isLocalhostUrl(explicit)) return explicit;
   if (fromRequest) return fromRequest;
-  if (backendRaw && !isLocalhostHost(backendRaw)) {
-    const proto = isLocalhostHost(backendRaw) ? 'http' : 'https';
-    return `${proto}://${backendRaw}`;
-  }
+  if (backendRaw && !isLocalhostHost(backendRaw)) return `https://${backendRaw}`;
+  // Fall back to an explicit (possibly localhost) override, else dev default.
   if (explicit) return explicit;
-  return fromRequest || 'http://localhost:3000';
+  return 'http://localhost:3000';
 }
 
 module.exports = { resolvePublicBaseUrl, isLocalhostUrl };

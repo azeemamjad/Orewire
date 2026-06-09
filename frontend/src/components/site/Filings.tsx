@@ -68,6 +68,14 @@ const Filings = () => {
             </Link>
           </li>
         ))}
+        <li>
+          <Link
+            to="/filings"
+            className="block px-4 py-2.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground hover:text-foreground hover:bg-background/60 transition-colors text-center"
+          >
+            See more filings →
+          </Link>
+        </li>
       </ul>
     </div>
   );

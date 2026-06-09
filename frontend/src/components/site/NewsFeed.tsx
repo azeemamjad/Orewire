@@ -58,8 +58,8 @@ const placeholderItems: NewsItem[] = [
 
 const NewsFeed = () => {
   const { data } = useQuery({
-    queryKey: ["news-feed"],
-    queryFn: fetchNewsFeed,
+    queryKey: ["news-feed", 20],
+    queryFn: () => fetchNewsFeed({ limit: 20 }),
     staleTime: 30 * 60 * 1000,
     refetchInterval: 30 * 60 * 1000,
   });
@@ -80,7 +80,7 @@ const NewsFeed = () => {
         </Link>
       </div>
       <ul className="divide-y divide-border flex-1 overflow-auto min-h-0">
-        {items.slice(0, 8).map((item, i) => {
+        {items.slice(0, 20).map((item, i) => {
           const sev = getSeverity(item.sentiment, item.title);
           const filingType = getFilingType(item.title);
           return (
@@ -108,6 +108,14 @@ const NewsFeed = () => {
             </li>
           );
         })}
+        <li>
+          <Link
+            to="/news"
+            className="block px-4 py-2.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground hover:text-foreground hover:bg-background/60 transition-colors text-center"
+          >
+            See more news →
+          </Link>
+        </li>
       </ul>
     </div>
   );
