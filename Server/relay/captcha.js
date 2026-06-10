@@ -8,58 +8,69 @@ class CaptchaRequiredError extends Error {
   }
 }
 
-// Substrings that, in a URL/title/error, signal a bot wall. Includes the
-// PerfDrive / ShieldSquare ("Imperva") wall SEDAR+ uses, which redirects to
-// validate.perfdrive.com — none of the generic Cloudflare checks catch it.
-const WALL_TOKENS = [
-  'captcha',
-  'challenge',
-  'access denied',
-  'blocked',
-  'cf-browser-verification',
-  'just a moment',
-  'attention required',
-  'perfdrive',          // validate.perfdrive.com redirect
-  'shieldsquare',       // ShieldSquare/Imperva script + support email
-  'unusual traffic',
-  'verify you are human',
-  'are you a robot',
+// IMPORTANT: SEDAR+ embeds its ShieldSquare/PerfDrive protection script on EVERY
+// page, so the strings "perfdrive"/"shieldsquare"/"_pxhd" live in normal pages
+// too. Detecting on those = false positives. We only treat it as a wall on an
+// ACTIVE block: a redirect to the block host, a real challenge widget, or the
+// visible (rendered) block text — never inline scripts.
+
+// Host fragments that only appear once you've actually been redirected to a
+// block/challenge page.
+const BLOCK_URL_FRAGMENTS = [
+  'validate.perfdrive.com',   // ShieldSquare/PerfDrive interstitial
+  'captcha-delivery.com',     // DataDome
+  '/cdn-cgi/challenge',       // Cloudflare managed challenge
+  '/_incapsula_',             // Imperva Incapsula
 ];
+
+// Phrases that only appear in the VISIBLE text of an interstitial, not in the
+// always-present protection script.
+const BLOCK_TEXT_RE = /(access to this page has been denied|verify (you are|that you are) (a )?human|unusual traffic from your|request unsuccessful\.?\s*incapsula|why (have i|was i) been blocked|complete the security check|please enable (js|javascript) and cookies)/i;
 
 function isCaptchaLikeError(err) {
   const msg = (err?.message || '').toLowerCase();
-  return WALL_TOKENS.some((t) => msg.includes(t));
+  return (
+    msg.includes('captcha') ||
+    msg.includes('validate.perfdrive') ||
+    msg.includes('access denied') ||
+    msg.includes('just a moment')
+  );
 }
 
 async function detectCaptchaOnPage(page) {
   if (!page) return false;
   try {
     const url = (page.url() || '').toLowerCase();
-    if (url.includes('captcha') || url.includes('challenge') || url.includes('perfdrive')) return true;
+    if (BLOCK_URL_FRAGMENTS.some((f) => url.includes(f))) return true;
 
     const title = ((await page.title()) || '').toLowerCase();
-    if (WALL_TOKENS.some((t) => title.includes(t))) return true;
+    if (
+      title.includes('just a moment') ||
+      title.includes('attention required') ||
+      title.includes('access denied') ||
+      title.includes('are you a robot')
+    ) {
+      return true;
+    }
 
-    // Cloudflare / generic captcha widgets.
-    const hasWidget = await page
-      .locator('#challenge-form, .cf-turnstile, iframe[src*="captcha"], iframe[src*="perfdrive"], iframe[title*="captcha" i]')
-      .count();
-    if (hasWidget > 0) return true;
+    // A real, present challenge widget (Cloudflare / hCaptcha / reCAPTCHA /
+    // PerimeterX / PerfDrive). The embedded protection script does NOT add these.
+    const widget = await page
+      .locator(
+        '#challenge-form, .cf-turnstile, iframe[src*="hcaptcha"], iframe[src*="recaptcha"], iframe[src*="captcha-delivery"], iframe[title*="captcha" i], #px-captcha, .px-captcha',
+      )
+      .count()
+      .catch(() => 0);
+    if (widget > 0) return true;
 
-    // PerfDrive/ShieldSquare injects its script + a support@shieldsquare.com
-    // contact into the page body. Sniff the HTML for those markers.
-    const wallInBody = await page.evaluate(() => {
-      const html = (document.documentElement && document.documentElement.outerHTML) || '';
-      const lc = html.toLowerCase();
-      return (
-        lc.includes('perfdrive') ||
-        lc.includes('shieldsquare') ||
-        lc.includes('_pxhd') ||                 // PerimeterX/PerfDrive cookie marker
-        /verify (you are|that you are) (a )?human/i.test(html) ||
-        /unusual traffic from your/i.test(html)
-      );
-    }).catch(() => false);
-    return !!wallInBody;
+    // Visible block text only — read innerText, never outerHTML/scripts.
+    const blocked = await page
+      .evaluate((reSrc) => {
+        const t = (document.body && document.body.innerText) || '';
+        return new RegExp(reSrc, 'i').test(t);
+      }, BLOCK_TEXT_RE.source)
+      .catch(() => false);
+    return !!blocked;
   } catch {
     return false;
   }
