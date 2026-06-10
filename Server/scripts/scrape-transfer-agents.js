@@ -164,10 +164,12 @@ async function runScraperViaRelay(companies, dryRun) {
   const { runTransferAgentBatch } = require('../relay/scrape');
   const stats = { ok: 0, miss: 0, fail: 0 };
   const pending = [];
+  const seen = new Set();
   addLog('out', '[TA] Using OreWire Relay (RES worker 1)');
   // Persist + log each company AS it's scraped (not after the whole batch), so
   // results land in the DB incrementally and stopping mid-run keeps progress.
   const onResult = async (row, index, total) => {
+    seen.add(index);
     const line = `${TA_RESULT_MARKER}${JSON.stringify(row)}`;
     handleScraperLine(line, dryRun, stats, pending);
     if ((index + 1) % 10 === 0) {
@@ -175,6 +177,14 @@ async function runScraperViaRelay(companies, dryRun) {
     }
   };
   const results = await runTransferAgentBatch(companies, 1, onResult);
+  // Safety net: if the batch returned rows the per-row hook never delivered
+  // (e.g. an older Scraper build without onResult support), persist them here so
+  // a multi-hour run is never silently discarded.
+  results.forEach((row, index) => {
+    if (seen.has(index)) return;
+    addLog('warn', `[TA] Row ${index} not streamed via onResult — persisting from final results`);
+    handleScraperLine(`${TA_RESULT_MARKER}${JSON.stringify(row)}`, dryRun, stats, pending);
+  });
   await Promise.allSettled(pending);
   return { results, stats };
 }

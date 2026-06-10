@@ -35,27 +35,35 @@ async function runTransferAgentBatchOnSession(companies, options = {}) {
 
     for (let i = 0; i < companies.length; i++) {
       const c = companies[i];
+      let row;
       try {
         const ta = await scrapeTransferAgentForCompany(page, c.name, { guardCaptcha });
         anySuccess = true;
-        out.push({
+        row = {
           id: c.id ?? null,
           name: c.name,
           ticker: c.ticker ?? null,
           transfer_agent: ta || null,
-        });
+        };
       } catch (err) {
         // An unsolved bot wall blocks every remaining company — abort the batch
         // rather than churn through them all hitting the same wall.
         if (err?.name === 'CaptchaRequiredError') throw err;
         if (isNetworkError(err) && !anySuccess) throw err;
-        out.push({
+        row = {
           id: c.id ?? null,
           name: c.name,
           ticker: c.ticker ?? null,
           transfer_agent: null,
           error: err.message,
-        });
+        };
+      }
+      out.push(row);
+      // Hand the result back immediately so the caller can log + persist as we
+      // go — otherwise nothing is saved until the whole (multi-hour) batch ends,
+      // and stopping mid-run would lose everything scraped so far.
+      if (options.onResult) {
+        try { await options.onResult(row, i, companies.length); } catch { /* non-fatal */ }
       }
       await saveCookies(context);
       if (i < companies.length - 1) {
