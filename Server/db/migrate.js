@@ -104,7 +104,19 @@ async function migrate() {
   await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS ticker TEXT`);
   await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'general'`);
   await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()`);
+  // origin marks where a row came from: 'rss' = scheduled feeds (Newsfile, GlobeNewsWire),
+  // 'google' = per-company Google News search. Drives the News Releases vs Market News split.
+  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS origin TEXT DEFAULT 'rss'`);
+  // Backfill legacy rows: scheduled-feed rows carry a fixed source label; anything else with a
+  // real publisher name (Reuters, Bloomberg, …) came from Google News. Idempotent — only flips
+  // rows still tagged 'rss', so it matches nothing after the first run.
+  await safeQuery(`
+    UPDATE news SET origin = 'google'
+    WHERE origin = 'rss'
+      AND COALESCE(source, '') NOT IN ('TMX Newsfile', 'GlobeNewsWire', 'News', '')
+  `);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_news_pub_date ON news(pub_date DESC)`);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_news_origin ON news(origin)`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_news_category ON news(category)`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_news_link ON news(link)`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_news_company_id ON news(company_id)`);
@@ -276,6 +288,8 @@ async function migrate() {
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_watchlist_filing_sent_filing ON watchlist_filing_email_sent(filing_id)`);
 
   await safeQuery(`ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS alerts_enabled BOOLEAN DEFAULT FALSE`);
+  // User-defined ordering for watchlist rows (NULL = unsorted, falls back to created_at).
+  await safeQuery(`ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS sort_order INTEGER`);
   await safeQuery(`ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS alert_move_notified_date DATE`);
 
   // Admin / pipeline configuration (JSON per key — e.g. pipeline schedules & workers)

@@ -2,7 +2,59 @@ require('dotenv').config();
 const fs   = require('fs');
 const path = require('path');
 
-const { humanDelay, humanClick, humanType, randomViewport, STEALTH_INIT } = require('../../utils/human');
+const { humanDelay, humanClick, humanType, humanReadPause, humanScroll, randomViewport, STEALTH_INIT } = require('../../utils/human');
+
+// ---------------------------------------------------------------------------
+// Result matching — SEDAR+ returns several profiles for a query and the right
+// one isn't always row 1. Score each result's name against the company name and
+// pick the best, so we don't grab a neighbour's transfer agent.
+// ---------------------------------------------------------------------------
+
+// Legal-entity suffixes / filler that shouldn't drive a match. We deliberately
+// keep distinctive words (commodity/place names) so similar miners stay distinct.
+const NAME_NOISE = /\b(the|ltd|limited|inc|incorporated|corp|corporation|co|company|plc|llc|lp|nl|sa|ag|holdings?|group)\b/gi;
+
+function normName(s) {
+  return (s || '')
+    .toUpperCase()
+    .replace(/&/g, ' AND ')
+    .replace(/[^A-Z0-9 ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function coreName(s) {
+  return normName(s).replace(NAME_NOISE, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// 0–100 similarity between a result label and the target company name.
+function matchScore(candidate, target) {
+  const c = normName(candidate);
+  const t = normName(target);
+  if (!c || !t) return 0;
+  if (c === t) return 100;
+  const cc = coreName(candidate);
+  const tc = coreName(target);
+  if (cc && cc === tc) return 95;
+  if (cc && tc && (cc.startsWith(tc) || tc.startsWith(cc))) return 80;
+  const cToks = new Set(cc.split(' ').filter(Boolean));
+  const tToks = tc.split(' ').filter(Boolean);
+  if (!tToks.length) return 0;
+  const overlap = tToks.filter((tok) => cToks.has(tok)).length;
+  return Math.round((overlap / tToks.length) * 70);
+}
+
+// Index of the best-matching result; -1 if results array is empty.
+function pickBestResultIndex(labels, companyName) {
+  if (!labels.length) return -1;
+  let bestIdx = 0;
+  let bestScore = -1;
+  labels.forEach((label, i) => {
+    const score = matchScore(label, companyName);
+    if (score > bestScore) { bestScore = score; bestIdx = i; }
+  });
+  return bestIdx;
+}
 
 const BASE_URL    = 'https://www.sedarplus.ca/home/';
 // Direct Profiles search — more reliable than opening the landing-page submenu.
@@ -58,7 +110,7 @@ async function goToProfileSearch(page) {
 // Search a company and open its profile.
 // ---------------------------------------------------------------------------
 
-async function searchAndOpenProfile(page, companyName) {
+async function searchAndOpenProfile(page, companyName, guardCaptcha) {
   const debug = !!process.env.TA_DEBUG;
 
   // Type the company name into the Profiles search input (#QueryString).
@@ -80,17 +132,31 @@ async function searchAndOpenProfile(page, companyName) {
     .waitForSelector(profileResultLink, { state: 'visible', timeout: 30000 })
     .catch(() => {});
   await humanDelay(800, 1400);
+  // A bot wall may have replaced the results — check before reading them.
+  if (guardCaptcha) await guardCaptcha();
+  // Browse the results like a person before clicking through.
+  await humanScroll(page);
+  await humanReadPause();
   if (debug) await dumpSnapshot(page, companyName, 'results');
 
-  if ((await page.locator(profileResultLink).count()) === 0) return false;
+  // Read every result label, then pick the row that best matches the company
+  // name (not blindly the first — the right profile is often row 2+).
+  const labels = await page.$$eval(profileResultLink, (els) =>
+    els.map((e) => (e.textContent || '').replace(/\s+/g, ' ').trim()),
+  );
+  if (labels.length === 0) return false;
+  const bestIdx = pickBestResultIndex(labels, companyName);
+  if (debug) {
+    console.error(`[SEDAR-TA] "${companyName}" → ${labels.length} result(s); picked #${bestIdx + 1}: "${labels[bestIdx]}" (score ${matchScore(labels[bestIdx], companyName)})`);
+  }
 
   // SEDAR+ uses Trinidad JS handlers — coordinate clicks often don't fire; .click() does (see scraper.js).
   await Promise.all([
     page.waitForResponse((r) => r.url().includes('update.html'), { timeout: 30000 }).catch(() => {}),
-    page.evaluate((sel) => {
-      const link = document.querySelector(sel);
+    page.evaluate(({ sel, idx }) => {
+      const link = document.querySelectorAll(sel)[idx];
       if (link) link.click();
-    }, profileResultLink),
+    }, { sel: profileResultLink, idx: bestIdx }),
   ]);
   await humanDelay(600, 1000);
 
@@ -104,6 +170,9 @@ async function searchAndOpenProfile(page, companyName) {
       return false;
     }, { timeout: 30000 })
     .catch(() => {});
+  // The profile load is another point a wall can appear.
+  if (guardCaptcha) await guardCaptcha();
+  await humanScroll(page);
   await humanDelay(900, 1500);
   if (debug) await dumpSnapshot(page, companyName, 'profile');
   return true;
@@ -168,11 +237,14 @@ async function dumpSnapshot(page, companyName, label) {
  * (caller manages the browser/session so a batch reuses one login).
  * Returns the transfer-agent string, or null when not found.
  */
-async function scrapeTransferAgentForCompany(page, companyName) {
+async function scrapeTransferAgentForCompany(page, companyName, options = {}) {
   const debug = !!process.env.TA_DEBUG;
+  const guardCaptcha = options.guardCaptcha;
   try {
     await goToProfileSearch(page);
-    const opened = await searchAndOpenProfile(page, companyName);
+    // The bot wall typically appears right after the first navigation.
+    if (guardCaptcha) await guardCaptcha();
+    const opened = await searchAndOpenProfile(page, companyName, guardCaptcha);
     if (!opened) {
       if (debug) await dumpSnapshot(page, companyName, 'no-profile');
       return null;

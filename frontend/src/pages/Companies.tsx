@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useSearchParams } from "react-router-dom";
-import { ArrowDown, ArrowUp, ArrowUpRight, ChevronLeft, ChevronRight, Filter, Search, Sparkles, X } from "lucide-react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Filter, Search, Sparkles, Star, X } from "lucide-react";
 import Nav from "@/components/site/Nav";
 import MarketStrip from "@/components/site/MarketStrip";
 import MorningBrief from "@/components/site/MorningBrief";
 import Footer from "@/components/site/Footer";
+import { useAuth } from "@/hooks/use-auth";
 import {
   fetchCompanies,
   fetchCompanyFilters,
   companySlug,
+  addToWatchlist,
+  removeFromWatchlist,
+  checkWatchlist,
   type Company,
 } from "@/lib/api";
 
@@ -18,7 +22,6 @@ type Selected = {
   commodity: string | null;
   continent: string | null;
   country: string | null;
-  status: string | null;
 };
 
 const EMPTY: Selected = {
@@ -26,19 +29,9 @@ const EMPTY: Selected = {
   commodity: null,
   continent: null,
   country: null,
-  status: null,
 };
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
-
-// Status badges use theme verdict tokens (matches the rest of the site).
-const STATUS_COLOR: Record<string, string> = {
-  Trading:  "bg-[hsl(var(--noteworthy))] text-[hsl(var(--noteworthy-foreground))]",
-  Halted:   "bg-[hsl(var(--watch))] text-[hsl(var(--watch-foreground))]",
-  Upcoming: "bg-[hsl(var(--watch))] text-[hsl(var(--watch-foreground))]",
-  Delisted: "bg-[hsl(var(--routine))] text-[hsl(var(--routine-foreground))]",
-  Listed:   "bg-[hsl(var(--routine))] text-[hsl(var(--routine-foreground))]",
-};
 
 function fmtMcap(n: number | null | undefined): string {
   if (n == null) return "—";
@@ -53,7 +46,30 @@ function fmtPct(n: number | null | undefined): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
 }
 
-const COL = "grid grid-cols-1 md:grid-cols-[110px_1fr_140px_120px_120px_40px]";
+function fmtPrice(n: number | null | undefined): string {
+  if (n == null) return "—";
+  return `$${n.toFixed(Math.abs(n) < 1 ? 3 : 2)}`;
+}
+
+function fmtChgAbs(n: number | null | undefined, price: number | null | undefined): string {
+  if (n == null) return "—";
+  const d = price != null && Math.abs(price) < 1 ? 3 : 2;
+  return `${n >= 0 ? "+" : "-"}$${Math.abs(n).toFixed(d)}`;
+}
+
+function fmtVol(n: number | null | undefined): string {
+  if (n == null) return "—";
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${Math.round(n / 1e3)}K`;
+  return `${Math.round(n)}`;
+}
+
+// Ticker · Exch · Company · Price · Chg$ · Chg% · Volume · Mkt Cap · Tags · Watch.
+// Both class strings are written as full literals (no interpolation) so Tailwind's
+// JIT scanner picks up the arbitrary grid-template tracks.
+const GRID = "grid-cols-[64px_52px_minmax(120px,1.3fr)_80px_84px_72px_78px_90px_minmax(110px,1fr)_44px]";
+const COL = "grid grid-cols-1 md:grid-cols-[64px_52px_minmax(120px,1.3fr)_80px_84px_72px_78px_90px_minmax(110px,1fr)_44px]";
 
 const Companies = () => {
   const [searchParams] = useSearchParams();
@@ -65,7 +81,6 @@ const Companies = () => {
     commodity: searchParams.get("commodity") || null,
     continent: searchParams.get("continent") || null,
     country: searchParams.get("country") || null,
-    status: searchParams.get("status") || null,
   }));
 
   useEffect(() => {
@@ -98,7 +113,6 @@ const Companies = () => {
         commodity: sel.commodity || undefined,
         continent: sel.continent || undefined,
         country: sel.country || undefined,
-        status: sel.status || undefined,
       }),
     placeholderData: (prev) => prev,
   });
@@ -209,19 +223,22 @@ const Companies = () => {
           <FilterGroup title="Commodity" options={filterOptions?.commodities ?? []} value={sel.commodity} onToggle={(v) => toggle("commodity", v)} />
           <FilterGroup title="Continent" options={filterOptions?.continents ?? []} value={sel.continent} onToggle={(v) => toggle("continent", v)} />
           <FilterGroup title="Country of Operations" options={filterOptions?.countries ?? []} value={sel.country} onToggle={(v) => toggle("country", v)} />
-          <FilterGroup title="Status" options={filterOptions?.statuses ?? []} value={sel.status} onToggle={(v) => toggle("status", v)} />
         </aside>
 
         {/* Table */}
         <section className="min-w-0">
           <div className="border border-border bg-card">
-            <div className={`hidden md:grid grid-cols-[110px_1fr_140px_120px_120px_40px] gap-4 px-4 py-3 border-b border-border bg-muted/40 text-[10px] font-bold uppercase tracking-widest text-muted-foreground`}>
+            <div className={`hidden md:grid ${GRID} gap-3 px-4 py-3 border-b border-border bg-muted/40 text-[10px] font-bold uppercase tracking-widest text-muted-foreground`}>
               <div>Ticker</div>
+              <div>Exch</div>
               <div>Company</div>
-              <div>Commodities</div>
-              <div className="text-right">Market Cap</div>
-              <div className="text-right">Change</div>
-              <div />
+              <div className="text-right">Price</div>
+              <div className="text-right">Chg $</div>
+              <div className="text-right">Chg %</div>
+              <div className="text-right">Volume</div>
+              <div className="text-right">Mkt Cap</div>
+              <div>Tags</div>
+              <div className="text-center">Watch</div>
             </div>
 
             {isLoading ? (
@@ -297,6 +314,60 @@ const FilterGroup = ({ title, options, value, onToggle }: FilterGroupProps) => (
   </div>
 );
 
+// Watchlist star — toggles without navigating the row's parent Link. Unauthed
+// clicks bounce to the register page (matches the rest of the site's gating).
+const WatchStar = ({ companyId }: { companyId: number }) => {
+  const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  const [watched, setWatched] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    if (isAuthenticated && companyId) {
+      checkWatchlist("company", String(companyId)).then((w) => active && setWatched(w));
+    } else {
+      setWatched(false);
+    }
+    return () => { active = false; };
+  }, [isAuthenticated, companyId]);
+
+  const toggle = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (busy) return;
+    if (!isAuthenticated) {
+      navigate("/register");
+      return;
+    }
+    setBusy(true);
+    try {
+      if (watched) {
+        await removeFromWatchlist("company", String(companyId));
+        setWatched(false);
+      } else {
+        await addToWatchlist("company", String(companyId), companyId);
+        setWatched(true);
+      }
+    } catch {
+      /* skip */
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      aria-label={watched ? "Remove from watchlist" : "Add to watchlist"}
+      className="inline-grid place-items-center w-7 h-7 border border-border rounded-sm hover:border-foreground/40 transition-colors"
+    >
+      <Star className={`w-3.5 h-3.5 ${watched ? "fill-[hsl(var(--watch))] text-[hsl(var(--watch))]" : "text-muted-foreground"}`} />
+    </button>
+  );
+};
+
 const CompanyRow = ({ c }: { c: Company }) => {
   const exForTv = c.exchange === "TSXV" ? "TSXV" : c.exchange;
   const enabled = !!(exForTv && c.ticker);
@@ -305,66 +376,94 @@ const CompanyRow = ({ c }: { c: Company }) => {
     queryFn: async () => {
       const res = await fetch(`${API_BASE}/market/quote/${exForTv}/${c.ticker}`);
       if (!res.ok) return null;
-      return res.json() as Promise<{ price: number | null; change_pct: number | null }>;
+      return res.json() as Promise<{
+        price: number | null;
+        change_pct: number | null;
+        change_abs: number | null;
+        volume: number | null;
+      }>;
     },
     enabled,
     staleTime: 5 * 60 * 1000,
   });
 
+  const price = quote?.price ?? null;
   const change = quote?.change_pct ?? null;
+  const changeAbs = quote?.change_abs ?? null;
+  const volume = quote?.volume ?? null;
   const up = change != null && change >= 0;
   const exLabel = c.exchange === "TSXV" ? "TSX-V" : c.exchange;
-  const status = c.status || "Listed";
   const commodities = c.commodities ?? [];
+  const geo = [c.country, ...(c.continents ?? [])].filter(Boolean) as string[];
+  const moveColor =
+    change == null ? "text-muted-foreground" : up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]";
 
   return (
     <Link
       to={`/company/${companySlug(c.exchange, c.ticker)}`}
-      className={`group ${COL} gap-2 md:gap-4 px-4 py-4 border-b border-border last:border-b-0 hover:bg-muted/40 transition-colors items-center`}
+      className={`group ${COL} gap-y-1 gap-x-3 px-4 py-3.5 border-b border-border last:border-b-0 hover:bg-muted/40 transition-colors items-center`}
     >
-      <div className="flex flex-col">
-        <span className="font-mono font-bold text-sm">{c.ticker || "—"}</span>
-        {exLabel && <span className="font-mono text-[10px] text-muted-foreground">{exLabel}</span>}
-      </div>
+      {/* Ticker */}
+      <span className="font-mono font-bold text-sm group-hover:underline">{c.ticker || "—"}</span>
 
+      {/* Exch */}
+      <span className="font-mono text-[10px] text-muted-foreground uppercase">{exLabel || "—"}</span>
+
+      {/* Company */}
       <div className="min-w-0">
         <div className="font-display font-bold text-base truncate">{c.name}</div>
-        <div className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
-          <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${STATUS_COLOR[status] || STATUS_COLOR.Listed}`}>
-            {status}
-          </span>
-          {c.country && <span>{c.country}</span>}
-        </div>
       </div>
 
-      <div className="flex flex-wrap gap-1">
-        {commodities.length === 0 ? (
-          <span className="text-muted-foreground text-xs">—</span>
+      {/* Price */}
+      <span className="md:text-right font-mono text-sm font-semibold">{fmtPrice(price)}</span>
+
+      {/* Chg $ */}
+      <span className={`md:text-right font-mono text-sm font-semibold ${moveColor}`}>
+        {fmtChgAbs(changeAbs, price)}
+      </span>
+
+      {/* Chg % */}
+      <span className={`md:text-right font-mono text-sm font-semibold inline-flex md:justify-end items-center gap-0.5 ${moveColor}`}>
+        {change == null ? (
+          "—"
         ) : (
-          commodities.slice(0, 4).map((cm) => (
-            <span key={cm} className="text-[10px] font-mono uppercase border border-border px-1.5 py-0.5">
-              {cm}
-            </span>
-          ))
-        )}
-      </div>
-
-      <div className="md:text-right font-mono text-sm font-semibold">{fmtMcap(c.market_cap)}</div>
-
-      <div
-        className={`md:text-right font-mono text-sm font-semibold inline-flex md:justify-end items-center gap-1 ${
-          change == null ? "text-muted-foreground" : up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]"
-        }`}
-      >
-        {change == null ? "—" : (
           <>
             {up ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
             {fmtPct(change)}
           </>
         )}
+      </span>
+
+      {/* Volume */}
+      <span className="md:text-right font-mono text-sm text-muted-foreground">{fmtVol(volume)}</span>
+
+      {/* Mkt Cap */}
+      <span className="md:text-right font-mono text-sm font-semibold">{fmtMcap(c.market_cap)}</span>
+
+      {/* Tags */}
+      <div className="flex flex-wrap gap-1">
+        {commodities.length === 0 && geo.length === 0 ? (
+          <span className="text-muted-foreground text-xs">—</span>
+        ) : (
+          <>
+            {commodities.slice(0, 3).map((cm) => (
+              <span key={`c-${cm}`} className="text-[10px] font-mono uppercase bg-muted px-1.5 py-0.5 rounded-sm">
+                {cm}
+              </span>
+            ))}
+            {geo.slice(0, 2).map((g) => (
+              <span key={`g-${g}`} className="text-[10px] font-mono uppercase border border-border text-muted-foreground px-1.5 py-0.5 rounded-sm">
+                {g}
+              </span>
+            ))}
+          </>
+        )}
       </div>
 
-      <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground hidden md:block" />
+      {/* Watch */}
+      <div className="md:text-center">
+        <WatchStar companyId={c.id} />
+      </div>
     </Link>
   );
 };

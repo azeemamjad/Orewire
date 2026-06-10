@@ -113,7 +113,7 @@ const NewsReleases = () => {
 
   const { data } = useQuery({
     queryKey: ["news-releases-section"],
-    queryFn: () => fetchNewsFeed({ page: 1, limit: 50 }),
+    queryFn: () => fetchNewsFeed({ page: 1, limit: 50, origin: "rss" }),
     staleTime: REFETCH_MS,
     refetchInterval: REFETCH_MS,
   });

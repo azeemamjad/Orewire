@@ -21,10 +21,10 @@ import {
   X,
   Check,
 } from "lucide-react";
-import { fetchCompany, fetchCompanyProfile, fetchDiscussions, postDiscussion, voteDiscussion, fetchCompanyNews, fetchCompanyInsiders, login as apiLogin, register as apiRegister, type Discussion, type InsiderTransaction } from "@/lib/api";
+import { fetchCompany, fetchCompanyProfile, fetchDiscussions, postDiscussion, voteDiscussion, fetchCompanyNews, fetchCompanyInsiders, login as apiLogin, register as apiRegister, type Discussion, type InsiderTransaction, type NewsItem } from "@/lib/api";
 import { getNewsSeverity, getNewsTags } from "@/components/site/NewsArticleCard";
 import { useAuth } from "@/hooks/use-auth";
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import Nav from "@/components/site/Nav";
 import MarketStrip from "@/components/site/MarketStrip";
 import MorningBrief from "@/components/site/MorningBrief";
@@ -84,9 +84,20 @@ const CompanyDetail = () => {
   }
 
   const md = data.marketData;
+  const fund = data.fundamentals;
 
-  const isUp = md && md.change_pct !== null && md.change_pct >= 0;
-  const isDown = md && md.change_pct !== null && md.change_pct < 0;
+  // Trading currency (price, 52W, computed market cap) is driven by the exchange.
+  const priceCcy = exchangeCcy(data.exchange);
+  // Prefer live shares-outstanding from TradingView, then the scraped DB values.
+  const sharesOut = fund?.shares_outstanding ?? data.shares_outstanding ?? data.total_float ?? null;
+  // Market cap = price × shares (kept in the trading currency so it matches the price).
+  // Fall back to TradingView's market_cap_basic (reported in its own currency) or the DB value.
+  const computedMcap = md?.price != null && sharesOut != null ? md.price * sharesOut : null;
+  const marketCap = computedMcap ?? fund?.market_cap ?? data.market_cap ?? null;
+  const marketCapCcy = computedMcap != null ? priceCcy : fund?.market_cap != null ? ccySymbol(fund.market_cap_currency) : priceCcy;
+
+  const isUp = md && md.change_pct != null && md.change_pct >= 0;
+  const isDown = md && md.change_pct != null && md.change_pct < 0;
   const now = new Date();
   const timeStr = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")} ET`;
 
@@ -136,17 +147,17 @@ const CompanyDetail = () => {
                 )}
               </div>
               <h1 className="font-display text-4xl md:text-5xl tracking-tight">{data.name}</h1>
-              {md && md.price !== null && (
+              {md && md.price != null && (
                 <div className="mt-3 flex items-baseline gap-3 flex-wrap">
-                  <span className="font-mono text-3xl font-semibold">C${md.price.toFixed(3)}</span>
-                  {md.change_pct !== null && (
+                  <span className="font-mono text-3xl font-semibold">{priceCcy}{md.price.toFixed(Math.abs(md.price) < 1 ? 4 : 3)}</span>
+                  {md.change_pct != null && (
                     <span
                       className={`font-mono text-sm flex items-center gap-1 ${
                         isUp ? "text-[hsl(var(--up))]" : isDown ? "text-[hsl(var(--down))]" : "text-muted-foreground"
                       }`}
                     >
                       {isUp ? <ArrowUpRight className="h-4 w-4" /> : isDown ? <ArrowDownRight className="h-4 w-4" /> : <Minus className="h-4 w-4" />}
-                      {md.change_abs !== null && `${md.change_abs >= 0 ? "+" : ""}${md.change_abs.toFixed(3)}`}
+                      {md.change_abs != null && `${md.change_abs >= 0 ? "+" : ""}${md.change_abs.toFixed(Math.abs(md.price) < 1 ? 4 : 3)}`}
                       {" "}({md.change_pct >= 0 ? "+" : ""}{md.change_pct.toFixed(2)}%)
                     </span>
                   )}
@@ -210,16 +221,21 @@ const CompanyDetail = () => {
           <aside className="flex flex-col gap-6 min-h-0 lg:h-full">
             <KeyStatsCard
               volume={md?.volume ?? null}
-              marketCap={data.market_cap}
-              sharesOut={data.shares_outstanding ?? data.total_float}
+              avgVol30={data.fundamentals?.avg_volume_30d ?? null}
+              marketCap={marketCap}
+              marketCapCcy={marketCapCcy}
+              sharesOut={sharesOut}
               high52={md?.price_52_week_high ?? null}
               low52={md?.price_52_week_low ?? null}
+              priceCcy={priceCcy}
             />
             <IdentifiersCard
               exchange={data.exchange}
               ticker={data.ticker}
               sedarTicker={data.sedar_ticker}
               transferAgent={data.transfer_agent}
+              isin={data.fundamentals?.isin}
+              cusip={data.fundamentals?.cusip}
               isAsx={(data.exchange || "").toUpperCase() === "ASX"}
               className="flex-1"
             />
@@ -293,22 +309,36 @@ const CompanyDetail = () => {
   );
 };
 
+// Key stats show full numbers with thousands separators — no K/M/B abbreviation.
 function fmtNum(n: number): string {
-  if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
-  if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
-  return n.toLocaleString();
+  return Math.round(n).toLocaleString("en-US");
 }
 
-function fmtMarketCap(n: number | null | undefined): string {
+function fmtMarketCap(n: number | null | undefined, ccy = "C$"): string {
   if (n == null) return "—";
-  if (n >= 1e9) return `C$${(n / 1e9).toFixed(1)}B`;
-  return `C$${(n / 1e6).toFixed(1)}M`;
+  return `${ccy}${Math.round(n).toLocaleString("en-US")}`;
 }
 
 function fmtSharesOut(n: number | null | undefined): string {
   if (n == null) return "—";
-  if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
-  return `${(n / 1e6).toFixed(1)}M`;
+  return Math.round(n).toLocaleString("en-US");
+}
+
+// Map an ISO currency code to its display symbol.
+function ccySymbol(code: string | null | undefined): string {
+  switch ((code || "").toUpperCase()) {
+    case "USD": return "US$";
+    case "AUD": return "A$";
+    case "CAD": return "C$";
+    case "GBP": return "£";
+    case "EUR": return "€";
+    default: return "C$";
+  }
+}
+
+// Trading currency for an OreWire exchange (we only list TSX-V / CSE / ASX).
+function exchangeCcy(exchange: string | null | undefined): string {
+  return (exchange || "").toUpperCase().replace("-", "") === "ASX" ? "A$" : "C$";
 }
 
 function fmtExLabel(ex?: string | null): string {
@@ -333,45 +363,56 @@ function websiteParts(website: string | null) {
 
 const KeyStatsCard = ({
   volume,
+  avgVol30,
   marketCap,
+  marketCapCcy,
   sharesOut,
   high52,
   low52,
+  priceCcy,
 }: {
   volume: number | null;
+  avgVol30: number | null;
   marketCap: number | null;
+  marketCapCcy: string;
   sharesOut: number | null;
   high52: number | null;
   low52: number | null;
-}) => (
-  <div className="rounded-lg border bg-card text-card-foreground shadow-sm shrink-0">
-    <div className="flex flex-col space-y-1.5 p-6 pb-3">
-      <h3 className="font-semibold font-display text-base uppercase tracking-wider">Key stats</h3>
+  priceCcy: string;
+}) => {
+  const px = (n: number | null) => (n != null ? `${priceCcy}${n.toFixed(Math.abs(n) < 1 ? 4 : 2)}` : "—");
+  return (
+    <div className="rounded-lg border bg-card text-card-foreground shadow-sm shrink-0">
+      <div className="flex flex-col space-y-1.5 p-6 pb-3">
+        <h3 className="font-semibold font-display text-base uppercase tracking-wider">Key stats</h3>
+      </div>
+      <div className="p-6 pt-0">
+        <dl className="grid grid-cols-2 gap-y-2.5 text-sm leading-normal">
+          <dt className="text-xs uppercase tracking-wider text-muted-foreground">Volume</dt>
+          <dd className="font-mono text-right font-semibold">{volume != null ? fmtNum(volume) : "—"}</dd>
+          <dt className="text-xs uppercase tracking-wider text-muted-foreground">Avg Vol (30D)</dt>
+          <dd className="font-mono text-right font-semibold">{avgVol30 != null ? fmtNum(avgVol30) : "—"}</dd>
+          <dt className="text-xs uppercase tracking-wider text-muted-foreground">Market Cap</dt>
+          <dd className="font-mono text-right font-semibold">{fmtMarketCap(marketCap, marketCapCcy)}</dd>
+          <dt className="text-xs uppercase tracking-wider text-muted-foreground">Shares Out</dt>
+          <dd className="font-mono text-right font-semibold">{fmtSharesOut(sharesOut)}</dd>
+          <dt className="text-xs uppercase tracking-wider text-muted-foreground">52W High</dt>
+          <dd className="font-mono text-right font-semibold">{px(high52)}</dd>
+          <dt className="text-xs uppercase tracking-wider text-muted-foreground">52W Low</dt>
+          <dd className="font-mono text-right font-semibold">{px(low52)}</dd>
+        </dl>
+      </div>
     </div>
-    <div className="p-6 pt-0">
-      <dl className="grid grid-cols-2 gap-y-2.5 text-sm leading-normal">
-        <dt className="text-xs uppercase tracking-wider text-muted-foreground">Volume</dt>
-        <dd className="font-mono text-right font-semibold">{volume != null ? fmtNum(volume) : "—"}</dd>
-        <dt className="text-xs uppercase tracking-wider text-muted-foreground">Avg Vol (30D)</dt>
-        <dd className="font-mono text-right font-semibold">—</dd>
-        <dt className="text-xs uppercase tracking-wider text-muted-foreground">Market Cap</dt>
-        <dd className="font-mono text-right font-semibold">{fmtMarketCap(marketCap)}</dd>
-        <dt className="text-xs uppercase tracking-wider text-muted-foreground">Shares Out</dt>
-        <dd className="font-mono text-right font-semibold">{fmtSharesOut(sharesOut)}</dd>
-        <dt className="text-xs uppercase tracking-wider text-muted-foreground">52W High</dt>
-        <dd className="font-mono text-right font-semibold">{high52 != null ? `C$${high52.toFixed(2)}` : "—"}</dd>
-        <dt className="text-xs uppercase tracking-wider text-muted-foreground">52W Low</dt>
-        <dd className="font-mono text-right font-semibold">{low52 != null ? `C$${low52.toFixed(2)}` : "—"}</dd>
-      </dl>
-    </div>
-  </div>
-);
+  );
+};
 
 const IdentifiersCard = ({
   exchange,
   ticker,
   sedarTicker,
   transferAgent,
+  isin,
+  cusip,
   isAsx,
   className = "",
 }: {
@@ -379,6 +420,8 @@ const IdentifiersCard = ({
   ticker?: string | null;
   sedarTicker?: string | null;
   transferAgent?: string | null;
+  isin?: string | null;
+  cusip?: string | null;
   isAsx?: boolean;
   className?: string;
 }) => (
@@ -408,11 +451,11 @@ const IdentifiersCard = ({
       <div className="border-t border-border pt-2.5 space-y-1.5">
         <div className="flex justify-between font-mono text-xs">
           <span className="text-muted-foreground">ISIN</span>
-          <span className="font-semibold">—</span>
+          <span className="font-semibold">{isin || "—"}</span>
         </div>
         <div className="flex justify-between font-mono text-xs">
           <span className="text-muted-foreground">CUSIP</span>
-          <span className="font-semibold">—</span>
+          <span className="font-semibold">{cusip || "—"}</span>
         </div>
       </div>
       {transferAgent && (
@@ -519,7 +562,11 @@ const PeopleSection = ({ companyId }: { companyId: number }) => {
   );
 };
 
-const NEWS_PAGE_SIZE = 4;
+const NEWS_PAGE_SIZE = 12;
+// News and Filings columns cap at the same number of visible cards so the two-up
+// layout stays balanced. Logged-out visitors see a few more behind a blurred gate.
+const FEED_VISIBLE = 5;
+const FEED_LOCKED_TEASER = 3;
 
 const VERDICT_FILTERS = ["All", "Noteworthy", "Watch", "Routine"] as const;
 type VerdictFilter = (typeof VERDICT_FILTERS)[number];
@@ -665,7 +712,7 @@ const FeedCard = ({
           {time}
         </span>
       </div>
-      <p className="text-[13px] leading-snug text-foreground/85">
+      <p className="text-[13px] leading-snug text-foreground/85 line-clamp-2 break-words min-h-[2.75em]">
         <Sparkles className="inline w-3 h-3 text-accent mr-1 -mt-0.5" />
         {summary}
       </p>
@@ -673,9 +720,62 @@ const FeedCard = ({
   );
 };
 
+// Shared footer for the News / Filings columns: signed-in users get a button to the
+// full list; logged-out visitors get a blurred teaser of the next few cards behind a
+// sign-up gate.
+const FeedMoreGate = ({
+  isAuthenticated,
+  lockedCards,
+  moreCount,
+  allHref,
+  allLabel,
+}: {
+  isAuthenticated: boolean;
+  lockedCards: ReactNode[];
+  moreCount: number;
+  allHref: string;
+  allLabel: string;
+}) => {
+  if (isAuthenticated) {
+    return (
+      <div className="flex justify-center mt-4">
+        <Link
+          to={allHref}
+          className="inline-flex items-center gap-2 bg-accent text-accent-foreground px-5 h-10 text-sm font-semibold hover:opacity-90 transition-opacity"
+        >
+          {allLabel}
+          <ArrowUpRight className="w-4 h-4" />
+        </Link>
+      </div>
+    );
+  }
+  if (lockedCards.length === 0) return null;
+  return (
+    <div className="relative mt-2">
+      <div className="space-y-2 pointer-events-none select-none blur-sm opacity-70">{lockedCards}</div>
+      <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-b from-background/30 via-background/70 to-background">
+        <div className="text-center">
+          {moreCount > 0 && (
+            <p className="text-sm mb-3">
+              <span className="font-semibold">{moreCount} more</span> in the full history
+            </p>
+          )}
+          <Link
+            to="/register"
+            className="inline-flex items-center justify-center gap-2 px-4 h-9 bg-accent text-accent-foreground text-sm font-medium hover:bg-accent/90"
+          >
+            Sign up free to unlock
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const CompanyNewsColumn = ({ name, ticker, exchange }: { name: string; ticker?: string; exchange?: string }) => {
   const [verdict, setVerdict] = useState<VerdictFilter>("All");
   const [days, setDays] = useState("all");
+  const { isAuthenticated } = useAuth();
   const { data, isLoading } = useInfiniteQuery({
     queryKey: ["company-news", name, ticker],
     queryFn: ({ pageParam }) =>
@@ -687,12 +787,27 @@ const CompanyNewsColumn = ({ name, ticker, exchange }: { name: string; ticker?: 
 
   const exLabel = fmtExchange(exchange);
   const newsItems = data?.pages.flatMap((p) => p.items) ?? [];
-  const filtered = newsItems
-    .filter((n) => {
-      const v = severityToVerdict(getNewsSeverity(n.sentiment, n.title));
-      return (verdict === "All" || v === verdict) && withinDays(n.pubDate, days);
-    })
-    .slice(0, 4);
+  const filteredAll = newsItems.filter((n) => {
+    const v = severityToVerdict(getNewsSeverity(n.sentiment, n.title));
+    return (verdict === "All" || v === verdict) && withinDays(n.pubDate, days);
+  });
+  const visible = filteredAll.slice(0, FEED_VISIBLE);
+  const locked = isAuthenticated ? [] : filteredAll.slice(FEED_VISIBLE, FEED_VISIBLE + FEED_LOCKED_TEASER);
+  const moreCount = Math.max(0, filteredAll.length - visible.length);
+
+  const renderCard = (n: NewsItem, i: number) => (
+    <FeedCard
+      key={`${n.link}-${i}`}
+      to={`/news/${encodeURIComponent(n.link || n.title)}`}
+      verdict={severityToVerdict(getNewsSeverity(n.sentiment, n.title))}
+      exLabel={exLabel}
+      ticker={ticker}
+      name={name}
+      type={newsType(n.title)}
+      time={n.timeAgo || ""}
+      summary={cleanSummary(n.summary) || n.title}
+    />
+  );
 
   return (
     <div className="min-w-0">
@@ -704,24 +819,19 @@ const CompanyNewsColumn = ({ name, ticker, exchange }: { name: string; ticker?: 
         <FeedFilterBar verdict={verdict} onVerdict={setVerdict} days={days} onDays={setDays} />
         {isLoading ? (
           <div className="py-6 text-center text-sm text-muted-foreground">Loading news…</div>
-        ) : filtered.length === 0 ? (
+        ) : filteredAll.length === 0 ? (
           <div className="py-6 text-center text-sm text-muted-foreground">No news match these filters.</div>
         ) : (
-          <div className="space-y-2">
-            {filtered.map((n, i) => (
-              <FeedCard
-                key={`${n.link}-${i}`}
-                to={`/news/${encodeURIComponent(n.link || n.title)}`}
-                verdict={severityToVerdict(getNewsSeverity(n.sentiment, n.title))}
-                exLabel={exLabel}
-                ticker={ticker}
-                name={name}
-                type={newsType(n.title)}
-                time={n.timeAgo || ""}
-                summary={cleanSummary(n.summary) || n.title}
-              />
-            ))}
-          </div>
+          <>
+            <div className="space-y-2">{visible.map(renderCard)}</div>
+            <FeedMoreGate
+              isAuthenticated={isAuthenticated}
+              lockedCards={locked.map(renderCard)}
+              moreCount={moreCount}
+              allHref="/news"
+              allLabel="View all news"
+            />
+          </>
         )}
       </div>
     </div>
@@ -750,11 +860,29 @@ const CompanyFilingsColumn = ({
 }) => {
   const [verdict, setVerdict] = useState<VerdictFilter>("All");
   const [days, setDays] = useState("all");
+  const { isAuthenticated } = useAuth();
   const exLabel = fmtExchange(exchange);
 
-  const filtered = filings
-    .filter((f) => (verdict === "All" || capVerdict(f.verdict) === verdict) && withinDays(f.created_at, days))
-    .slice(0, 4);
+  const filteredAll = filings.filter(
+    (f) => (verdict === "All" || capVerdict(f.verdict) === verdict) && withinDays(f.created_at, days),
+  );
+  const visible = filteredAll.slice(0, FEED_VISIBLE);
+  const locked = isAuthenticated ? [] : filteredAll.slice(FEED_VISIBLE, FEED_VISIBLE + FEED_LOCKED_TEASER);
+  const moreCount = Math.max(0, filteredAll.length - visible.length);
+
+  const renderCard = (f: CompanyFiling) => (
+    <FeedCard
+      key={f.id}
+      to={`/filings/${f.id}`}
+      verdict={capVerdict(f.verdict)}
+      exLabel={exLabel}
+      ticker={ticker}
+      name={name}
+      type={f.filing_type || "Filing"}
+      time={new Date(f.created_at).toLocaleDateString("en-CA")}
+      summary={f.summary || "No summary available"}
+    />
+  );
 
   return (
     <div className="min-w-0">
@@ -766,24 +894,19 @@ const CompanyFilingsColumn = ({
         <FeedFilterBar verdict={verdict} onVerdict={setVerdict} days={days} onDays={setDays} />
         {filings.length === 0 ? (
           <div className="py-6 text-center text-sm text-muted-foreground">No filings found.</div>
-        ) : filtered.length === 0 ? (
+        ) : filteredAll.length === 0 ? (
           <div className="py-6 text-center text-sm text-muted-foreground">No filings match these filters.</div>
         ) : (
-          <div className="space-y-2">
-            {filtered.map((f) => (
-              <FeedCard
-                key={f.id}
-                to={`/filings/${f.id}`}
-                verdict={capVerdict(f.verdict)}
-                exLabel={exLabel}
-                ticker={ticker}
-                name={name}
-                type={f.filing_type || "Filing"}
-                time={new Date(f.created_at).toLocaleDateString("en-CA")}
-                summary={f.summary || "No summary available"}
-              />
-            ))}
-          </div>
+          <>
+            <div className="space-y-2">{visible.map(renderCard)}</div>
+            <FeedMoreGate
+              isAuthenticated={isAuthenticated}
+              lockedCards={locked.map(renderCard)}
+              moreCount={moreCount}
+              allHref="/filings"
+              allLabel="View all filings"
+            />
+          </>
         )}
       </div>
     </div>

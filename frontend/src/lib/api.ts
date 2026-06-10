@@ -306,8 +306,19 @@ export interface MarketData {
   error?: string;
 }
 
+export interface CompanyFundamentals {
+  market_cap: number | null;
+  market_cap_currency: string | null;
+  shares_outstanding: number | null;
+  avg_volume_30d: number | null;
+  isin: string | null;
+  cusip: string | null;
+  currency: string | null;
+}
+
 export interface CompanyDetail extends Company {
   marketData: MarketData | null;
+  fundamentals: CompanyFundamentals | null;
   filings: { id: number; filing_type: string | null; commodity: string | null; created_at: string; verdict: string | null; summary: string | null }[];
 }
 
@@ -570,6 +581,10 @@ export interface WatchlistItem {
   ticker: string | null;
   exchange: string | null;
   marketCap: number | null;
+  commodities?: string[];
+  continents?: string[];
+  country?: string | null;
+  sortOrder?: number | null;
   createdAt: string;
 }
 
@@ -578,6 +593,16 @@ export async function fetchWatchlist(): Promise<WatchlistItem[]> {
   if (!res.ok) return [];
   const data = await res.json();
   return data.items || [];
+}
+
+// Persist a custom row order. `ids` is the desired top-to-bottom order of
+// watchlist item ids (the row `id`, not the company id).
+export async function reorderWatchlist(ids: number[]): Promise<void> {
+  const res = await authFetch(`${API_BASE}/watchlist/reorder`, {
+    method: "PUT",
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) throw new Error("Failed to reorder watchlist");
 }
 
 export type WatchlistAlertType = "news" | "filing" | "insider" | "market";
@@ -1049,10 +1074,11 @@ export interface NewsFeedResponse {
   };
 }
 
-export async function fetchNewsFeed(params?: { page?: number; limit?: number }): Promise<NewsFeedResponse> {
+export async function fetchNewsFeed(params?: { page?: number; limit?: number; origin?: 'google' | 'rss' }): Promise<NewsFeedResponse> {
   const qs = new URLSearchParams();
   if (params?.page) qs.set("page", String(params.page));
   if (params?.limit) qs.set("limit", String(params.limit));
+  if (params?.origin) qs.set("origin", params.origin);
   const query = qs.toString();
   const res = await fetch(`${API_BASE}/news/feed${query ? `?${query}` : ""}`);
   if (!res.ok) {

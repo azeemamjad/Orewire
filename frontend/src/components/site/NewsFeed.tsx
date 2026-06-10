@@ -58,8 +58,8 @@ const placeholderItems: NewsItem[] = [
 
 const NewsFeed = () => {
   const { data } = useQuery({
-    queryKey: ["news-feed", 20],
-    queryFn: () => fetchNewsFeed({ limit: 20 }),
+    queryKey: ["news-feed", 20, "rss"],
+    queryFn: () => fetchNewsFeed({ limit: 20, origin: "rss" }),
     staleTime: 30 * 60 * 1000,
     refetchInterval: 30 * 60 * 1000,
   });

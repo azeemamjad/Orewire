@@ -6,6 +6,7 @@ import CommodityBar from "@/components/site/CommodityBar";
 import SearchHero from "@/components/site/SearchHero";
 import Movers from "@/components/site/Movers";
 import NewsFeed from "@/components/site/NewsFeed";
+import MarketNews from "@/components/site/MarketNews";
 import NewsReleases from "@/components/site/NewsReleases";
 import Filings from "@/components/site/Filings";
 import CommoditySidebar from "@/components/site/CommoditySidebar";
@@ -33,6 +34,10 @@ const Index = () => {
               <CommoditySidebar />
             </div>
           </div>
+        </section>
+
+        <section className="border-b border-border bg-background">
+          <MarketNews />
         </section>
 
         <NewsReleases />

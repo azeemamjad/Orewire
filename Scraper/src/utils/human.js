@@ -1,9 +1,34 @@
+const path = require('path');
+
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 async function humanDelay(min = 300, max = 900) {
   await new Promise((r) => setTimeout(r, randomInt(min, max)));
+}
+
+// Longer "reading" pause — used between page steps to look less robotic.
+async function humanReadPause() {
+  await humanDelay(1200, 3200);
+}
+
+// Scroll the page in a few human-sized increments (with small pauses), so the
+// session shows scroll events rather than instant DOM reads.
+async function humanScroll(page) {
+  try {
+    const steps = randomInt(2, 4);
+    for (let i = 0; i < steps; i++) {
+      await page.mouse.wheel(0, randomInt(180, 520));
+      await humanDelay(250, 700);
+    }
+    if (Math.random() < 0.5) {
+      await page.mouse.wheel(0, -randomInt(80, 240));
+      await humanDelay(200, 500);
+    }
+  } catch {
+    /* page may not allow wheel — ignore */
+  }
 }
 
 // Smooth mouse movement toward a target in small steps
@@ -56,36 +81,36 @@ function randomViewport() {
   return VIEWPORTS[randomInt(0, VIEWPORTS.length - 1)];
 }
 
-// Inject scripts that remove common Playwright/CDP fingerprints
-const STEALTH_INIT = `
-  (() => {
-    // Hide webdriver flag
-    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+// Stealth init script. Prefer the shared, hardened version from the Server relay
+// module (single source of truth); fall back to a compact local copy if that
+// path isn't reachable (e.g. Scraper running standalone).
+let STEALTH_INIT;
+try {
+  const serverRoot = process.env.OREWIRE_SERVER_PATH || path.resolve(__dirname, '../../../Server');
+  ({ STEALTH_INIT } = require(path.join(serverRoot, 'relay/stealth')));
+} catch {
+  STEALTH_INIT = `
+    (() => {
+      const def = (o, p, g) => { try { Object.defineProperty(o, p, { get: g, configurable: true }); } catch (e) {} };
+      def(navigator, 'webdriver', () => undefined);
+      if (!window.chrome) window.chrome = {};
+      window.chrome.runtime = window.chrome.runtime || {};
+      def(navigator, 'languages', () => ['en-US', 'en']);
+      def(navigator, 'hardwareConcurrency', () => 8);
+      def(navigator, 'deviceMemory', () => 8);
+      for (const k of Object.keys(window)) { if (/^cdc_/.test(k)) { try { delete window[k]; } catch (e) {} } }
+    })();
+  `;
+}
 
-    // Realistic plugin list
-    Object.defineProperty(navigator, 'plugins', {
-      get: () => ({
-        length: 3,
-        0: { name: 'Chrome PDF Plugin' },
-        1: { name: 'Chrome PDF Viewer' },
-        2: { name: 'Native Client' },
-      }),
-    });
-
-    // Languages
-    Object.defineProperty(navigator, 'languages', {
-      get: () => ['en-US', 'en'],
-    });
-
-    // Remove CDP artefacts
-    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
-    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
-    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
-
-    // Spoof hardware concurrency and memory to realistic values
-    Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
-    Object.defineProperty(navigator, 'deviceMemory',        { get: () => 8 });
-  })();
-`;
-
-module.exports = { randomInt, humanDelay, humanMove, humanClick, humanType, randomViewport, STEALTH_INIT };
+module.exports = {
+  randomInt,
+  humanDelay,
+  humanReadPause,
+  humanScroll,
+  humanMove,
+  humanClick,
+  humanType,
+  randomViewport,
+  STEALTH_INIT,
+};

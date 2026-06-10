@@ -253,8 +253,8 @@ async function fetchCompanyNews(companyName, ticker, companyId = null, { skipCoo
   for (const item of allItems) {
     try {
       const result = await db.query(
-        `INSERT INTO news (title, link, source, pub_date, description, category, company_id, ticker)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO news (title, link, source, pub_date, description, category, company_id, ticker, origin)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'google')
          ON CONFLICT (link) DO NOTHING
          RETURNING id`,
         [
@@ -322,8 +322,8 @@ async function fetchAndStoreRssFeeds() {
     const company = matchCompany(item.title, item.description);
     try {
       const result = await db.query(
-        `INSERT INTO news (title, link, source, pub_date, description, category, company_id, ticker)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO news (title, link, source, pub_date, description, category, company_id, ticker, origin)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'rss')
          ON CONFLICT (link) DO NOTHING
          RETURNING id`,
         [

@@ -14,6 +14,7 @@ import CommodityDetail from "./pages/CommodityDetail.tsx";
 import CurrencyDetail from "./pages/CurrencyDetail.tsx";
 import IndexDetail from "./pages/IndexDetail.tsx";
 import News from "./pages/News.tsx";
+import MarketNews from "./pages/MarketNews.tsx";
 import NewsDetail from "./pages/NewsDetail.tsx";
 import FilingDetail from "./pages/FilingDetail.tsx";
 import FilingsList from "./pages/FilingsList.tsx";
@@ -43,6 +44,7 @@ const App = () => (
           <Route path="/market/currency/:slug" element={<CurrencyDetail />} />
           <Route path="/market/index/:slug" element={<IndexDetail />} />
           <Route path="/news" element={<News />} />
+          <Route path="/market-news" element={<MarketNews />} />
           <Route path="/news/:slug" element={<NewsDetail />} />
           <Route path="/filings" element={<FilingsList />} />
           <Route path="/filings/:id" element={<FilingDetail />} />

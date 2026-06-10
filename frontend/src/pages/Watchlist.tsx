@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ChevronDown, ChevronUp, Plus, Search, Trash2, ArrowUpRight, ArrowDownRight, ArrowUpDown, Lock } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, Search, Trash2, ArrowUpRight, ArrowDownRight, Lock } from "lucide-react";
 import Nav from "@/components/site/Nav";
 import MarketStrip from "@/components/site/MarketStrip";
 import MorningBrief from "@/components/site/MorningBrief";
 import SearchHeroBar from "@/components/site/SearchHeroBar";
 import Footer from "@/components/site/Footer";
-import { fetchCompanies, fetchCommodities, fetchCurrencies, fetchIndexes, fetchWatchlist, addToWatchlist, removeFromWatchlist, companySlug, type Company } from "@/lib/api";
+import { fetchCompanies, fetchCommodities, fetchCurrencies, fetchIndexes, fetchWatchlist, addToWatchlist, removeFromWatchlist, reorderWatchlist, companySlug, type Company, type WatchlistItem } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
@@ -50,7 +50,40 @@ function fmtIndexPrice(n: number | null | undefined) {
 
 function fmtPrice(n: number | null | undefined) {
   if (n == null) return "—";
-  return `$${n.toFixed(2)}`;
+  return `$${n.toFixed(Math.abs(n) < 1 ? 3 : 2)}`;
+}
+
+function fmtChgAbs(n: number | null | undefined, price: number | null | undefined) {
+  if (n == null) return "—";
+  const d = price != null && Math.abs(price) < 1 ? 3 : 2;
+  return `${n >= 0 ? "+" : "-"}$${Math.abs(n).toFixed(d)}`;
+}
+
+function fmtPct(n: number | null | undefined) {
+  if (n == null) return "—";
+  return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+}
+
+function fmtVol(n: number | null | undefined) {
+  if (n == null) return "—";
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${Math.round(n / 1e3)}K`;
+  return `${Math.round(n)}`;
+}
+
+// [reorder] Ticker Exch Company Price Chg$ Chg% Volume MktCap Tags [del+link].
+// Full literal (no interpolation) so Tailwind's JIT emits the arbitrary tracks.
+const WATCH_GRID = "grid-cols-[44px_60px_52px_minmax(120px,1.3fr)_80px_84px_72px_78px_90px_minmax(120px,1fr)_72px]";
+
+// Spot tables (commodities / indexes / currencies): no volume/mkt-cap/tags —
+// those don't apply — so a leaner set: [reorder] Symbol Name Price Chg$ Chg% [del+open].
+const SPOT_GRID = "grid-cols-[44px_120px_minmax(120px,1fr)_140px_120px_110px_72px]";
+
+// Absolute change derived from price + percent change (these feeds only give %).
+function deriveChangeAbs(price: number | null | undefined, pct: number | null | undefined): number | null {
+  if (price == null || pct == null) return null;
+  return price - price / (1 + pct / 100);
 }
 
 function fmtMcap(n: number | null | undefined) {
@@ -265,166 +298,101 @@ const Watchlist = () => {
 
           {/* Company table */}
           {companyItems.length > 0 && (
-            <div className="bg-surface border border-border overflow-hidden">
-              <div className="grid grid-cols-[140px_1fr_110px_120px_50px] items-center gap-3 px-5 py-3 border-b border-border bg-background/60 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                <div>Ticker</div><div>Company</div><div className="text-right">Mkt Cap</div><div className="text-right">Exchange</div><div />
-              </div>
-              {companyItems.map((it) => (
-                <div key={it.id} className="grid grid-cols-[140px_1fr_110px_120px_50px] items-center gap-3 px-5 py-4 border-b border-border last:border-b-0">
-                  <Link to={`/company/${companySlug(it.exchange, it.ticker)}`} className="hover:underline">
-                    <div className="font-mono font-bold text-sm">{it.ticker || "—"}</div>
-                  </Link>
-                  <Link to={`/company/${companySlug(it.exchange, it.ticker)}`} className="font-display text-[15px] font-semibold truncate hover:underline">{it.companyName || "—"}</Link>
-                  <div className="text-right font-mono text-sm">{fmtMcap(it.marketCap)}</div>
-                  <div className="text-right font-mono text-xs text-muted-foreground">{it.exchange || "—"}</div>
-                  <div className="flex justify-end">
-                    <button onClick={() => handleRemove("company", it.itemKey)} className="p-1.5 text-muted-foreground hover:text-red-600 transition-colors" aria-label="Remove">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <>
+              <CompanyWatchTable items={companyItems} onRemove={handleRemove} refetch={refetch} />
+              <p className="text-[11px] text-muted-foreground -mt-3">
+                Use the up/down arrows to reorder. Click a row to open the company page. Click the trash icon to remove.
+              </p>
+            </>
           )}
 
           {/* Commodity watchlist */}
           {commodityItems.length > 0 && (
-            <>
-            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mt-2">Commodities</div>
-            <div className="bg-surface border border-border overflow-hidden">
-              <div className="grid grid-cols-[140px_1fr_140px_120px_50px] items-center gap-3 px-5 py-3 border-b border-border bg-background/60 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                <div>Symbol</div><div>Name</div><div className="text-right">Spot price</div><div className="text-right">Change</div><div />
-              </div>
-              {commodityItems.map((it) => {
+            <SpotWatchTable
+              title="Commodities"
+              nameHeader="Name"
+              priceHeader="Spot price"
+              onRemove={handleRemove}
+              refetch={refetch}
+              rows={commodityItems.map((it) => {
                 const slug = it.itemKey.toUpperCase();
                 const apiKey = COMMODITY_SLUG_TO_KEY[slug] || slug.toLowerCase();
                 const data = commodityByKey.get(apiKey);
-                const label = COMMODITY_SLUG_TO_LABEL[slug] || slug;
-                const up = (data?.change_pct ?? 0) >= 0;
-                return (
-                  <div key={it.id} className="grid grid-cols-[140px_1fr_140px_120px_50px] items-center gap-3 px-5 py-4 border-b border-border last:border-b-0">
-                    <Link to={`/market/commodity/${slug}`} className="font-mono font-bold text-sm hover:underline">{slug}</Link>
-                    <Link to={`/market/commodity/${slug}`} className="font-display text-[15px] font-semibold truncate hover:underline">
-                      {label}
-                      {data?.unit && <span className="font-mono text-[10px] text-muted-foreground ml-2">/ {data.unit}</span>}
-                    </Link>
-                    <div className="text-right font-mono text-sm font-semibold">
-                      {data?.price != null ? `$${data.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "—"}
-                    </div>
-                    <div className="text-right">
-                      {data?.change_pct == null ? (
-                        <span className="text-muted-foreground">—</span>
-                      ) : (
-                        <span className={`font-mono text-sm inline-flex items-center justify-end gap-1 ${up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]"}`}>
-                          {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                          {up ? "+" : ""}{data.change_pct.toFixed(2)}%
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex justify-end">
-                      <button onClick={() => handleRemove("commodity", it.itemKey)} className="p-1.5 text-muted-foreground hover:text-red-600 transition-colors" aria-label="Remove">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                );
+                const price = data?.price ?? null;
+                const abs = deriveChangeAbs(price, data?.change_pct);
+                return {
+                  id: it.id,
+                  itemType: "commodity",
+                  itemKey: it.itemKey,
+                  symbol: slug,
+                  name: COMMODITY_SLUG_TO_LABEL[slug] || slug,
+                  nameSuffix: data?.unit ? `/ ${data.unit}` : null,
+                  href: `/market/commodity/${slug}`,
+                  changePct: data?.change_pct ?? null,
+                  priceText: price != null ? `$${price.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "—",
+                  changeAbsText: abs != null ? `${abs >= 0 ? "+" : "-"}$${Math.abs(abs).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "—",
+                };
               })}
-            </div>
-            </>
+            />
           )}
 
           {/* Index watchlist */}
           {indexItems.length > 0 && (
-            <>
-            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mt-2">Indexes</div>
-            <div className="bg-surface border border-border overflow-hidden">
-              <div className="grid grid-cols-[140px_1fr_140px_120px_50px] items-center gap-3 px-5 py-3 border-b border-border bg-background/60 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                <div>Symbol</div><div>Index</div><div className="text-right">Level</div><div className="text-right">Change</div><div />
-              </div>
-              {indexItems.map((it) => {
+            <SpotWatchTable
+              title="Indexes"
+              nameHeader="Index"
+              priceHeader="Level"
+              onRemove={handleRemove}
+              refetch={refetch}
+              rows={indexItems.map((it) => {
                 const slug = it.itemKey.toUpperCase();
                 const data = indexByKey.get(slug);
-                const label = data?.label || INDEX_LABELS[slug] || slug;
-                const up = (data?.change_pct ?? 0) >= 0;
-                return (
-                  <div key={it.id} className="grid grid-cols-[140px_1fr_140px_120px_50px] items-center gap-3 px-5 py-4 border-b border-border last:border-b-0">
-                    <Link to={`/market/index/${slug}`} className="font-mono font-bold text-sm hover:underline">{slug}</Link>
-                    <Link to={`/market/index/${slug}`} className="font-display text-[15px] font-semibold truncate hover:underline">{label}</Link>
-                    <div className="text-right font-mono text-sm font-semibold">
-                      {data?.price != null ? (
-                        <>
-                          {fmtIndexPrice(data.price)}
-                          {data.currency && <span className="text-[10px] text-muted-foreground ml-1">{data.currency}</span>}
-                        </>
-                      ) : "—"}
-                    </div>
-                    <div className="text-right">
-                      {data?.change_pct == null ? (
-                        <span className="text-muted-foreground">—</span>
-                      ) : (
-                        <span className={`font-mono text-sm inline-flex items-center justify-end gap-1 ${up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]"}`}>
-                          {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                          {up ? "+" : ""}{data.change_pct.toFixed(2)}%
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex justify-end">
-                      <button onClick={() => handleRemove("index", it.itemKey)} className="p-1.5 text-muted-foreground hover:text-red-600 transition-colors" aria-label="Remove">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                );
+                const price = data?.price ?? null;
+                const abs = deriveChangeAbs(price, data?.change_pct);
+                return {
+                  id: it.id,
+                  itemType: "index",
+                  itemKey: it.itemKey,
+                  symbol: slug,
+                  name: data?.label || INDEX_LABELS[slug] || slug,
+                  nameSuffix: null,
+                  href: `/market/index/${slug}`,
+                  changePct: data?.change_pct ?? null,
+                  priceText: price != null ? `${fmtIndexPrice(price)}${data?.currency ? ` ${data.currency}` : ""}` : "—",
+                  changeAbsText: abs != null ? `${abs >= 0 ? "+" : "-"}${fmtIndexPrice(Math.abs(abs))}` : "—",
+                };
               })}
-            </div>
-            </>
+            />
           )}
 
           {/* Currency watchlist */}
           {currencyItems.length > 0 && (
-            <>
-            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mt-2">Currencies</div>
-            <div className="bg-surface border border-border overflow-hidden">
-              <div className="grid grid-cols-[140px_1fr_140px_120px_50px] items-center gap-3 px-5 py-3 border-b border-border bg-background/60 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                <div>Symbol</div><div>Pair</div><div className="text-right">Rate</div><div className="text-right">Change</div><div />
-              </div>
-              {currencyItems.map((it) => {
+            <SpotWatchTable
+              title="Currencies"
+              nameHeader="Pair"
+              priceHeader="Rate"
+              onRemove={handleRemove}
+              refetch={refetch}
+              rows={currencyItems.map((it) => {
                 const slug = it.itemKey.toUpperCase();
                 const data = currencyByKey.get(slug);
                 const meta = CURRENCY_LABELS[slug];
-                const up = (data?.change_pct ?? 0) >= 0;
-                return (
-                  <div key={it.id} className="grid grid-cols-[140px_1fr_140px_120px_50px] items-center gap-3 px-5 py-4 border-b border-border last:border-b-0">
-                    <Link to={`/market/currency/${slug}`} className="font-mono font-bold text-sm hover:underline">{slug}</Link>
-                    <Link to={`/market/currency/${slug}`} className="font-display text-[15px] font-semibold truncate hover:underline">
-                      {meta?.name || slug}
-                      {(meta?.subtitle || data?.subtitle) && (
-                        <span className="font-mono text-[10px] text-muted-foreground ml-2">{meta?.subtitle || data?.subtitle}</span>
-                      )}
-                    </Link>
-                    <div className="text-right font-mono text-sm font-semibold">
-                      {data?.price != null ? data.price.toFixed(4) : "—"}
-                    </div>
-                    <div className="text-right">
-                      {data?.change_pct == null ? (
-                        <span className="text-muted-foreground">—</span>
-                      ) : (
-                        <span className={`font-mono text-sm inline-flex items-center justify-end gap-1 ${up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]"}`}>
-                          {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                          {up ? "+" : ""}{data.change_pct.toFixed(2)}%
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex justify-end">
-                      <button onClick={() => handleRemove("currency", it.itemKey)} className="p-1.5 text-muted-foreground hover:text-red-600 transition-colors" aria-label="Remove">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                );
+                const price = data?.price ?? null;
+                const abs = deriveChangeAbs(price, data?.change_pct);
+                return {
+                  id: it.id,
+                  itemType: "currency",
+                  itemKey: it.itemKey,
+                  symbol: slug,
+                  name: meta?.name || slug,
+                  nameSuffix: meta?.subtitle || data?.subtitle || null,
+                  href: `/market/currency/${slug}`,
+                  changePct: data?.change_pct ?? null,
+                  priceText: price != null ? price.toFixed(4) : "—",
+                  changeAbsText: abs != null ? `${abs >= 0 ? "+" : "-"}${Math.abs(abs).toFixed(4)}` : "—",
+                };
               })}
-            </div>
-            </>
+            />
           )}
 
           {isEmpty && (
@@ -436,6 +404,357 @@ const Watchlist = () => {
       </main>
 
       <Footer />
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Company watchlist table — full market columns + up/down reordering.
+// ---------------------------------------------------------------------------
+
+const CompanyWatchTable = ({
+  items,
+  onRemove,
+  refetch,
+}: {
+  items: WatchlistItem[];
+  onRemove: (itemType: string, itemKey: string) => void;
+  refetch: () => void;
+}) => {
+  const [rows, setRows] = useState<WatchlistItem[]>(items);
+
+  // Resync from server whenever the fetched list changes (after add/remove/reorder).
+  useEffect(() => { setRows(items); }, [items]);
+
+  const move = async (index: number, dir: -1 | 1) => {
+    const target = index + dir;
+    if (target < 0 || target >= rows.length) return;
+    const prev = rows;
+    const next = [...rows];
+    [next[index], next[target]] = [next[target], next[index]];
+    setRows(next); // optimistic
+    try {
+      await reorderWatchlist(next.map((r) => r.id));
+      refetch();
+    } catch {
+      setRows(prev); // revert on failure
+    }
+  };
+
+  return (
+    <div className="bg-surface border border-border overflow-x-auto">
+      <div className="min-w-[960px]">
+        <div className={`grid ${WATCH_GRID} items-center gap-3 px-5 py-3 border-b border-border bg-background/60 font-mono text-[10px] uppercase tracking-wider text-muted-foreground`}>
+          <div />
+          <div>Ticker</div>
+          <div>Exch</div>
+          <div>Company</div>
+          <div className="text-right">Price</div>
+          <div className="text-right">Chg $</div>
+          <div className="text-right">Chg %</div>
+          <div className="text-right">Volume</div>
+          <div className="text-right">Mkt Cap</div>
+          <div>Tags</div>
+          <div className="text-center">Del</div>
+        </div>
+        {rows.map((it, i) => (
+          <CompanyWatchRow
+            key={it.id}
+            it={it}
+            isFirst={i === 0}
+            isLast={i === rows.length - 1}
+            onMove={(dir) => move(i, dir)}
+            onRemove={() => onRemove("company", it.itemKey)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const CompanyWatchRow = ({
+  it,
+  isFirst,
+  isLast,
+  onMove,
+  onRemove,
+}: {
+  it: WatchlistItem;
+  isFirst: boolean;
+  isLast: boolean;
+  onMove: (dir: -1 | 1) => void;
+  onRemove: () => void;
+}) => {
+  const exForTv = normalizeExchangeForTv(it.exchange);
+  const enabled = !!(exForTv && it.ticker);
+  const { data: quote } = useQuery({
+    queryKey: ["watchlist-row-quote", exForTv, it.ticker],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/market/quote/${exForTv}/${it.ticker}`);
+      if (!res.ok) return null;
+      return res.json() as Promise<{
+        price: number | null;
+        change_pct: number | null;
+        change_abs: number | null;
+        volume: number | null;
+      }>;
+    },
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const price = quote?.price ?? null;
+  const change = quote?.change_pct ?? null;
+  const changeAbs = quote?.change_abs ?? null;
+  const volume = quote?.volume ?? null;
+  const up = change != null && change >= 0;
+  const exLabel = it.exchange === "TSXV" ? "TSX-V" : it.exchange;
+  const href = `/company/${companySlug(it.exchange, it.ticker)}`;
+  const commodities = it.commodities ?? [];
+  const geo = [it.country, ...(it.continents ?? [])].filter(Boolean) as string[];
+  const moveColor =
+    change == null ? "text-muted-foreground" : up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]";
+
+  return (
+    <div className={`grid ${WATCH_GRID} items-center gap-3 px-5 py-4 border-b border-border last:border-b-0 hover:bg-background/40 transition-colors`}>
+      {/* Reorder */}
+      <div className="flex flex-col -my-1">
+        <button
+          type="button"
+          onClick={() => onMove(-1)}
+          disabled={isFirst}
+          aria-label="Move up"
+          className="text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed"
+        >
+          <ChevronUp className="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onMove(1)}
+          disabled={isLast}
+          aria-label="Move down"
+          className="text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed"
+        >
+          <ChevronDown className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Ticker */}
+      <Link to={href} className="font-mono font-bold text-sm hover:underline">{it.ticker || "—"}</Link>
+
+      {/* Exch */}
+      <span className="font-mono text-[10px] text-muted-foreground uppercase">{exLabel || "—"}</span>
+
+      {/* Company */}
+      <Link to={href} className="font-display text-[15px] font-semibold truncate hover:underline">{it.companyName || "—"}</Link>
+
+      {/* Price */}
+      <span className="text-right font-mono text-sm font-semibold">{fmtPrice(price)}</span>
+
+      {/* Chg $ */}
+      <span className={`text-right font-mono text-sm font-semibold ${moveColor}`}>{fmtChgAbs(changeAbs, price)}</span>
+
+      {/* Chg % */}
+      <span className={`text-right font-mono text-sm font-semibold inline-flex justify-end items-center gap-0.5 ${moveColor}`}>
+        {change == null ? (
+          "—"
+        ) : (
+          <>
+            {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+            {fmtPct(change)}
+          </>
+        )}
+      </span>
+
+      {/* Volume */}
+      <span className="text-right font-mono text-sm text-muted-foreground">{fmtVol(volume)}</span>
+
+      {/* Mkt Cap */}
+      <span className="text-right font-mono text-sm font-semibold">{fmtMcap(it.marketCap)}</span>
+
+      {/* Tags */}
+      <div className="flex flex-wrap gap-1">
+        {commodities.length === 0 && geo.length === 0 ? (
+          <span className="text-muted-foreground text-xs">—</span>
+        ) : (
+          <>
+            {commodities.slice(0, 3).map((cm) => (
+              <span key={`c-${cm}`} className="text-[10px] font-mono uppercase bg-muted px-1.5 py-0.5 rounded-sm">{cm}</span>
+            ))}
+            {geo.slice(0, 2).map((g) => (
+              <span key={`g-${g}`} className="text-[10px] font-mono uppercase border border-border text-muted-foreground px-1.5 py-0.5 rounded-sm">{g}</span>
+            ))}
+          </>
+        )}
+      </div>
+
+      {/* Del + open */}
+      <div className="flex items-center justify-center gap-1">
+        <button
+          type="button"
+          onClick={onRemove}
+          className="p-1.5 text-muted-foreground hover:text-red-600 transition-colors"
+          aria-label="Remove"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+        <Link to={href} className="p-1.5 text-muted-foreground hover:text-foreground transition-colors" aria-label="Open company page">
+          <ArrowUpRight className="w-4 h-4" />
+        </Link>
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Spot watchlist table (commodities / indexes / currencies) — reorder + Chg$.
+// ---------------------------------------------------------------------------
+
+type SpotRow = {
+  id: number;
+  itemType: string;
+  itemKey: string;
+  symbol: string;
+  name: string;
+  nameSuffix: string | null;
+  href: string;
+  changePct: number | null;
+  priceText: string;
+  changeAbsText: string;
+};
+
+const SpotWatchTable = ({
+  title,
+  nameHeader,
+  priceHeader,
+  rows: incoming,
+  onRemove,
+  refetch,
+}: {
+  title: string;
+  nameHeader: string;
+  priceHeader: string;
+  rows: SpotRow[];
+  onRemove: (itemType: string, itemKey: string) => void;
+  refetch: () => void;
+}) => {
+  const [rows, setRows] = useState<SpotRow[]>(incoming);
+
+  // Resync whenever the source list / live quotes change.
+  useEffect(() => { setRows(incoming); }, [incoming]);
+
+  const move = async (index: number, dir: -1 | 1) => {
+    const target = index + dir;
+    if (target < 0 || target >= rows.length) return;
+    const prev = rows;
+    const next = [...rows];
+    [next[index], next[target]] = [next[target], next[index]];
+    setRows(next); // optimistic
+    try {
+      await reorderWatchlist(next.map((r) => r.id));
+      refetch();
+    } catch {
+      setRows(prev); // revert on failure
+    }
+  };
+
+  return (
+    <>
+      <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mt-2">{title}</div>
+      <div className="bg-surface border border-border overflow-x-auto">
+        <div className="min-w-[680px]">
+          <div className={`grid ${SPOT_GRID} items-center gap-3 px-5 py-3 border-b border-border bg-background/60 font-mono text-[10px] uppercase tracking-wider text-muted-foreground`}>
+            <div />
+            <div>Symbol</div>
+            <div>{nameHeader}</div>
+            <div className="text-right">{priceHeader}</div>
+            <div className="text-right">Chg $</div>
+            <div className="text-right">Chg %</div>
+            <div className="text-center">Del</div>
+          </div>
+          {rows.map((r, i) => (
+            <SpotWatchRow
+              key={r.id}
+              row={r}
+              isFirst={i === 0}
+              isLast={i === rows.length - 1}
+              onMove={(dir) => move(i, dir)}
+              onRemove={() => onRemove(r.itemType, r.itemKey)}
+            />
+          ))}
+        </div>
+      </div>
+    </>
+  );
+};
+
+const SpotWatchRow = ({
+  row,
+  isFirst,
+  isLast,
+  onMove,
+  onRemove,
+}: {
+  row: SpotRow;
+  isFirst: boolean;
+  isLast: boolean;
+  onMove: (dir: -1 | 1) => void;
+  onRemove: () => void;
+}) => {
+  const up = row.changePct != null && row.changePct >= 0;
+  const moveColor =
+    row.changePct == null ? "text-muted-foreground" : up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]";
+
+  return (
+    <div className={`grid ${SPOT_GRID} items-center gap-3 px-5 py-4 border-b border-border last:border-b-0 hover:bg-background/40 transition-colors`}>
+      {/* Reorder */}
+      <div className="flex flex-col -my-1">
+        <button type="button" onClick={() => onMove(-1)} disabled={isFirst} aria-label="Move up"
+          className="text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed">
+          <ChevronUp className="w-4 h-4" />
+        </button>
+        <button type="button" onClick={() => onMove(1)} disabled={isLast} aria-label="Move down"
+          className="text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed">
+          <ChevronDown className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Symbol */}
+      <Link to={row.href} className="font-mono font-bold text-sm hover:underline">{row.symbol}</Link>
+
+      {/* Name */}
+      <Link to={row.href} className="font-display text-[15px] font-semibold truncate hover:underline">
+        {row.name}
+        {row.nameSuffix && <span className="font-mono text-[10px] text-muted-foreground ml-2">{row.nameSuffix}</span>}
+      </Link>
+
+      {/* Price */}
+      <span className="text-right font-mono text-sm font-semibold">{row.priceText}</span>
+
+      {/* Chg $ */}
+      <span className={`text-right font-mono text-sm font-semibold ${moveColor}`}>{row.changeAbsText}</span>
+
+      {/* Chg % */}
+      <span className={`text-right font-mono text-sm inline-flex justify-end items-center gap-0.5 ${moveColor}`}>
+        {row.changePct == null ? (
+          "—"
+        ) : (
+          <>
+            {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+            {up ? "+" : ""}{row.changePct.toFixed(2)}%
+          </>
+        )}
+      </span>
+
+      {/* Del + open */}
+      <div className="flex items-center justify-center gap-1">
+        <button type="button" onClick={onRemove} className="p-1.5 text-muted-foreground hover:text-red-600 transition-colors" aria-label="Remove">
+          <Trash2 className="w-4 h-4" />
+        </button>
+        <Link to={row.href} className="p-1.5 text-muted-foreground hover:text-foreground transition-colors" aria-label="Open detail page">
+          <ArrowUpRight className="w-4 h-4" />
+        </Link>
+      </div>
     </div>
   );
 };

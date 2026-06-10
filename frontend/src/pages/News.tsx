@@ -58,7 +58,7 @@ const News = () => {
   const [page, setPage] = useState(1);
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ["news-feed", page, PAGE_SIZE],
-    queryFn: () => fetchNewsFeed({ page, limit: PAGE_SIZE }),
+    queryFn: () => fetchNewsFeed({ page, limit: PAGE_SIZE, origin: "rss" }),
     staleTime: 30 * 60 * 1000,
     refetchInterval: 30 * 60 * 1000,
   });

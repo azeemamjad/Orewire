@@ -2,14 +2,7 @@ const { getChromium } = require('./playwright');
 const { STATUS } = require('./constants');
 const { buildWorkerPlans, getPoolCounts, maskProxyForApi } = require('./proxies');
 const { clearQueue } = require('./worker-queue');
-
-const DEFAULT_UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-
-const STEALTH_INIT = `
-  Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-  window.chrome = { runtime: {} };
-`;
+const { STEALTH_INIT, applyStealthIdentity, randomViewport } = require('./stealth');
 
 class RelayPool {
   constructor() {
@@ -59,7 +52,9 @@ class RelayPool {
     }
 
     const chromium = getChromium();
-    const viewport = { width: 1280, height: 900 };
+    // Randomise the window size per worker — a fixed viewport across every
+    // session is itself a weak fingerprint.
+    const viewport = randomViewport();
 
     const entry = {
       id,
@@ -84,13 +79,19 @@ class RelayPool {
     try {
       const launchOpts = {
         headless: process.env.RELAY_HEADLESS !== 'false',
-        args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'],
+        args: [
+          '--no-sandbox',
+          '--disable-blink-features=AutomationControlled',
+          '--disable-dev-shm-usage',
+        ],
+        // Drop the "Chrome is being controlled by automated test software" switch,
+        // which sets navigator.webdriver and other automation tells.
+        ignoreDefaultArgs: ['--enable-automation'],
       };
 
       const contextOpts = {
         acceptDownloads: true,
         viewport,
-        userAgent: process.env.USER_AGENT || DEFAULT_UA,
         locale: process.env.LOCALE || 'en-US',
         timezoneId: process.env.TIMEZONE || 'America/Toronto',
       };
@@ -102,10 +103,23 @@ class RelayPool {
       }
 
       const browser = await chromium.launch(launchOpts);
+
+      // Pin the UA major version to the *actual* browser build so UA / engine /
+      // client-hints stay consistent (a mismatch is an instant bot signal), and
+      // strip the "HeadlessChrome" token Playwright leaks in headless mode.
+      let realVersion = '124.0.0.0';
+      try { realVersion = browser.version() || realVersion; } catch { /* ignore */ }
+      const major = String(realVersion.split('.')[0] || '124');
+      const ua = process.env.USER_AGENT ||
+        `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`;
+      contextOpts.userAgent = ua;
+
       const context = await browser.newContext(contextOpts);
       await context.addInitScript(STEALTH_INIT);
       const page = await context.newPage();
       const cdp = await context.newCDPSession(page);
+      // Apply UA + matching Sec-CH-UA client hints at the network layer.
+      await applyStealthIdentity(cdp, browser, { userAgent: ua });
 
       const syncUrl = () => {
         try {

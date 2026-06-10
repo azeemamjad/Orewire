@@ -3,6 +3,7 @@ const router  = express.Router();
 const db      = require('../db');
 const { requireUser } = require('./auth');
 const { appendMarketMoveAlerts } = require('../lib/watchlist-market-alerts');
+const { safeParse, deriveCommodities, deriveContinents, deriveCountry } = require('../lib/company-enrich');
 
 function companyPath(exchange, ticker) {
   const ex = (exchange || '').toUpperCase().replace('-', '');
@@ -189,29 +190,64 @@ router.get('/alert/check/:itemType/:itemKey', requireUser, async (req, res) => {
 router.get('/', requireUser, async (req, res) => {
   try {
     const result = await db.query(`
-      SELECT w.id, w.item_type, w.item_key, w.company_id, w.created_at, w.alerts_enabled,
-             c.name AS company_name, c.ticker, c.exchange, c.market_cap
+      SELECT w.id, w.item_type, w.item_key, w.company_id, w.created_at, w.alerts_enabled, w.sort_order,
+             c.name AS company_name, c.ticker, c.exchange, c.market_cap,
+             c.has_gold, c.has_silver, c.has_copper, c.raw_data
       FROM watchlist w
       LEFT JOIN companies c ON c.id = w.company_id
       WHERE w.user_id = $1
-      ORDER BY w.created_at DESC
+      ORDER BY w.sort_order ASC NULLS LAST, w.created_at DESC
     `, [req.user.id]);
 
-    res.json({ items: result.rows.map(r => ({
-      id: r.id,
-      itemType: r.item_type,
-      itemKey: r.item_key,
-      companyId: r.company_id,
-      companyName: r.company_name,
-      ticker: r.ticker,
-      exchange: r.exchange,
-      marketCap: r.market_cap,
-      alertsEnabled: r.alerts_enabled === true,
-      createdAt: r.created_at,
-    })) });
+    res.json({ items: result.rows.map(r => {
+      const raw = safeParse(r.raw_data);
+      return {
+        id: r.id,
+        itemType: r.item_type,
+        itemKey: r.item_key,
+        companyId: r.company_id,
+        companyName: r.company_name,
+        ticker: r.ticker,
+        exchange: r.exchange,
+        marketCap: r.market_cap,
+        commodities: r.company_id ? deriveCommodities(r, raw) : [],
+        continents:  r.company_id ? deriveContinents(raw) : [],
+        country:     r.company_id ? deriveCountry(raw) : null,
+        alertsEnabled: r.alerts_enabled === true,
+        sortOrder: r.sort_order,
+        createdAt: r.created_at,
+      };
+    }) });
   } catch (err) {
     console.error('Watchlist fetch failed:', err?.message || err);
     res.status(503).json({ items: [] });
+  }
+});
+
+// PUT /api/watchlist/reorder — persist a custom row order.
+// Body: { ids: [watchlistId, ...] } in the desired top-to-bottom order.
+// Each row's sort_order is set to its index; only the caller's own rows are touched.
+router.put('/reorder', requireUser, async (req, res) => {
+  const ids = Array.isArray(req.body?.ids)
+    ? req.body.ids.map(Number).filter(Number.isInteger)
+    : null;
+  if (!ids || ids.length === 0) return res.status(400).json({ error: 'ids array required' });
+  const positions = ids.map((_, i) => i);
+  try {
+    // Single atomic statement: maps each id → its position via unnest, scoped to
+    // the caller's own rows. (db is a raw pool, so per-call BEGIN/COMMIT wouldn't
+    // share a connection — a one-statement UPDATE is the correct atomic unit.)
+    await db.query(
+      `UPDATE watchlist AS w
+         SET sort_order = v.ord
+        FROM unnest($1::int[], $2::int[]) AS v(id, ord)
+       WHERE w.id = v.id AND w.user_id = $3`,
+      [ids, positions, req.user.id],
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Watchlist reorder failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to reorder' });
   }
 });
 

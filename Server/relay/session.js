@@ -2,7 +2,7 @@ const { pool } = require('./pool');
 const { STATUS } = require('./constants');
 const { runQueued } = require('./worker-queue');
 const { getBrowserTask, logTaskEvent, TASK_DEFINITIONS } = require('./task-registry');
-const { CaptchaRequiredError, isCaptchaLikeError, detectCaptchaOnPage } = require('./captcha');
+const { CaptchaRequiredError, isCaptchaLikeError, detectCaptchaOnPage, waitForCaptchaCleared } = require('./captcha');
 
 function relayWiringEnabled() {
   return process.env.RELAY_ENABLED === 'true' && process.env.RELAY_WIRE_SCRAPERS !== 'false';
@@ -73,10 +73,36 @@ async function withRelaySession(taskSlug, slotIndex, fn) {
   const workerId = workerIdForTask(task, slotIndex);
   const w = acquireWorker(workerId, taskSlug);
 
+  // Mid-task captcha guard: scrapers call this after each navigation. When a bot
+  // wall is detected it parks the worker as needs_human, waits for a human to
+  // solve it on the worker's browser (Relay View), then resumes the same run.
+  const guardCaptcha = async () => {
+    if (!(await detectCaptchaOnPage(w.page))) return;
+    pool.setStatus(workerId, STATUS.NEEDS_HUMAN);
+    await logTaskEvent({
+      taskSlug,
+      workerId,
+      status: 'captcha_detected',
+      message: `Bot wall on ${w.page.url()} — solve via Relay View; run resumes automatically`,
+    }).catch(() => {});
+
+    const cleared = await waitForCaptchaCleared(w.page);
+    if (!cleared) {
+      throw new CaptchaRequiredError('Captcha not solved within the wait window — aborting run', workerId);
+    }
+    pool.setStatus(workerId, STATUS.ACTIVE);
+    await logTaskEvent({
+      taskSlug,
+      workerId,
+      status: 'captcha_cleared',
+      message: 'Bot wall cleared by human — resuming run',
+    }).catch(() => {});
+  };
+
   return runQueued(workerId, async () => {
     try {
       await pool.resetPage(workerId);
-      const result = await fn({ page: w.page, context: w.context, workerId });
+      const result = await fn({ page: w.page, context: w.context, workerId, guardCaptcha });
       if (await detectCaptchaOnPage(w.page)) {
         pool.setStatus(workerId, STATUS.NEEDS_HUMAN);
         await logTaskEvent({

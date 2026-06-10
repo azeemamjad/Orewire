@@ -9,11 +9,22 @@ const {
 } = require('./transfer-agent');
 const { isNetworkError } = require('../../utils/proxy-fallback');
 
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
 async function runTransferAgentBatchOnSession(companies, options = {}) {
   const taskSlug = options.taskSlug || 'sedar_transfer_agent';
-  const delay = parseInt(process.env.TA_DELAY_MS || '2500', 10);
+  // Slower, more variable cadence to look human (the wall scores request rhythm).
+  // Tunable via env; defaults are deliberately conservative.
+  const delay = parseInt(process.env.TA_DELAY_MS || '6000', 10);
+  const jitter = parseInt(process.env.TA_DELAY_JITTER_MS || '5000', 10);
+  // Every N companies, take a longer "coffee break" to break the rhythm.
+  const breakEvery = parseInt(process.env.TA_BREAK_EVERY || '12', 10);
+  const breakMin = parseInt(process.env.TA_BREAK_MIN_MS || '30000', 10);
+  const breakMax = parseInt(process.env.TA_BREAK_MAX_MS || '90000', 10);
 
-  return withBrowserSession(taskSlug, options, async ({ page, context }) => {
+  return withBrowserSession(taskSlug, options, async ({ page, context, guardCaptcha }) => {
     if (process.env.OREWIRE_RELAY !== 'in-process') {
       await context.addInitScript(STEALTH_INIT);
     }
@@ -25,7 +36,7 @@ async function runTransferAgentBatchOnSession(companies, options = {}) {
     for (let i = 0; i < companies.length; i++) {
       const c = companies[i];
       try {
-        const ta = await scrapeTransferAgentForCompany(page, c.name);
+        const ta = await scrapeTransferAgentForCompany(page, c.name, { guardCaptcha });
         anySuccess = true;
         out.push({
           id: c.id ?? null,
@@ -34,6 +45,9 @@ async function runTransferAgentBatchOnSession(companies, options = {}) {
           transfer_agent: ta || null,
         });
       } catch (err) {
+        // An unsolved bot wall blocks every remaining company — abort the batch
+        // rather than churn through them all hitting the same wall.
+        if (err?.name === 'CaptchaRequiredError') throw err;
         if (isNetworkError(err) && !anySuccess) throw err;
         out.push({
           id: c.id ?? null,
@@ -44,7 +58,14 @@ async function runTransferAgentBatchOnSession(companies, options = {}) {
         });
       }
       await saveCookies(context);
-      if (i < companies.length - 1) await humanDelay(delay, delay + 1200);
+      if (i < companies.length - 1) {
+        // Occasional long break, otherwise a wide-jittered gap between lookups.
+        if (breakEvery > 0 && (i + 1) % breakEvery === 0) {
+          await humanDelay(breakMin, breakMax);
+        } else {
+          await humanDelay(delay, delay + jitter);
+        }
+      }
     }
     return out;
   });

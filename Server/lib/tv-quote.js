@@ -62,4 +62,44 @@ async function fetchTvQuote(symbol) {
   return data;
 }
 
-module.exports = { fetchTvQuote, tvSymbolForCompany };
+// Fundamentals + identifiers the chart/quote endpoints don't carry. The TradingView
+// scanner serves these auth-free: market cap, shares outstanding, 30d average volume,
+// ISIN and CUSIP (CUSIP is null for non-North-American listings, e.g. ASX).
+const FUND_FIELDS = [
+  'market_cap_basic', 'total_shares_outstanding', 'average_volume_30d_calc',
+  'isin', 'cusip', 'currency', 'fundamental_currency_code',
+].join(',');
+
+const fundCache = new Map();
+
+function numOrNull(v) {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+async function fetchTvFundamentals(symbol) {
+  if (!symbol) return null;
+  const e = fundCache.get(symbol);
+  if (e && Date.now() - e.ts < CACHE_TTL_MS) return e.data;
+
+  const url = `${TV_BASE}?symbol=${encodeURIComponent(symbol)}&fields=${encodeURIComponent(FUND_FIELDS)}&no_404=true`;
+  const res = await fetch(url, {
+    headers: { 'User-Agent': UA, Accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(`TV ${res.status} for ${symbol}`);
+  const data = await res.json();
+  if (data === null || typeof data !== 'object') return null;
+
+  const out = {
+    market_cap: numOrNull(data.market_cap_basic),
+    market_cap_currency: data.fundamental_currency_code || null,
+    shares_outstanding: numOrNull(data.total_shares_outstanding),
+    avg_volume_30d: numOrNull(data.average_volume_30d_calc),
+    isin: data.isin || null,
+    cusip: data.cusip || null,
+    currency: data.currency || null,
+  };
+  fundCache.set(symbol, { ts: Date.now(), data: out });
+  return out;
+}
+
+module.exports = { fetchTvQuote, fetchTvFundamentals, tvSymbolForCompany };

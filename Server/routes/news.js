@@ -69,9 +69,26 @@ router.get('/feed', async (req, res) => {
     const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 50) : 12;
     const offset = (page - 1) * limit;
 
+    // origin filter: 'google' = Market News (Google News), 'rss' = News Releases
+    // (scheduled feeds). Anything else returns the full feed.
+    const origin = (req.query.origin || '').toString().trim().toLowerCase();
+    let originClause = '';
+    const filterParams = [];
+    if (origin === 'google') {
+      originClause = ` AND origin = $1`;
+      filterParams.push('google');
+    } else if (origin === 'rss') {
+      // COALESCE so legacy rows with a NULL origin still count as feed releases.
+      originClause = ` AND COALESCE(origin, 'rss') <> $1`;
+      filterParams.push('google');
+    }
+
     const [itemsResult, countResult] = await Promise.all([
-      db.query(`SELECT * FROM news WHERE relevant = TRUE ORDER BY pub_date DESC LIMIT $1 OFFSET $2`, [limit, offset]),
-      db.query(`SELECT COUNT(*)::int AS total FROM news WHERE relevant = TRUE`),
+      db.query(
+        `SELECT * FROM news WHERE relevant = TRUE${originClause} ORDER BY pub_date DESC LIMIT $${filterParams.length + 1} OFFSET $${filterParams.length + 2}`,
+        [...filterParams, limit, offset],
+      ),
+      db.query(`SELECT COUNT(*)::int AS total FROM news WHERE relevant = TRUE${originClause}`, filterParams),
     ]);
 
     const total = countResult.rows[0]?.total || 0;

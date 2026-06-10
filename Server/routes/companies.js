@@ -12,6 +12,15 @@ function normalizeExchange(ex) {
 }
 
 const { fetchCompanyQuote } = require('../lib/market-quote');
+const { fetchTvFundamentals, tvSymbolForCompany } = require('../lib/tv-quote');
+const {
+  COMMODITY_KEYS,
+  CONTINENT_KEYS,
+  safeParse,
+  deriveCommodities,
+  deriveContinents,
+  deriveCountry,
+} = require('../lib/company-enrich');
 
 // Company market data comes from Yahoo Finance, falling back to TradingView when
 // Yahoo has no price (see lib/market-quote). The returned object keeps the
@@ -27,76 +36,6 @@ async function fetchTvSymbol(exchange, ticker) {
 // ---------------------------------------------------------------------------
 // raw_data parsing / derived fields
 // ---------------------------------------------------------------------------
-
-// Commodity keys we surface (label → list of raw_data keys to OR together)
-const COMMODITY_KEYS = {
-  Gold:        ['Gold'],
-  Silver:      ['Silver'],
-  Copper:      ['Copper'],
-  Lithium:     ['Lithium'],
-  Nickel:      ['Nickel'],
-  Uranium:     ['Uranium'],
-  Zinc:        ['Zinc'],
-  Cobalt:      ['Cobalt'],
-  'Rare Earths': ['Rare Earths'],
-};
-
-// Continent label → raw_data column name
-const CONTINENT_KEYS = {
-  Africa:          'AFRICA',
-  'North America': null,           // OR of CANADA / USA
-  'South America': 'LATIN AMERICA',
-  Australia:       'AUS/NZ/PNG',
-  Asia:            'ASIA',
-  Europe:          'UK/EUROPE',
-};
-
-function safeParse(json) {
-  if (!json) return null;
-  try { return typeof json === 'string' ? JSON.parse(json) : json; } catch { return null; }
-}
-
-function deriveCommodities(row, raw) {
-  const out = [];
-  if (row.has_gold)    out.push('Gold');
-  if (row.has_silver)  out.push('Silver');
-  if (row.has_copper)  out.push('Copper');
-  if (raw) {
-    for (const [label, keys] of Object.entries(COMMODITY_KEYS)) {
-      if (out.includes(label)) continue;
-      for (const k of keys) {
-        if (raw[k] && String(raw[k]).toUpperCase() === 'Y') { out.push(label); break; }
-      }
-    }
-  }
-  return Array.from(new Set(out));
-}
-
-function deriveContinents(raw) {
-  if (!raw) return [];
-  const out = [];
-  if (raw['AFRICA'])         out.push('Africa');
-  if (raw['ASIA'])           out.push('Asia');
-  if (raw['AUS/NZ/PNG'])     out.push('Australia');
-  if (raw['LATIN AMERICA'])  out.push('South America');
-  if (raw['UK/EUROPE'])      out.push('Europe');
-  if (raw['USA'] || raw['CANADA']) out.push('North America');
-  return Array.from(new Set(out));
-}
-
-function deriveCountry(raw) {
-  if (!raw) return null;
-  // Specific country columns first
-  const pieces = [];
-  for (const col of ['AFRICA','ASIA','AUS/NZ/PNG','LATIN AMERICA','UK/EUROPE','OTHER']) {
-    if (raw[col]) pieces.push(String(raw[col]));
-  }
-  if (raw['CANADA']) pieces.push('Canada');
-  if (raw['USA'])    pieces.push('USA');
-  // De-dupe + truncate
-  const set = Array.from(new Set(pieces.flatMap(s => s.split(/[,;]/).map(x => x.trim()).filter(Boolean))));
-  return set.length ? set.slice(0, 2).join(', ') : null;
-}
 
 function deriveStatus(row) {
   // We don't have explicit status; default Trading if market_cap > 0, else 'Listed'
@@ -476,6 +415,17 @@ router.get('/:idOrSlug', async (req, res) => {
     }
   }
 
+  // Fundamentals + identifiers (market cap, shares out, 30d avg volume, ISIN, CUSIP)
+  // from the TradingView scanner — neither the Yahoo chart nor the price quote carry them.
+  let fundamentals = null;
+  if (row.ticker && row.exchange) {
+    try {
+      fundamentals = await fetchTvFundamentals(tvSymbolForCompany(row.exchange, row.ticker));
+    } catch {
+      fundamentals = null;
+    }
+  }
+
   const filingsResult = await db.query(`
     SELECT f.id, f.filing_type, f.commodity, f.created_at, a.verdict, a.summary
     FROM filings f
@@ -489,7 +439,7 @@ router.get('/:idOrSlug', async (req, res) => {
   const enriched = enrichCompany(row);
   // eslint-disable-next-line no-unused-vars
   const { raw_data, ...clean } = enriched;
-  res.json({ ...clean, marketData, filings: filingsResult.rows });
+  res.json({ ...clean, marketData, fundamentals, filings: filingsResult.rows });
   } catch (err) {
     console.error('Company detail query failed:', err?.message || err);
     res.status(503).json({ error: 'Database unavailable' });

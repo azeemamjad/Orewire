@@ -1,8 +1,7 @@
 import { useEffect, useRef } from "react";
-import { useThemeMode } from "@/hooks/use-theme-mode";
 
 // Embeds TradingView's Advanced Chart widget for a given symbol
-// (e.g. "TVC:GOLD", "FX:USDCAD", "AMEX:GDXJ"). Re-embeds when symbol or theme changes.
+// (e.g. "TVC:GOLD", "FX:USDCAD", "AMEX:GDXJ"). Re-embeds when the symbol changes.
 export default function TradingViewChart({
   symbol,
   className,
@@ -11,7 +10,6 @@ export default function TradingViewChart({
   className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const theme = useThemeMode();
 
   useEffect(() => {
     const container = containerRef.current;
@@ -33,7 +31,7 @@ export default function TradingViewChart({
       symbol,
       interval: "D",
       timezone: "Etc/UTC",
-      theme,
+      theme: "light",
       style: "1",
       locale: "en",
       withdateranges: true,
@@ -49,7 +47,7 @@ export default function TradingViewChart({
     return () => {
       container.innerHTML = "";
     };
-  }, [symbol, theme]);
+  }, [symbol]);
 
   const box = `w-full aspect-[16/9] min-h-[340px] ${className || ""}`;
 

@@ -45,11 +45,29 @@ async function withBrowserSession(taskSlug, options, fn) {
     viewport: { width: 1280, height: 900 },
   };
 
+  // Best-effort captcha detection for the local path. There's no human to solve
+  // it here, so the guard throws — surfacing the wall instead of silently
+  // collecting empty results until the batch ends.
+  let detectCaptchaOnPage = null;
+  let CaptchaRequiredError = Error;
+  try {
+    const serverRoot =
+      process.env.OREWIRE_SERVER_PATH || path.resolve(__dirname, '../../../Server');
+    ({ detectCaptchaOnPage, CaptchaRequiredError } = require(path.join(serverRoot, 'relay/captcha')));
+  } catch {
+    /* relay module not reachable — guard becomes a no-op */
+  }
+
   return withProxyFallback(async (browser) => {
     const context = await browser.newContext(ctxOpts);
     const page = await context.newPage();
+    const guardCaptcha = async () => {
+      if (detectCaptchaOnPage && (await detectCaptchaOnPage(page))) {
+        throw new CaptchaRequiredError(`Bot wall detected on ${page.url()} (local run — no human to solve)`);
+      }
+    };
     try {
-      return await callback({ page, context, browser, workerId: null });
+      return await callback({ page, context, browser, workerId: null, guardCaptcha });
     } finally {
       try {
         await context.close();

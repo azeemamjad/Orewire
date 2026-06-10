@@ -1,8 +1,7 @@
-import { LogOut, Menu, Star, UserRound } from "lucide-react";
+import { LogOut, Menu, UserRound } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import NotificationsMenu from "@/components/site/NotificationsMenu";
 import NavSearch from "@/components/site/NavSearch";
-import ThemeToggle from "@/components/site/ThemeToggle";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,10 +14,12 @@ import { useAuth } from "@/hooks/use-auth";
 import { logout } from "@/lib/api";
 
 const NAV_ITEMS = [
-  { to: "/", label: "Dashboard" },
+  { to: "/", label: "Home" },
   { to: "/companies", label: "Companies" },
   { to: "/watchlist", label: "Watchlist", highlight: true },
-  { to: "/jobs", label: "Jobs" },
+  { to: "/news", label: "News Releases" },
+  { to: "/filings", label: "Filings" },
+  { to: "/market-news", label: "Market News" },
 ];
 
 const Nav = () => {
@@ -63,9 +64,7 @@ const Nav = () => {
               }`}
             >
               {item.highlight && (
-                <Star
-                  className={`w-3.5 h-3.5 ${isActive(item.to) ? "fill-accent text-accent" : "fill-accent/30 text-accent"}`}
-                />
+                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" />
               )}
               {item.label}
               {isActive(item.to) && <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-accent" />}
@@ -76,8 +75,7 @@ const Nav = () => {
         <NavSearch />
 
         <div className="flex items-center gap-2 ml-auto shrink-0">
-          <NotificationsMenu />
-          <ThemeToggle />
+          {isAuthenticated && <NotificationsMenu />}
           {isAuthenticated ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

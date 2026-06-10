@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef } from "react";
-import { useThemeMode } from "@/hooks/use-theme-mode";
 
 type TvStyle = "candles" | "line" | "area";
 
@@ -18,7 +17,6 @@ const STYLE_MAP: Record<TvStyle, string> = {
 
 const TradingViewWidget = ({ symbol, interval, style = "area", height = 360 }: TradingViewWidgetProps) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const theme = useThemeMode();
 
   const widgetConfig = useMemo(
     () => ({
@@ -26,7 +24,7 @@ const TradingViewWidget = ({ symbol, interval, style = "area", height = 360 }: T
       symbol,
       interval,
       timezone: "Etc/UTC",
-      theme,
+      theme: "light",
       style: STYLE_MAP[style],
       locale: "en",
       enable_publishing: false,
@@ -39,7 +37,7 @@ const TradingViewWidget = ({ symbol, interval, style = "area", height = 360 }: T
       studies: [],
       container_id: "tradingview_widget_container",
     }),
-    [symbol, interval, style, theme],
+    [symbol, interval, style],
   );
 
   useEffect(() => {
