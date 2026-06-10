@@ -88,10 +88,12 @@ const TA_RESULT_MARKER = '__OREWIRE_TA_RESULT__';
 async function persistTaResult(row, dryRun, stats) {
   if (row.error) {
     stats.fail++;
+    addLog('err', `[TA] ${row.ticker || row.name}: ${row.error}`);
     return;
   }
   if (!row.transfer_agent) {
     stats.miss++;
+    addLog('out', `[TA] ${row.ticker || row.name}: no transfer agent found`);
     return;
   }
   if (dryRun || row.id == null) {
@@ -163,11 +165,16 @@ async function runScraperViaRelay(companies, dryRun) {
   const stats = { ok: 0, miss: 0, fail: 0 };
   const pending = [];
   addLog('out', '[TA] Using OreWire Relay (RES worker 1)');
-  const results = await runTransferAgentBatch(companies, 1);
-  for (const row of results) {
+  // Persist + log each company AS it's scraped (not after the whole batch), so
+  // results land in the DB incrementally and stopping mid-run keeps progress.
+  const onResult = async (row, index, total) => {
     const line = `${TA_RESULT_MARKER}${JSON.stringify(row)}`;
     handleScraperLine(line, dryRun, stats, pending);
-  }
+    if ((index + 1) % 10 === 0) {
+      addLog('out', `[TA] Progress ${index + 1}/${total} (saved=${stats.ok} no-agent=${stats.miss} errors=${stats.fail})`);
+    }
+  };
+  const results = await runTransferAgentBatch(companies, 1, onResult);
   await Promise.allSettled(pending);
   return { results, stats };
 }
