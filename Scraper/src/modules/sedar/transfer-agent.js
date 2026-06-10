@@ -98,12 +98,38 @@ async function saveCookies(context) {
 // the "Profile name or number" input; selecting a result opens the company's
 // profile page, which contains the transfer agent.
 async function goToProfileSearch(page) {
-  await page.goto(PROFILE_SEARCH_URL, { waitUntil: 'load', timeout: 60000 });
-  await humanDelay(800, 1500);
-
-  // Profiles search input is id="QueryString" (documents search uses a different form).
-  await page.waitForSelector('#QueryString', { state: 'visible', timeout: 30000 });
-  await humanDelay(400, 700);
+  // SEDAR+ intermittently serves a 4xx/5xx (rate-limit / bot-block) to the
+  // relay IP. A hard goto failure on company 1 aborts the whole batch, so retry
+  // a few times with backoff — a transient block self-heals, a sustained one
+  // still surfaces (with the real status code) after the attempts are spent.
+  const attempts = parseInt(process.env.TA_GOTO_RETRIES || '3', 10);
+  let lastErr;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const resp = await page.goto(PROFILE_SEARCH_URL, { waitUntil: 'load', timeout: 60000 });
+      const status = resp ? resp.status() : 0;
+      if (status >= 400) {
+        const e = new Error(`SEDAR+ returned HTTP ${status} for the profile search (likely a rate-limit / bot-block)`);
+        e.name = 'NavigationBlockedError';
+        throw e;
+      }
+      await humanDelay(800, 1500);
+      // Profiles search input is id="QueryString" (documents search uses a different form).
+      await page.waitForSelector('#QueryString', { state: 'visible', timeout: 30000 });
+      await humanDelay(400, 700);
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < attempts) {
+        const backoff = 5000 * attempt;
+        if (process.env.TA_DEBUG) {
+          console.error(`[SEDAR-TA] goto attempt ${attempt}/${attempts} failed (${err.message}); retrying in ${backoff}ms`);
+        }
+        await humanDelay(backoff, backoff + 3000);
+      }
+    }
+  }
+  throw lastErr;
 }
 
 // ---------------------------------------------------------------------------

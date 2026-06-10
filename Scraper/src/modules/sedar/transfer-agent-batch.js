@@ -49,6 +49,9 @@ async function runTransferAgentBatchOnSession(companies, options = {}) {
         // An unsolved bot wall blocks every remaining company — abort the batch
         // rather than churn through them all hitting the same wall.
         if (err?.name === 'CaptchaRequiredError') throw err;
+        // A sustained HTTP block (rate-limit / bot-wall) on the navigation will
+        // hit every remaining company the same way — abort instead of churning.
+        if (err?.name === 'NavigationBlockedError' && !anySuccess) throw err;
         if (isNetworkError(err) && !anySuccess) throw err;
         row = {
           id: c.id ?? null,
