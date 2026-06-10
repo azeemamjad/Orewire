@@ -15,8 +15,8 @@ function tierPrefix(tier) {
   return 'relay-dc-';
 }
 
-function workerIdForTask(task, slotIndex = 1) {
-  const prefix = tierPrefix(task?.preferred_relay_tier || 'dc');
+function workerIdForTask(task, slotIndex = 1, tierOverride = null) {
+  const prefix = tierPrefix(tierOverride || task?.preferred_relay_tier || 'dc');
   const idx = Math.max(1, parseInt(slotIndex, 10) || 1);
   return `${prefix}${idx}`;
 }
@@ -54,7 +54,7 @@ function releaseWorker(workerId) {
  * @param {number} [slotIndex] — 1-based slot within tier (pipeline worker id)
  * @param {(session: { page, context, workerId }) => Promise<any>} fn
  */
-async function withRelaySession(taskSlug, slotIndex, fn) {
+async function withRelaySession(taskSlug, slotIndex, fn, opts = {}) {
   if (!relayWiringEnabled()) {
     throw new Error('Relay scraper wiring is off — set RELAY_ENABLED=true and RELAY_WIRE_SCRAPERS≠false');
   }
@@ -70,7 +70,7 @@ async function withRelaySession(taskSlug, slotIndex, fn) {
   if (!task) throw new Error(`Unknown browser task: ${taskSlug}`);
   if (!task.needs_browser) throw new Error(`Task ${taskSlug} does not use a browser`);
 
-  const workerId = workerIdForTask(task, slotIndex);
+  const workerId = workerIdForTask(task, slotIndex, opts.tier);
   const w = acquireWorker(workerId, taskSlug);
 
   // Mid-task captcha guard: scrapers call this after each navigation. When a bot

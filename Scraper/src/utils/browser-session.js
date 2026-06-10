@@ -23,6 +23,7 @@ function getRelaySession() {
 async function withBrowserSession(taskSlug, options, fn) {
   let slug = taskSlug;
   let slot = 1;
+  let tier = null;
   let callback = fn;
 
   if (typeof options === 'function') {
@@ -30,13 +31,14 @@ async function withBrowserSession(taskSlug, options, fn) {
   } else if (options) {
     slug = options.taskSlug || taskSlug;
     slot = options.relaySlot || 1;
+    tier = options.relayTier || null;
     callback = fn;
   }
 
   if (useRelayInProcess()) {
     const { withRelaySession, relayWiringEnabled } = getRelaySession();
     if (relayWiringEnabled()) {
-      return withRelaySession(slug, slot, callback);
+      return withRelaySession(slug, slot, callback, { tier });
     }
   }
 

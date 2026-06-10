@@ -160,12 +160,39 @@ function useRelayScrapers() {
   return process.env.RELAY_ENABLED === 'true' && process.env.RELAY_WIRE_SCRAPERS !== 'false';
 }
 
+// Proxy/connectivity failure on the worker → worth retrying on the next tier.
+// A captcha needs a human (no tier switch helps) and a code/selector bug isn't
+// tier-related, so those propagate instead of silently burning all three tiers.
+function isTierFallbackError(err) {
+  if (!err) return false;
+  if (err.name === 'CaptchaRequiredError') return false;
+  if (err.name === 'NavigationBlockedError') return true;
+  const m = (err.message || '').toLowerCase();
+  return m.includes('407')
+    || m.includes('proxy')
+    || m.includes('traffic limit')
+    || m.includes('tunnel')
+    || m.includes('net::')
+    || m.includes('econnrefused')
+    || m.includes('econnreset')
+    || m.includes('is not running')   // tier's worker not in the pool
+    || m.includes('is busy');
+}
+
+// Try residential first (best for SEDAR+'s bot wall), then datacenter, then the
+// server's own IP — so an exhausted/blocked proxy tier degrades gracefully
+// instead of failing the whole run.
+const RELAY_TIERS = [
+  { tier: 'res',    label: 'residential' },
+  { tier: 'dc',     label: 'datacenter' },
+  { tier: 'direct', label: 'direct (local IP)' },
+];
+
 async function runScraperViaRelay(companies, dryRun) {
   const { runTransferAgentBatch } = require('../relay/scrape');
   const stats = { ok: 0, miss: 0, fail: 0 };
   const pending = [];
   const seen = new Set();
-  addLog('out', '[TA] Using OreWire Relay (RES worker 1)');
   // Persist + log each company AS it's scraped (not after the whole batch), so
   // results land in the DB incrementally and stopping mid-run keeps progress.
   const onResult = async (row, index, total) => {
@@ -176,7 +203,23 @@ async function runScraperViaRelay(companies, dryRun) {
       addLog('out', `[TA] Progress ${index + 1}/${total} (saved=${stats.ok} no-agent=${stats.miss} errors=${stats.fail})`);
     }
   };
-  const results = await runTransferAgentBatch(companies, 1, onResult);
+
+  let results = null;
+  let lastErr = null;
+  for (const { tier, label } of RELAY_TIERS) {
+    try {
+      addLog('out', `[TA] Using OreWire Relay — ${label} tier (worker ${tier}-1)`);
+      results = await runTransferAgentBatch(companies, 1, onResult, tier);
+      lastErr = null;
+      break;
+    } catch (err) {
+      lastErr = err;
+      if (!isTierFallbackError(err)) throw err;
+      addLog('warn', `[TA] ${label} tier failed (${err.message}) — falling back to next tier`);
+    }
+  }
+  if (lastErr) throw lastErr;
+
   // Safety net: if the batch returned rows the per-row hook never delivered
   // (e.g. an older Scraper build without onResult support), persist them here so
   // a multi-hour run is never silently discarded.

@@ -99,12 +99,13 @@ async function runAsxManual(ticker, opts = {}) {
   }
 }
 
-async function runTransferAgentBatch(companies, slot = 1, onResult = null) {
+async function runTransferAgentBatch(companies, slot = 1, onResult = null, tier = null) {
   const saved = applyScraperEnv();
   try {
     const { runTransferAgentBatchOnSession } = loadScraperModule('src/modules/sedar/transfer-agent-batch');
     return await runTransferAgentBatchOnSession(companies, {
       relaySlot: slot,
+      relayTier: tier,
       taskSlug: 'pipeline_transfer_agents',
       onResult,
     });
