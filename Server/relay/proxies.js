@@ -101,7 +101,10 @@ function getResidentialProxy(slotIndex) {
     process.env.PrOXY_USERNAME_2 ||
     null;
   const password = process.env.PROXY_PASSWORD_2 || null;
-  const sessid = `relay-res-${slotIndex + 1}`;
+  // Oxylabs splits the username on '-' into modifiers, so the sessid VALUE must
+  // be alphanumeric — dashes (e.g. "relay-res-1") get mis-parsed and the proxy
+  // auth fails with ERR_TUNNEL_CONNECTION_FAILED.
+  const sessid = `relayres${slotIndex + 1}`;
   const username = residentialUsername(baseUser, sessid);
 
   if (!baseUser || !password) {
