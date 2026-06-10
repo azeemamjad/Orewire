@@ -234,6 +234,9 @@ class RelayPool {
     if (!w?.page) throw new Error('Worker not found');
     w.navGen = (w.navGen || 0) + 1;
     const { page } = w;
+    // CDP stopLoading aborts an in-flight (possibly hung) navigation immediately,
+    // before we try page-level calls that could otherwise block behind it.
+    try { await w.cdp?.send('Page.stopLoading'); } catch { /* ignore */ }
     try {
       await page.evaluate(() => window.stop()).catch(() => {});
     } catch { /* ignore */ }

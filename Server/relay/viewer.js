@@ -99,11 +99,6 @@ async function navigatePage(page, worker, ws, cdp, viewport, input) {
   }
 }
 
-function cancelNavigation(worker, ws) {
-  worker.navGen = (worker.navGen || 0) + 1;
-  ws.send(JSON.stringify({ type: 'cancelled' }));
-}
-
 async function handleInput(page, msg, viewport) {
   const { w: vw, h: vh } = viewportSize(viewport);
   const dw = msg.displayW > 0 ? msg.displayW : vw;
@@ -259,17 +254,35 @@ function attachRelayViewer(app, httpServer) {
       };
 
       ws.on('message', (raw) => {
-        runQueued(workerId, async () => {
-          try {
-            const msg = JSON.parse(String(raw));
-            if (msg.type === 'cancel_navigate') {
-              cancelNavigation(worker, ws);
+        let msg;
+        try { msg = JSON.parse(String(raw)); } catch { return; }
+
+        // Stop must NOT wait in the per-worker queue — otherwise it can't
+        // interrupt a hung page.goto (the goto IS the thing holding the queue).
+        // Fire CDP Page.stopLoading out-of-band to abort the in-flight load
+        // immediately; the pending goto then rejects and frees the queue, after
+        // which the queued recovery blanks the page and resumes the screencast.
+        if (msg.type === 'cancel_navigate') {
+          worker.navGen = (worker.navGen || 0) + 1;
+          cdp.send('Page.stopLoading').catch(() => {});
+          ws.send(JSON.stringify({ type: 'cancelled' }));
+          runQueued(workerId, async () => {
+            try {
               await unstickPage(page);
               worker.url = page.url();
               ws.send(JSON.stringify({ type: 'url', url: page.url() }));
               if (screencastActive) await startScreencast(cdp, viewport);
-              return;
+            } catch (err) {
+              if (ws.readyState === ws.OPEN) {
+                ws.send(JSON.stringify({ type: 'error', message: err.message }));
+              }
             }
+          });
+          return;
+        }
+
+        runQueued(workerId, async () => {
+          try {
             if (msg.type === 'navigate') {
               await navigatePage(page, worker, ws, cdp, viewport, msg.url);
               return;
