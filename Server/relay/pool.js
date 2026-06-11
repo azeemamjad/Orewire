@@ -256,7 +256,12 @@ class RelayPool {
   setStatus(id, status) {
     const w = this.workers.get(id);
     if (!w) throw new Error('Worker not found');
+    const prev = w.status;
     w.status = status;
+    // A human marked the worker active again — wake any captcha wait loop.
+    if (prev === STATUS.NEEDS_HUMAN && status === STATUS.ACTIVE && typeof w._humanResume === 'function') {
+      try { w._humanResume(true); } catch { /* ignore */ }
+    }
     return w;
   }
 

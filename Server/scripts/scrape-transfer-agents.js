@@ -21,6 +21,7 @@ const {
 const SCRAPER_DIR = path.resolve(process.env.SCRAPER_PATH || path.join(__dirname, '../../Scraper'));
 const TA_SCRIPT   = path.join(SCRAPER_DIR, 'transfer-agents.js');
 const JOB_ID = 'transfer-agents';
+const TA_CANCEL_KEY = 'pipeline_transfer_agents';
 
 let _childProc = null;
 let _runActive = false;
@@ -39,6 +40,12 @@ function isRunning() {
 
 function stopTransferAgentScrape() {
   addLog('warn', '[TA] Stop requested');
+  try {
+    const { requestStop } = require('../relay/task-cancel');
+    requestStop(TA_CANCEL_KEY);
+  } catch {
+    /* relay module may be unavailable */
+  }
   if (_childProc && _childProc.exitCode == null) {
     try {
       _childProc.kill('SIGTERM');
@@ -186,6 +193,7 @@ function useRelayScrapers() {
 // tier-related, so those propagate instead of silently burning all three tiers.
 function isTierFallbackError(err) {
   if (!err) return false;
+  if (err.name === 'TaskStoppedError') return false;
   if (err.name === 'CaptchaRequiredError') return false;
   if (err.name === 'NavigationBlockedError') return true;
   const m = (err.message || '').toLowerCase();
@@ -239,6 +247,10 @@ async function runScraperViaRelay(companies, dryRun) {
       break;
     } catch (err) {
       lastErr = err;
+      if (err?.name === 'TaskStoppedError') {
+        await Promise.allSettled(pending);
+        return { results: results || [], stats, stopped: true };
+      }
       if (!isTierFallbackError(err)) throw err;
       addLog('warn', `[TA] ${label} tier failed (${err.message}) — falling back to next tier`);
     }
@@ -328,12 +340,24 @@ async function runTransferAgentScrape(opts = {}) {
     }
 
     fs.writeFileSync(inputPath, JSON.stringify(companies));
-    const { results, stats } = await runScraper(inputPath, outputPath, args.dryRun);
+    const scrapeOut = await runScraper(inputPath, outputPath, args.dryRun);
+    const { results, stats, stopped } = scrapeOut;
+
+    if (stopped) {
+      addLog('warn', `[TA] Stopped by user. saved=${stats.ok} no-agent=${stats.miss} errors=${stats.fail} (partial)`);
+      endJob(JOB_ID, 'stopped');
+      return { total: results.length, ok: stats.ok, miss: stats.miss, fail: stats.fail, stopped: true };
+    }
 
     addLog('out', `[TA] Done. saved=${stats.ok} no-agent=${stats.miss} errors=${stats.fail} total=${results.length}`);
     endJob(JOB_ID, 'completed');
     return { total: results.length, ok: stats.ok, miss: stats.miss, fail: stats.fail };
   } catch (err) {
+    if (err?.name === 'TaskStoppedError') {
+      addLog('warn', '[TA] Stopped by user — partial results were saved incrementally');
+      endJob(JOB_ID, 'stopped');
+      return { total: 0, ok: 0, miss: 0, fail: 0, stopped: true };
+    }
     endJob(JOB_ID, 'failed');
     throw err;
   } finally {

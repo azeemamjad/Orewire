@@ -1,3 +1,4 @@
+const path = require('path');
 const { withBrowserSession } = require('../../utils/browser-session');
 const { humanDelay } = require('../../utils/human');
 const {
@@ -13,6 +14,27 @@ function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+/** Yield the Relay queue during idle gaps so Relay View can interact. */
+async function relayIdleGap(workerId, min, max, shouldStop) {
+  if (process.env.OREWIRE_RELAY !== 'in-process' || !workerId) {
+    await humanDelay(min, max);
+    return;
+  }
+  try {
+    const serverRoot =
+      process.env.OREWIRE_SERVER_PATH || path.resolve(__dirname, '../../../../Server');
+    const { yieldQueue, waitForQueueIdle } = require(path.join(serverRoot, 'relay/worker-queue'));
+    const { TaskStoppedError } = require(path.join(serverRoot, 'relay/task-cancel'));
+    yieldQueue(workerId);
+    await humanDelay(min, max);
+    if (shouldStop?.()) throw new TaskStoppedError();
+    await waitForQueueIdle(workerId, 15000).catch(() => {});
+  } catch (err) {
+    if (err?.name === 'TaskStoppedError') throw err;
+    await humanDelay(min, max);
+  }
+}
+
 async function runTransferAgentBatchOnSession(companies, options = {}) {
   const taskSlug = options.taskSlug || 'sedar_transfer_agent';
   // Slower, more variable cadence to look human (the wall scores request rhythm).
@@ -24,7 +46,7 @@ async function runTransferAgentBatchOnSession(companies, options = {}) {
   const breakMin = parseInt(process.env.TA_BREAK_MIN_MS || '30000', 10);
   const breakMax = parseInt(process.env.TA_BREAK_MAX_MS || '90000', 10);
 
-  return withBrowserSession(taskSlug, options, async ({ page, context, guardCaptcha }) => {
+  return withBrowserSession(taskSlug, options, async ({ page, context, guardCaptcha, shouldStop, workerId }) => {
     if (process.env.OREWIRE_RELAY !== 'in-process') {
       await context.addInitScript(STEALTH_INIT);
     }
@@ -34,6 +56,12 @@ async function runTransferAgentBatchOnSession(companies, options = {}) {
     let anySuccess = false;
 
     for (let i = 0; i < companies.length; i++) {
+      if (shouldStop?.()) {
+        const serverRoot =
+          process.env.OREWIRE_SERVER_PATH || path.resolve(__dirname, '../../../../Server');
+        const { TaskStoppedError } = require(path.join(serverRoot, 'relay/task-cancel'));
+        throw new TaskStoppedError();
+      }
       const c = companies[i];
       let row;
       try {
@@ -46,6 +74,7 @@ async function runTransferAgentBatchOnSession(companies, options = {}) {
           transfer_agent: ta || null,
         };
       } catch (err) {
+        if (err?.name === 'TaskStoppedError') throw err;
         // An unsolved bot wall blocks every remaining company — abort the batch
         // rather than churn through them all hitting the same wall.
         if (err?.name === 'CaptchaRequiredError') throw err;
@@ -80,9 +109,9 @@ async function runTransferAgentBatchOnSession(companies, options = {}) {
       if (i < companies.length - 1) {
         // Occasional long break, otherwise a wide-jittered gap between lookups.
         if (breakEvery > 0 && (i + 1) % breakEvery === 0) {
-          await humanDelay(breakMin, breakMax);
+          await relayIdleGap(workerId, breakMin, breakMax, shouldStop);
         } else {
-          await humanDelay(delay, delay + jitter);
+          await relayIdleGap(workerId, delay, delay + jitter, shouldStop);
         }
       }
     }

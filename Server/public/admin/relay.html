@@ -230,8 +230,8 @@ function renderWorkers(workers) {
       <div class="relay-actions">
         <button type="button" class="btn btn-primary btn-view">View (temp link)</button>
         <button type="button" class="btn btn-secondary btn-reset">Reset browser</button>
-        <button type="button" class="btn btn-secondary btn-human">Mark needs human</button>
-        <button type="button" class="btn btn-secondary btn-active">Mark active</button>
+        <button type="button" class="btn btn-secondary btn-human" title="Pause acquisition — running task keeps going until it hits a captcha">Mark needs human</button>
+        <button type="button" class="btn btn-secondary btn-active" title="After solving a captcha in Relay View, click to resume the paused task">Mark active (resume)</button>
       </div>
       <div class="relay-view-url" id="url-${w.id}" hidden></div>
     </div>

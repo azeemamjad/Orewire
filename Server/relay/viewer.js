@@ -3,6 +3,7 @@ const fs = require('fs');
 const { WebSocketServer } = require('ws');
 const { verifyViewToken } = require('./tokens');
 const { pool } = require('./pool');
+const { STATUS } = require('./constants');
 const { runQueued } = require('./worker-queue');
 const {
   assertValidViewTokenParam,
@@ -281,6 +282,12 @@ function attachRelayViewer(app, httpServer) {
           return;
         }
 
+        // During captcha / needs_human the scraper yields the queue — run viewer
+        // input at priority so a human can solve the wall without waiting behind
+        // a long poll. While a task is running, viewer input still interleaves
+        // between scraper steps because sessions no longer hold one queue lock.
+        const viewerPriority = worker.status === STATUS.NEEDS_HUMAN;
+
         runQueued(workerId, async () => {
           try {
             if (msg.type === 'navigate') {
@@ -300,7 +307,7 @@ function attachRelayViewer(app, httpServer) {
               ws.send(JSON.stringify({ type: 'error', message: err.message }));
             }
           }
-        });
+        }, { priority: viewerPriority });
       });
 
       ws.on('close', () => {

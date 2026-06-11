@@ -1,9 +1,21 @@
 const { pool } = require('./pool');
 const { STATUS } = require('./constants');
-const { runQueued } = require('./worker-queue');
+const { runQueued, yieldQueue, waitForQueueIdle } = require('./worker-queue');
 const { getPoolCounts } = require('./proxies');
 const { getBrowserTask, logTaskEvent, TASK_DEFINITIONS } = require('./task-registry');
-const { CaptchaRequiredError, isCaptchaLikeError, detectCaptchaOnPage, waitForCaptchaCleared } = require('./captcha');
+const {
+  CaptchaRequiredError,
+  isCaptchaLikeError,
+  detectCaptchaOnPage,
+  waitForHumanResume,
+} = require('./captcha');
+const {
+  TaskStoppedError,
+  registerSession,
+  unregisterSession,
+  isStopRequested,
+  clearStop,
+} = require('./task-cancel');
 
 function relayWiringEnabled() {
   return process.env.RELAY_ENABLED === 'true' && process.env.RELAY_WIRE_SCRAPERS !== 'false';
@@ -59,6 +71,7 @@ async function acquireManagedWorker(tier, slotIndex, taskSlug, opts = {}) {
   let lastReason = 'no workers configured';
 
   for (;;) {
+    if (opts.shouldStop?.()) throw new TaskStoppedError();
     for (const id of ids) {
       let w = pool.getWorker(id);
       const dead = !w || w.status === STATUS.ERROR || !pool.isWorkerHealthy(id);
@@ -95,10 +108,13 @@ function releaseWorker(workerId) {
 }
 
 /**
- * Run scrape logic on a pooled Relay browser (serialized per worker).
+ * Run scrape logic on a pooled Relay browser.
+ * Playwright is NOT held behind one long queue lock — only reset + per-step
+ * coordination use the queue so Relay View can interact between scraper steps.
+ *
  * @param {string} taskSlug — browser_tasks.slug
  * @param {number} [slotIndex] — 1-based slot within tier (pipeline worker id)
- * @param {(session: { page, context, workerId }) => Promise<any>} fn
+ * @param {(session: { page, context, workerId, guardCaptcha, shouldStop }) => Promise<any>} fn
  */
 async function withRelaySession(taskSlug, slotIndex, fn, opts = {}) {
   if (!relayWiringEnabled()) {
@@ -116,65 +132,109 @@ async function withRelaySession(taskSlug, slotIndex, fn, opts = {}) {
   if (!task) throw new Error(`Unknown browser task: ${taskSlug}`);
   if (!task.needs_browser) throw new Error(`Task ${taskSlug} does not use a browser`);
 
-  const tier = opts.tier || task?.preferred_relay_tier || 'dc';
-  const { worker: w, workerId } = await acquireManagedWorker(tier, slotIndex, taskSlug, opts);
+  const cancelKey = opts.cancelKey || taskSlug;
+  clearStop(cancelKey);
+  const shouldStop = () => isStopRequested(cancelKey);
 
-  // Mid-task captcha guard: scrapers call this after each navigation. When a bot
-  // wall is detected it parks the worker as needs_human, waits for a human to
-  // solve it on the worker's browser (Relay View), then resumes the same run.
+  const tier = opts.tier || task?.preferred_relay_tier || 'dc';
+  const { worker: w, workerId } = await acquireManagedWorker(tier, slotIndex, taskSlug, {
+    ...opts,
+    shouldStop,
+  });
+
+  registerSession(cancelKey, { workerId, taskSlug });
+
+  // Mid-task captcha guard: scrapers call this after each navigation. Parks the
+  // worker as needs_human, yields the queue for Relay View, then waits until the
+  // human marks the worker active again (or the wall clears on its own).
   const guardCaptcha = async () => {
+    if (shouldStop()) throw new TaskStoppedError();
     if (!(await detectCaptchaOnPage(w.page))) return;
+
     pool.setStatus(workerId, STATUS.NEEDS_HUMAN);
     await logTaskEvent({
       taskSlug,
       workerId,
       status: 'captcha_detected',
-      message: `Bot wall on ${w.page.url()} — solve via Relay View; run resumes automatically`,
+      message: `Bot wall on ${w.page.url()} — open Relay View, solve, then Mark active`,
     }).catch(() => {});
 
-    const cleared = await waitForCaptchaCleared(w.page);
-    if (!cleared) {
+    yieldQueue(workerId);
+
+    const outcome = await waitForHumanResume(workerId, {
+      page: w.page,
+      shouldStop,
+    });
+
+    await waitForQueueIdle(workerId);
+
+    if (outcome === 'stopped') throw new TaskStoppedError();
+    if (!outcome) {
       throw new CaptchaRequiredError('Captcha not solved within the wait window — aborting run', workerId);
     }
+
     pool.setStatus(workerId, STATUS.ACTIVE);
     await logTaskEvent({
       taskSlug,
       workerId,
       status: 'captcha_cleared',
-      message: 'Bot wall cleared by human — resuming run',
+      message: 'Human cleared bot wall — resuming run',
     }).catch(() => {});
   };
 
-  return runQueued(workerId, async () => {
-    try {
-      await pool.resetPage(workerId);
-      const result = await fn({ page: w.page, context: w.context, workerId, guardCaptcha });
-      if (await detectCaptchaOnPage(w.page)) {
-        pool.setStatus(workerId, STATUS.NEEDS_HUMAN);
-        await logTaskEvent({
-          taskSlug,
-          workerId,
-          status: 'captcha_detected',
-          message: `Captcha suspected on ${w.page.url()}`,
-        });
-        throw new CaptchaRequiredError('Captcha detected — open Relay View to solve', workerId);
-      }
-      return result;
-    } catch (err) {
-      if (err instanceof CaptchaRequiredError || isCaptchaLikeError(err)) {
-        pool.setStatus(workerId, STATUS.NEEDS_HUMAN);
-        await logTaskEvent({
-          taskSlug,
-          workerId,
-          status: 'captcha',
-          message: err.message,
-        }).catch(() => {});
-      }
-      throw err;
-    } finally {
-      releaseWorker(workerId);
+  /** Serialize a single Playwright step when scrapers need explicit ordering. */
+  const relayRun = (op) => runQueued(workerId, op);
+
+  try {
+    await runQueued(workerId, () => pool.resetPage(workerId));
+    yieldQueue(workerId);
+
+    const result = await fn({
+      page: w.page,
+      context: w.context,
+      workerId,
+      guardCaptcha,
+      shouldStop,
+      relayRun,
+    });
+
+    if (shouldStop()) throw new TaskStoppedError();
+
+    if (await detectCaptchaOnPage(w.page)) {
+      pool.setStatus(workerId, STATUS.NEEDS_HUMAN);
+      await logTaskEvent({
+        taskSlug,
+        workerId,
+        status: 'captcha_detected',
+        message: `Captcha suspected on ${w.page.url()}`,
+      });
+      throw new CaptchaRequiredError('Captcha detected — open Relay View to solve', workerId);
     }
-  });
+    return result;
+  } catch (err) {
+    if (err instanceof TaskStoppedError) {
+      await logTaskEvent({
+        taskSlug,
+        workerId,
+        status: 'stopped',
+        message: err.message,
+      }).catch(() => {});
+      throw err;
+    }
+    if (err instanceof CaptchaRequiredError || isCaptchaLikeError(err)) {
+      pool.setStatus(workerId, STATUS.NEEDS_HUMAN);
+      await logTaskEvent({
+        taskSlug,
+        workerId,
+        status: 'captcha',
+        message: err.message,
+      }).catch(() => {});
+    }
+    throw err;
+  } finally {
+    unregisterSession(cancelKey);
+    releaseWorker(workerId);
+  }
 }
 
 module.exports = {

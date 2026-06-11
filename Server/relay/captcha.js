@@ -88,6 +88,7 @@ async function waitForCaptchaCleared(page, opts = {}) {
   // Require two consecutive clean polls so we don't resume mid-redirect.
   let cleanStreak = 0;
   while (Date.now() < deadline) {
+    if (opts.shouldStop?.()) return 'stopped';
     const stillBlocked = await detectCaptchaOnPage(page);
     if (!stillBlocked) {
       cleanStreak += 1;
@@ -100,4 +101,69 @@ async function waitForCaptchaCleared(page, opts = {}) {
   return false;
 }
 
-module.exports = { CaptchaRequiredError, isCaptchaLikeError, detectCaptchaOnPage, waitForCaptchaCleared };
+/**
+ * Pause until a human marks the worker active again (Relay admin) or the bot
+ * wall clears on its own. Yields the Playwright queue while waiting so Relay
+ * View can inject mouse/keyboard.
+ * @returns {Promise<true|false|'stopped'>}
+ */
+async function waitForHumanResume(workerId, opts = {}) {
+  const { pool } = require('./pool');
+  const { STATUS } = require('./constants');
+  const timeoutMs = opts.timeoutMs ?? parseInt(process.env.CAPTCHA_WAIT_MS || '600000', 10);
+  const pollMs = opts.pollMs ?? parseInt(process.env.CAPTCHA_POLL_MS || '2000', 10);
+  const deadline = Date.now() + timeoutMs;
+  const page = opts.page || null;
+  let cleanStreak = 0;
+
+  const w = pool.getWorker(workerId);
+  if (!w) return false;
+  if (w.status === STATUS.ACTIVE) return true;
+
+  const waitForAdminResume = new Promise((resolve) => {
+    w._humanResume = (outcome) => {
+      w._humanResume = null;
+      resolve(outcome === 'stopped' ? 'stopped' : true);
+    };
+  });
+
+  const pollLoop = (async () => {
+    while (Date.now() < deadline) {
+      if (opts.shouldStop?.()) return 'stopped';
+      const worker = pool.getWorker(workerId);
+      if (!worker) return false;
+      if (worker.status === STATUS.ACTIVE) return true;
+      if (page) {
+        const blocked = await detectCaptchaOnPage(page);
+        if (!blocked) {
+          cleanStreak += 1;
+          if (cleanStreak >= 2) {
+            pool.setStatus(workerId, STATUS.ACTIVE);
+            return true;
+          }
+        } else {
+          cleanStreak = 0;
+        }
+      }
+      await new Promise((r) => setTimeout(r, pollMs));
+    }
+    return false;
+  })();
+
+  try {
+    const result = await Promise.race([waitForAdminResume, pollLoop]);
+    if (result === 'stopped') return 'stopped';
+    if (result === true) return true;
+    return false;
+  } finally {
+    if (typeof w._humanResume === 'function') w._humanResume = null;
+  }
+}
+
+module.exports = {
+  CaptchaRequiredError,
+  isCaptchaLikeError,
+  detectCaptchaOnPage,
+  waitForCaptchaCleared,
+  waitForHumanResume,
+};
