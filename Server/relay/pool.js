@@ -46,6 +46,35 @@ class RelayPool {
     return this.workers.get(id) || null;
   }
 
+  /** True only if the worker's Chromium is alive and usable right now. */
+  isWorkerHealthy(id) {
+    const w = typeof id === 'string' ? this.workers.get(id) : id;
+    try {
+      return !!(
+        w &&
+        w.browser && w.browser.isConnected() &&
+        w.page && !w.page.isClosed() &&
+        w.cdp
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /** Tear a worker down and start it again from its deterministic plan. */
+  async respawnWorker(id) {
+    const plan = buildWorkerPlans().find((p) => p.id === id);
+    if (!plan) throw new Error(`No worker plan for ${id}`);
+    await this.closeWorker(id);
+    return this.spawnWorker({
+      id: plan.id,
+      label: plan.label,
+      url: plan.url,
+      status: STATUS.ACTIVE,
+      proxy: plan.proxy,
+    });
+  }
+
   async spawnWorker({ id, label, url, status = STATUS.ACTIVE, proxy }) {
     if (this.workers.has(id)) {
       throw new Error(`Worker ${id} already exists`);
@@ -103,6 +132,15 @@ class RelayPool {
       }
 
       const browser = await chromium.launch(launchOpts);
+
+      // A crashed/closed browser must not keep being handed out as if healthy.
+      // Flag the entry so the manager respawns it on the next acquire.
+      browser.on('disconnected', () => {
+        if (this.workers.get(id) === entry) {
+          entry.status = STATUS.ERROR;
+          entry.lastError = entry.lastError || 'browser disconnected';
+        }
+      });
 
       // Pin the UA major version to the *actual* browser build so UA / engine /
       // client-hints stay consistent (a mismatch is an instant bot signal), and

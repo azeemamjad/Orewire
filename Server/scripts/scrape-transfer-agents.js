@@ -197,7 +197,11 @@ function isTierFallbackError(err) {
     || m.includes('econnrefused')
     || m.includes('econnreset')
     || m.includes('is not running')   // tier's worker not in the pool
-    || m.includes('is busy');
+    || m.includes('is busy')
+    || m.includes('no available')     // manager couldn't free/respawn a worker in this tier
+    || m.includes('browser has been closed')  // worker browser crashed mid-run
+    || m.includes('target page, context or browser has been closed')
+    || m.includes('target closed');
 }
 
 // Try residential first (best for SEDAR+'s bot wall), then datacenter, then the

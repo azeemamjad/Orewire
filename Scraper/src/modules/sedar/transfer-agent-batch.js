@@ -49,6 +49,14 @@ async function runTransferAgentBatchOnSession(companies, options = {}) {
         // An unsolved bot wall blocks every remaining company — abort the batch
         // rather than churn through them all hitting the same wall.
         if (err?.name === 'CaptchaRequiredError') throw err;
+        // A dead browser/page fails identically for every remaining company —
+        // abort so the caller can fail over to a freshly respawned worker.
+        const msg = (err?.message || '').toLowerCase();
+        if (msg.includes('browser has been closed')
+          || msg.includes('target page, context or browser has been closed')
+          || msg.includes('target closed')) {
+          throw err;
+        }
         // A sustained HTTP block (rate-limit / bot-wall) on the navigation will
         // hit every remaining company the same way — abort instead of churning.
         if (err?.name === 'NavigationBlockedError' && !anySuccess) throw err;

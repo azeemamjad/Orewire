@@ -1,6 +1,7 @@
 const { pool } = require('./pool');
 const { STATUS } = require('./constants');
 const { runQueued } = require('./worker-queue');
+const { getPoolCounts } = require('./proxies');
 const { getBrowserTask, logTaskEvent, TASK_DEFINITIONS } = require('./task-registry');
 const { CaptchaRequiredError, isCaptchaLikeError, detectCaptchaOnPage, waitForCaptchaCleared } = require('./captcha');
 
@@ -29,16 +30,61 @@ async function ensurePoolReady() {
   await pool.startPool();
 }
 
-function acquireWorker(workerId, taskSlug) {
-  const w = pool.getWorker(workerId);
-  if (!w?.page) throw new Error(`Relay worker ${workerId} is not running — start the pool in Admin → Relay`);
-  if (w.busy) throw new Error(`Relay worker ${workerId} is busy (${w.currentTask || 'unknown'})`);
-  if (w.status === STATUS.NEEDS_HUMAN) {
-    throw new Error(`Relay worker ${workerId} needs human (captcha) — solve via View link first`);
+function tierWorkerCount(tier) {
+  const c = getPoolCounts();
+  if (tier === 'res') return c.resCount;
+  if (tier === 'direct') return c.directCount;
+  return c.dcCount;
+}
+
+// All worker ids in a tier, ordered to start at the requested slot then wrap —
+// so a task prefers its assigned slot but can spill onto siblings when busy.
+function candidateWorkerIds(tier, slotIndex) {
+  const n = Math.max(1, tierWorkerCount(tier));
+  const prefix = tierPrefix(tier);
+  const start = Math.max(1, Math.min(parseInt(slotIndex, 10) || 1, n));
+  const ids = [];
+  for (let k = 0; k < n; k++) ids.push(`${prefix}${((start - 1 + k) % n) + 1}`);
+  return ids;
+}
+
+// The "manager": hand back a healthy, idle worker in the tier. Dead/missing
+// browsers are respawned before use; a busy worker is skipped for the next one;
+// if every worker is busy we wait (poll) until one frees or we time out.
+async function acquireManagedWorker(tier, slotIndex, taskSlug, opts = {}) {
+  const ids = candidateWorkerIds(tier, slotIndex);
+  const waitMs = parseInt(opts.acquireWaitMs ?? process.env.RELAY_ACQUIRE_WAIT_MS ?? '60000', 10);
+  const pollMs = 1500;
+  const deadline = Date.now() + Math.max(0, waitMs);
+  let lastReason = 'no workers configured';
+
+  for (;;) {
+    for (const id of ids) {
+      let w = pool.getWorker(id);
+      const dead = !w || w.status === STATUS.ERROR || !pool.isWorkerHealthy(id);
+      if (dead) {
+        if (w && w.busy) { lastReason = `${id} busy (recovering)`; continue; }
+        try {
+          w = await pool.respawnWorker(id);
+          console.log(`[Relay] Manager respawned worker ${id} (was missing/unhealthy)`);
+        } catch (err) {
+          lastReason = `respawn ${id} failed: ${err.message}`;
+          continue;
+        }
+      }
+      if (w.status === STATUS.NEEDS_HUMAN) { lastReason = `${id} needs human (captcha)`; continue; }
+      if (w.busy) { lastReason = `${id} busy (${w.currentTask || 'task'})`; continue; }
+      // Claim synchronously (no await between check and set) so concurrent
+      // acquires can't both grab the same worker.
+      w.busy = true;
+      w.currentTask = taskSlug;
+      return { worker: w, workerId: id };
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`No available '${tier}' relay worker after ${waitMs}ms — ${lastReason}`);
+    }
+    await new Promise((r) => setTimeout(r, pollMs));
   }
-  w.busy = true;
-  w.currentTask = taskSlug;
-  return w;
 }
 
 function releaseWorker(workerId) {
@@ -70,8 +116,8 @@ async function withRelaySession(taskSlug, slotIndex, fn, opts = {}) {
   if (!task) throw new Error(`Unknown browser task: ${taskSlug}`);
   if (!task.needs_browser) throw new Error(`Task ${taskSlug} does not use a browser`);
 
-  const workerId = workerIdForTask(task, slotIndex, opts.tier);
-  const w = acquireWorker(workerId, taskSlug);
+  const tier = opts.tier || task?.preferred_relay_tier || 'dc';
+  const { worker: w, workerId } = await acquireManagedWorker(tier, slotIndex, taskSlug, opts);
 
   // Mid-task captcha guard: scrapers call this after each navigation. When a bot
   // wall is detected it parks the worker as needs_human, waits for a human to
