@@ -177,6 +177,10 @@ async function migrate() {
   // Exchange-sourced profile fields (TMX / CSE / ASX official listing pages).
   // transfer_agent covers Transfer Agent (Canada: TSX/TSXV/CSE) and Share Registry (AUS: ASX).
   await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS transfer_agent TEXT`);
+  // Set whenever the SEDAR+ transfer-agent scrape has looked at a company —
+  // whether or not an agent was found — so a "missing only" re-run skips rows
+  // we've already checked (and found none) instead of re-scraping them forever.
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS transfer_agent_checked_at TIMESTAMPTZ`);
   await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS phone TEXT`);
   await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS shares_outstanding BIGINT`);
   await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS profile_source TEXT`);

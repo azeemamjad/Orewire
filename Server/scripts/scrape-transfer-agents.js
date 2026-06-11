@@ -66,7 +66,13 @@ async function fetchCompanies({ limit, ticker, all }) {
   ];
   const params = [];
   if (ticker) { params.push(ticker); where.push(`UPPER(ticker) = UPPER($${params.length})`); }
-  if (!all)   { where.push("(transfer_agent IS NULL OR transfer_agent = '')"); }
+  if (!all) {
+    // "Missing only" = no transfer agent AND we've never checked this company.
+    // Rows checked previously (agent found, or confirmed none) are skipped so the
+    // re-run only works through genuinely unchecked companies.
+    where.push("(transfer_agent IS NULL OR transfer_agent = '')");
+    where.push("transfer_agent_checked_at IS NULL");
+  }
 
   const sql = `
     SELECT id, exchange, ticker, name
@@ -87,13 +93,23 @@ const TA_RESULT_MARKER = '__OREWIRE_TA_RESULT__';
 
 async function persistTaResult(row, dryRun, stats) {
   if (row.error) {
+    // Leave transfer_agent_checked_at unset so a "missing only" re-run retries it
+    // — an error means we never got a clean answer for this company.
     stats.fail++;
     addLog('err', `[TA] ${row.ticker || row.name}: ${row.error}`);
     return;
   }
   if (!row.transfer_agent) {
     stats.miss++;
-    addLog('out', `[TA] ${row.ticker || row.name}: no transfer agent found`);
+    if (!dryRun && row.id != null) {
+      // We looked and there's no transfer agent — mark checked so the row drops
+      // out of the "missing only" set instead of being re-scraped every run.
+      await db.query(
+        `UPDATE companies SET transfer_agent_checked_at = NOW() WHERE id = $1`,
+        [row.id],
+      );
+    }
+    addLog('out', `[TA] ${row.ticker || row.name}: no transfer agent found${dryRun ? ' (dry-run)' : ' (marked checked)'}`);
     return;
   }
   if (dryRun || row.id == null) {
@@ -101,8 +117,13 @@ async function persistTaResult(row, dryRun, stats) {
     addLog('out', `[TA] ${row.ticker || row.name}: ${row.transfer_agent} (dry-run, not saved)`);
     return;
   }
+  // Found an agent: save it AND mark the row checked in one atomic update — the
+  // value lands first, and the row only counts as "done" once the save succeeds.
   await db.query(
-    `UPDATE companies SET transfer_agent = COALESCE($2, transfer_agent) WHERE id = $1`,
+    `UPDATE companies
+        SET transfer_agent = COALESCE($2, transfer_agent),
+            transfer_agent_checked_at = NOW()
+      WHERE id = $1`,
     [row.id, row.transfer_agent],
   );
   stats.ok++;
