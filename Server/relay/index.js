@@ -28,8 +28,13 @@ async function initRelay(app, httpServer) {
     }
   }
 
-  process.on('SIGINT', () => pool.shutdown().catch(() => {}));
-  process.on('SIGTERM', () => pool.shutdown().catch(() => {}));
+  if (enabled) pool.startZombieSweep();
+
+  const shutdownRelay = () => {
+    pool.shutdown().catch(() => {});
+  };
+  process.on('SIGINT', shutdownRelay);
+  process.on('SIGTERM', shutdownRelay);
 
   return pool;
 }

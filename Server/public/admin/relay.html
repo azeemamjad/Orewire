@@ -33,6 +33,16 @@
 .relay-live-url a:hover { text-decoration: underline; }
 .relay-url-muted { color: var(--muted); font-style: italic; }
 .relay-task-line { font-size: 11px; color: #58a6ff; margin-bottom: 8px; word-break: break-word; }
+.relay-error-line {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #f87171;
+  margin: 8px 0 10px;
+  padding: 8px 10px;
+  background: rgba(248, 113, 113, .08);
+  border-radius: 6px;
+  word-break: break-word;
+}
 .relay-status {
   display: inline-block;
   font-size: 11px;
@@ -223,12 +233,14 @@ function renderWorkers(workers) {
       ${proxyLine}
       <span class="${statusClass(w.status)}">${escapeHtml(w.status)}</span>
       ${w.busy && w.currentTask ? `<div class="relay-task-line">Running: ${escapeHtml(w.currentTask)}</div>` : ''}
+      ${w.lastError ? `<div class="relay-error-line" data-error-for="${escapeHtml(w.id)}" title="Last error on this worker">${escapeHtml(w.lastError)}</div>` : ''}
       <div class="relay-live-url-wrap">
         <span class="relay-live-label">Current page (live)</span>
         <div class="relay-live-url" data-worker-id="${escapeHtml(w.id)}">${formatLiveUrl(w.url)}</div>
       </div>
       <div class="relay-actions">
         <button type="button" class="btn btn-primary btn-view">View (temp link)</button>
+        <button type="button" class="btn btn-secondary btn-respawn" ${w.status === 'error' ? '' : 'hidden'}>Respawn browser</button>
         <button type="button" class="btn btn-secondary btn-reset">Reset browser</button>
         <button type="button" class="btn btn-secondary btn-human" title="Pause acquisition — running task keeps going until it hits a captcha">Mark needs human</button>
         <button type="button" class="btn btn-secondary btn-active" title="After solving a captcha in Relay View, click to resume the paused task">Mark active (resume)</button>
@@ -257,6 +269,22 @@ function renderWorkers(workers) {
         link.textContent = res.url;
         box.querySelector('.btn-copy-link').addEventListener('click', () => navigator.clipboard.writeText(res.url));
         box.querySelector('.btn-open-link').addEventListener('click', () => window.open(res.url, '_blank', 'noopener'));
+      } catch (e) {
+        alert(e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  grid.querySelectorAll('.btn-respawn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.closest('.relay-card').dataset.id;
+      if (!confirm('Respawn ' + id + '? Launches a fresh Chromium (fixes disconnected / error).')) return;
+      btn.disabled = true;
+      try {
+        await api(`/workers/${id}/respawn`, { method: 'POST', body: JSON.stringify({ force: true }) });
+        await loadWorkers();
       } catch (e) {
         alert(e.message);
       } finally {
@@ -311,6 +339,22 @@ function patchLiveUrls(workers) {
     if (statusEl) {
       statusEl.className = statusClass(w.status);
       statusEl.textContent = w.status || '';
+    }
+    const respawnBtn = card.querySelector('.btn-respawn');
+    if (respawnBtn) respawnBtn.hidden = w.status !== 'error';
+    let errEl = card.querySelector(`.relay-error-line[data-error-for="${CSS.escape(w.id)}"]`);
+    if (w.lastError) {
+      if (!errEl) {
+        errEl = document.createElement('div');
+        errEl.className = 'relay-error-line';
+        errEl.dataset.errorFor = w.id;
+        const anchor = card.querySelector('.relay-task-line') || card.querySelector('.relay-status');
+        anchor?.insertAdjacentElement('afterend', errEl);
+      }
+      errEl.textContent = w.lastError;
+      errEl.hidden = false;
+    } else if (errEl) {
+      errEl.hidden = true;
     }
     let taskEl = card.querySelector('.relay-task-line');
     if (w.busy && w.currentTask) {

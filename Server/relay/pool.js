@@ -3,12 +3,23 @@ const { STATUS } = require('./constants');
 const { buildWorkerPlans, getPoolCounts, maskProxyForApi } = require('./proxies');
 const { clearQueue } = require('./worker-queue');
 const { STEALTH_INIT, applyStealthIdentity, randomViewport } = require('./stealth');
+const { forceKillBrowser } = require('./browser-kill');
+
+const CLOSE_TIMEOUT_MS = 4000;
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(resolve, ms)),
+  ]);
+}
 
 class RelayPool {
   constructor() {
     /** @type {Map<string, object>} */
     this.workers = new Map();
     this._starting = false;
+    this._sweepTimer = null;
   }
 
   isStarting() {
@@ -65,6 +76,11 @@ class RelayPool {
   async respawnWorker(id) {
     const plan = buildWorkerPlans().find((p) => p.id === id);
     if (!plan) throw new Error(`No worker plan for ${id}`);
+    const prev = this.workers.get(id);
+    if (prev?.busy) {
+      prev.busy = false;
+      prev.currentTask = null;
+    }
     await this.closeWorker(id);
     return this.spawnWorker({
       id: plan.id,
@@ -73,6 +89,24 @@ class RelayPool {
       status: STATUS.ACTIVE,
       proxy: plan.proxy,
     });
+  }
+
+  /**
+   * Respawn when Chromium died but the worker entry is still in the map
+   * (status error / "browser disconnected"). Safe to call before Relay View.
+   */
+  async ensureWorkerHealthy(id, opts = {}) {
+    const w = this.getWorker(id);
+    if (w && this.isWorkerHealthy(id)) return w;
+    if (w?.busy && !opts.force) {
+      throw new Error(
+        `Worker ${id} browser died during a task — stop the task first, then respawn`,
+      );
+    }
+    console.log(
+      `[Relay] Respawning unhealthy worker ${id}${w?.lastError ? ` (${w.lastError})` : ''}`,
+    );
+    return this.respawnWorker(id);
   }
 
   async spawnWorker({ id, label, url, status = STATUS.ACTIVE, proxy }) {
@@ -135,11 +169,24 @@ class RelayPool {
 
       // A crashed/closed browser must not keep being handed out as if healthy.
       // Flag the entry so the manager respawns it on the next acquire.
+      try {
+        entry.browserPid = browser.process()?.pid || null;
+      } catch {
+        entry.browserPid = null;
+      }
+
       browser.on('disconnected', () => {
-        if (this.workers.get(id) === entry) {
-          entry.status = STATUS.ERROR;
-          entry.lastError = entry.lastError || 'browser disconnected';
-        }
+        if (this.workers.get(id) !== entry) return;
+        entry.status = STATUS.ERROR;
+        entry.lastError = entry.lastError || 'browser disconnected';
+        entry.busy = false;
+        entry.currentTask = null;
+        // Kill the OS process and drop Playwright refs — don't leave RAM-eating zombies.
+        setImmediate(() => {
+          this.purgeWorkerResources(id, { reason: entry.lastError }).catch((err) => {
+            console.error(`[Relay] Failed to purge ${id} after disconnect: ${err.message}`);
+          });
+        });
       });
 
       // Pin the UA major version to the *actual* browser build so UA / engine /
@@ -175,6 +222,7 @@ class RelayPool {
       entry.context = context;
       entry.page = page;
       entry.cdp = cdp;
+      entry.browserPid = entry.browserPid || null;
       entry.status = status;
 
       if (url && url !== 'about:blank') {
@@ -207,18 +255,25 @@ class RelayPool {
 
       const tasks = [];
       for (const plan of plans) {
-        if (this.workers.has(plan.id)) continue;
-        tasks.push(
-          this.spawnWorker({
-            id: plan.id,
-            label: plan.label,
-            url: plan.url,
-            status: STATUS.ACTIVE,
-            proxy: plan.proxy,
-          })
-        );
+        const existing = this.workers.get(plan.id);
+        if (existing && this.isWorkerHealthy(plan.id)) continue;
+        if (existing) {
+          tasks.push(this.respawnWorker(plan.id));
+        } else {
+          tasks.push(
+            this.spawnWorker({
+              id: plan.id,
+              label: plan.label,
+              url: plan.url,
+              status: STATUS.ACTIVE,
+              proxy: plan.proxy,
+            }),
+          );
+        }
       }
       await Promise.all(tasks);
+      await this.sweepZombieWorkers();
+      this.startZombieSweep();
       const { total } = getPoolCounts();
       console.log(`[Relay] Pool started — ${this.workers.size}/${total} workers`);
       return this.listWorkers();
@@ -266,14 +321,19 @@ class RelayPool {
   }
 
   async attachViewer(id) {
-    const w = this.workers.get(id);
-    if (!w || !w.page || !w.cdp) throw new Error('Worker not available');
+    const w = await this.ensureWorkerHealthy(id);
+    if (!w?.page || !w?.cdp) {
+      throw new Error('Worker not available after respawn');
+    }
     return w;
   }
 
   /** Abort hung navigation and return to a blank page */
   async resetPage(id) {
-    const w = this.workers.get(id);
+    let w = this.workers.get(id);
+    if (!w || !this.isWorkerHealthy(id)) {
+      w = await this.ensureWorkerHealthy(id);
+    }
     if (!w?.page) throw new Error('Worker not found');
     w.navGen = (w.navGen || 0) + 1;
     const { page } = w;
@@ -310,20 +370,98 @@ class RelayPool {
     return w.viewerCount;
   }
 
+  /**
+   * Kill Chromium and null Playwright handles. Keeps the worker slot in the map
+   * (status error) so the admin UI still shows it until respawn.
+   */
+  async purgeWorkerResources(id, opts = {}) {
+    const w = this.workers.get(id);
+    if (!w || w._purging) return;
+    w._purging = true;
+    const browser = w.browser;
+    const pid = w.browserPid;
+    try {
+      try { if (w.cdp) w.cdp.removeAllListeners(); } catch { /* ignore */ }
+      try {
+        if (w.page && !w.page.isClosed()) {
+          await withTimeout(w.page.close(), CLOSE_TIMEOUT_MS);
+        }
+      } catch { /* ignore */ }
+      try {
+        if (w.context) await withTimeout(w.context.close(), CLOSE_TIMEOUT_MS);
+      } catch { /* ignore */ }
+      await forceKillBrowser(browser, pid);
+      w.browser = null;
+      w.context = null;
+      w.page = null;
+      w.cdp = null;
+      w.browserPid = null;
+      w.status = STATUS.ERROR;
+      w.lastError = opts.reason || w.lastError || 'browser disconnected';
+      w.busy = false;
+      w.currentTask = null;
+      console.log(`[Relay] Purged ${id} — Chromium killed (pid ${pid || 'unknown'})`);
+    } finally {
+      w._purging = false;
+    }
+  }
+
+  /** Kill any dead workers that still hold browser refs or orphaned processes. */
+  async sweepZombieWorkers() {
+    for (const [id, w] of this.workers) {
+      if (w._purging) continue;
+      if (this.isWorkerHealthy(id)) continue;
+      if (w.viewerCount > 0) continue;
+      if (w.busy) continue;
+      await this.purgeWorkerResources(id).catch(() => {});
+    }
+  }
+
+  startZombieSweep() {
+    if (this._sweepTimer) return;
+    const ms = parseInt(process.env.RELAY_ZOMBIE_SWEEP_MS || '30000', 10);
+    if (ms <= 0) return;
+    this._sweepTimer = setInterval(() => {
+      this.sweepZombieWorkers().catch((err) => {
+        console.error('[Relay] Zombie sweep failed:', err.message);
+      });
+    }, ms);
+    if (this._sweepTimer.unref) this._sweepTimer.unref();
+  }
+
+  stopZombieSweep() {
+    if (!this._sweepTimer) return;
+    clearInterval(this._sweepTimer);
+    this._sweepTimer = null;
+  }
+
   async closeWorker(id) {
     const w = this.workers.get(id);
     if (!w) return;
     this.workers.delete(id);
     clearQueue(id);
+    w.busy = false;
+    w.currentTask = null;
+    const browser = w.browser;
+    const pid = w.browserPid;
     try {
-      if (w.context) await w.context.close();
+      if (w.page && !w.page.isClosed()) {
+        await withTimeout(w.page.close(), CLOSE_TIMEOUT_MS);
+      }
     } catch { /* ignore */ }
     try {
-      if (w.browser) await w.browser.close();
+      if (w.context) await withTimeout(w.context.close(), CLOSE_TIMEOUT_MS);
     } catch { /* ignore */ }
+    await forceKillBrowser(browser, pid);
+    w.browser = null;
+    w.context = null;
+    w.page = null;
+    w.cdp = null;
+    w.browserPid = null;
   }
 
   async shutdown() {
+    this.stopZombieSweep();
     const ids = [...this.workers.keys()];
     await Promise.all(ids.map((id) => this.closeWorker(id)));
   }

@@ -200,7 +200,17 @@ function attachRelayViewer(app, httpServer) {
         return;
       }
       workerId = verified.workerId;
-      const worker = await pool.attachViewer(workerId);
+      let worker;
+      try {
+        worker = await pool.attachViewer(workerId);
+      } catch (err) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: err.message || 'Browser session is not available',
+        }));
+        ws.close(4002, err.message || 'Session error');
+        return;
+      }
       const { page, cdp, label, viewport } = worker;
       cdpRef = cdp;
       pool.incrementViewers(workerId);

@@ -159,6 +159,20 @@ router.post('/workers/:id/view', requireRelayEnabled, workerIdMiddleware, (req, 
   });
 });
 
+router.post('/workers/:id/respawn', requireRelayEnabled, workerIdMiddleware, async (req, res) => {
+  try {
+    const force = !!(req.body && req.body.force);
+    const w = await pool.ensureWorkerHealthy(req.relayWorkerId, { force });
+    res.json({
+      ok: true,
+      url: w.url,
+      worker: pool.listWorkers().find((x) => x.id === req.relayWorkerId),
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 router.post('/workers/:id/reset', requireRelayEnabled, workerIdMiddleware, async (req, res) => {
   try {
     const w = await pool.resetPage(req.relayWorkerId);

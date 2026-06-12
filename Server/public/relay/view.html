@@ -220,10 +220,11 @@
       ws = new WebSocket(wsUrl());
       ws.onopen = () => setStatus('Connected', true);
       ws.onclose = (ev) => {
-        const hint = ev.code === 1006
+        const reason = ev.reason ? ': ' + ev.reason : '';
+        const hint = ev.code === 1006 && !ev.reason
           ? ' (often nginx: enable WebSocket proxy — see Server/deploy/nginx-backend.example.conf)'
           : '';
-        setStatus('Disconnected' + hint, false);
+        setStatus('Disconnected' + reason + hint, false);
       };
       ws.onerror = () => setStatus('WebSocket failed — check nginx Upgrade headers', false);
       ws.onmessage = (ev) => {
