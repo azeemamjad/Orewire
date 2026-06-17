@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import Nav from "@/components/site/Nav";
 import Footer from "@/components/site/Footer";
 import { fetchNewsFeed, type NewsItem } from "@/lib/api";
+import { newsDisplayTime } from "@/components/site/news-release-utils";
 
 const severityStyle: Record<string, string> = {
   critical: "bg-destructive text-destructive-foreground",
@@ -57,8 +58,8 @@ const PAGE_SIZE = 10;
 const News = () => {
   const [page, setPage] = useState(1);
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ["news-feed", page, PAGE_SIZE],
-    queryFn: () => fetchNewsFeed({ page, limit: PAGE_SIZE, origin: "rss" }),
+    queryKey: ["news-feed", page, PAGE_SIZE, "company-linked"],
+    queryFn: () => fetchNewsFeed({ page, limit: PAGE_SIZE, origin: "rss", companyLinked: true }),
     staleTime: 30 * 60 * 1000,
     refetchInterval: 30 * 60 * 1000,
   });
@@ -122,7 +123,7 @@ const News = () => {
                         )}
                         <span className="ml-auto font-mono text-[10px] text-muted-foreground inline-flex items-center gap-1">
                           <Clock className="w-3 h-3" />
-                          {item.timeAgo}
+                          {newsDisplayTime(item)}
                         </span>
                       </div>
                       <h2 className="font-display text-lg font-bold leading-tight mb-1">{item.title}</h2>

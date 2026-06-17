@@ -21,7 +21,7 @@ import {
   X,
   Check,
 } from "lucide-react";
-import { fetchCompany, fetchCompanyProfile, fetchDiscussions, postDiscussion, voteDiscussion, fetchCompanyNews, fetchCompanyInsiders, login as apiLogin, register as apiRegister, type Discussion, type InsiderTransaction, type NewsItem } from "@/lib/api";
+import { fetchCompany, fetchCompanyProfile, fetchDiscussions, postDiscussion, voteDiscussion, fetchCompanyNews, fetchCompanyInsiders, fetchCompanySnapshot, login as apiLogin, register as apiRegister, type Discussion, type InsiderTransaction, type NewsItem } from "@/lib/api";
 import { getNewsSeverity, getNewsTags } from "@/components/site/NewsArticleCard";
 import { useAuth } from "@/hooks/use-auth";
 import { useState, useEffect, type ReactNode } from "react";
@@ -34,6 +34,8 @@ import TradingViewChart from "@/components/site/TradingViewChart";
 import { tvSymbol } from "@/lib/tradingview";
 
 import { checkWatchlist, addToWatchlist, removeFromWatchlist } from "@/lib/api";
+import { newsDisplayTime } from "@/components/site/news-release-utils";
+import CompanySnapshotCard from "@/components/site/CompanySnapshotCard";
 
 
 function timeAgo(dateStr: string): string {
@@ -62,6 +64,13 @@ const CompanyDetail = () => {
   });
 
   const companyId = data?.id ?? 0;
+
+  const { data: snapshot, isLoading: snapshotLoading } = useQuery({
+    queryKey: ["company-snapshot", companyId],
+    queryFn: () => fetchCompanySnapshot(companyId),
+    enabled: companyId > 0,
+    staleTime: 60 * 60 * 1000,
+  });
 
   useEffect(() => {
     if (companyId) {
@@ -242,6 +251,8 @@ const CompanyDetail = () => {
           </aside>
         </div>
 
+        <CompanySnapshotCard snapshot={snapshot ?? undefined} isLoading={snapshotLoading} />
+
         <section className="mt-10">
           <h2 className="font-display text-2xl tracking-tight mb-4 pb-2 border-b border-border flex items-center gap-2">
             <Building2 className="h-5 w-5" />
@@ -406,6 +417,27 @@ const KeyStatsCard = ({
   );
 };
 
+function splitTransferAgent(value: string): { name: string; address: string | null } {
+  const match = value.match(/^(.+?)\s*[—–]\s*(.+)$/);
+  if (!match) return { name: value, address: null };
+  return { name: match[1].trim(), address: match[2].trim() };
+}
+
+const TransferAgentBlock = ({ value, isAsx }: { value: string; isAsx?: boolean }) => {
+  const { name, address } = splitTransferAgent(value);
+  return (
+    <div className="border-t border-border pt-2.5">
+      <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
+        {isAsx ? "Share Registry" : "Transfer Agent / Share Registry"}
+      </div>
+      <p className="text-xs leading-normal font-medium">{name}</p>
+      {address && (
+        <p className="text-[11px] leading-snug text-muted-foreground mt-0.5">{address}</p>
+      )}
+    </div>
+  );
+};
+
 const IdentifiersCard = ({
   exchange,
   ticker,
@@ -458,14 +490,7 @@ const IdentifiersCard = ({
           <span className="font-semibold">{cusip || "—"}</span>
         </div>
       </div>
-      {transferAgent && (
-        <div className="border-t border-border pt-2.5">
-          <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
-            {isAsx ? "Share Registry" : "Transfer Agent / Share Registry"}
-          </div>
-          <p className="text-xs leading-normal font-medium">{transferAgent}</p>
-        </div>
-      )}
+      {transferAgent && <TransferAgentBlock value={transferAgent} isAsx={isAsx} />}
     </div>
   </div>
 );
@@ -804,7 +829,7 @@ const CompanyNewsColumn = ({ name, ticker, exchange }: { name: string; ticker?: 
       ticker={ticker}
       name={name}
       type={newsType(n.title)}
-      time={n.timeAgo || ""}
+      time={newsDisplayTime(n)}
       summary={cleanSummary(n.summary) || n.title}
     />
   );

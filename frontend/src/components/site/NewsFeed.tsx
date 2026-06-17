@@ -1,71 +1,180 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Clock, Newspaper } from "lucide-react";
-import { fetchNewsFeed, type NewsItem } from "@/lib/api";
+import { ArrowUpRight, Newspaper } from "lucide-react";
 import { Link } from "react-router-dom";
+import { fetchNewsFeed, type NewsItem } from "@/lib/api";
+import NewsReleaseItem from "@/components/site/NewsReleaseItem";
+import {
+  cleanNewsSummary,
+  getNewsFilingType,
+  getNewsSeverity,
+  isCompanyLinkedNews,
+  newsDisplayTime,
+  newsItemHref,
+} from "@/components/site/news-release-utils";
 
-const severityStyle: Record<string, string> = {
-  critical: "bg-destructive text-destructive-foreground",
-  high: "bg-noteworthy text-noteworthy-foreground",
-  medium: "bg-watch text-watch-foreground",
-  low: "bg-routine text-routine-foreground",
+type HeroNewsItem = NewsItem & {
+  exchange?: string | null;
+  company?: string | null;
+  slug?: string;
+  severity?: string;
+  filingType?: string;
 };
 
-function getSeverity(sentiment: string | undefined, title: string): { label: string; style: string } {
-  const t = (title || "").toLowerCase();
-  if (t.includes("drill") && (t.includes("high-grade") || t.includes("2.4×") || /\d+.*g\/t/.test(t))) return { label: "Critical", style: severityStyle.critical };
-  if (t.includes("resource") || t.includes("feasibility") || t.includes("assay")) return { label: "High", style: severityStyle.high };
-  if (t.includes("placement") || t.includes("financing") || t.includes("acquisition")) return { label: "Medium", style: severityStyle.medium };
-  if (sentiment === "bullish") return { label: "High", style: severityStyle.high };
-  if (sentiment === "bearish") return { label: "Medium", style: severityStyle.medium };
-  return { label: "Low", style: severityStyle.low };
-}
-
-function getFilingType(title: string): string {
-  const t = (title || "").toLowerCase();
-  if (t.includes("drill")) return "Drill Result";
-  if (t.includes("resource")) return "Resource Update";
-  if (t.includes("feasibility") || t.includes("technical report")) return "Technical Report";
-  if (t.includes("placement") || t.includes("financing") || t.includes("bought deal")) return "Private Placement";
-  if (t.includes("quarterly") || t.includes("q1") || t.includes("q2") || t.includes("q3") || t.includes("q4")) return "Quarterly";
-  if (t.includes("assay")) return "Assay";
-  if (t.includes("acquisition") || t.includes("merger")) return "M&A";
-  return "News Release";
-}
-
-// Decode/strip raw HTML that some RSS summaries carry so long URLs don't overflow.
-function cleanSummary(text: string | null | undefined): string {
-  if (!text) return "";
-  const decoded = text
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, "&")
-    .replace(/&nbsp;/g, " ");
-  return decoded.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
-}
-
-const placeholderItems: NewsItem[] = [
-  { title: "Hole EL-247 returned 12.4m @ 3.2 g/t Au — 2.4× deposit average. Mineralization remains open at depth.", source: "TMX Newsfile", timeAgo: "12 min ago", commodity: "Gold", sentiment: "bullish", link: "#", pubDate: "", summary: "" },
-  { title: "Hemi Indicated resource increased 18% to 6.8 Moz Au. Conversion drilling continues ahead of feasibility.", source: "GlobeNewsWire", timeAgo: "1 hr ago", commodity: "Gold", sentiment: "bullish", link: "#", pubDate: "", summary: "" },
-  { title: "Step-out hole 4 km north of Keats returned 2.1m @ 24 g/t Au, opening a new exploration corridor.", source: "TMX Newsfile", timeAgo: "2 hrs ago", commodity: "Gold", sentiment: "bullish", link: "#", pubDate: "", summary: "" },
-  { title: "First Indicated category at PCE: 19.2 Mlb U₃O₈ at 3.1% U₃O₈, advancing toward feasibility.", source: "GlobeNewsWire", timeAgo: "3 hrs ago", commodity: "Uranium", sentiment: "bullish", link: "#", pubDate: "", summary: "" },
-  { title: "$4.2M flow-through placement at $0.18 — 0.8× market cap. Insider participation 22%.", source: "TMX Newsfile", timeAgo: "4 hrs ago", commodity: null, sentiment: "neutral", link: "#", pubDate: "", summary: "" },
-  { title: "Finniss production 24kt SC6, in line with guidance. Cash $87M. FY26 outlook unchanged.", source: "GlobeNewsWire", timeAgo: "5 hrs ago", commodity: "Lithium", sentiment: "neutral", link: "#", pubDate: "", summary: "" },
-  { title: "Mt Magnet extension drilling returned 4.1m @ 8.7 g/t Au below existing pit. Confirms continuity.", source: "TMX Newsfile", timeAgo: "6 hrs ago", commodity: "Gold", sentiment: "bullish", link: "#", pubDate: "", summary: "" },
-  { title: "156m @ 1.4% CuEq from 412m at Filo del Sol — grade and width well above PEA averages.", source: "GlobeNewsWire", timeAgo: "7 hrs ago", commodity: "Copper", sentiment: "bullish", link: "#", pubDate: "", summary: "" },
+const placeholderItems: HeroNewsItem[] = [
+  {
+    title: "Hole EL-247 returned 12.4m @ 3.2 g/t Au, 2.4× deposit average. Mineralization remains open at depth.",
+    summary: "Hole EL-247 returned 12.4m @ 3.2 g/t Au, 2.4× deposit average. Mineralization remains open at depth.",
+    source: "TMX Newsfile",
+    pubDate: "2026-04-24T07:31:00-04:00",
+    timeAgo: "Apr 24 · 7:31 AM",
+    commodity: "Gold",
+    sentiment: "bullish",
+    link: "scz-eagle-lake-el247",
+    pubDate: "",
+    ticker: "SCZ",
+    exchange: "TSX-V",
+    company: "Santa Cruz Resources",
+    companyId: 1,
+    severity: "Critical",
+    filingType: "Drill Result",
+  },
+  {
+    title: "Hemi Indicated resource increased 18% to 6.8 Moz Au. Conversion drilling continues ahead of feasibility.",
+    summary: "Hemi Indicated resource increased 18% to 6.8 Moz Au. Conversion drilling continues ahead of feasibility.",
+    source: "GlobeNewsWire",
+    pubDate: "2026-04-24T06:42:00-04:00",
+    timeAgo: "Apr 24 · 6:42 AM",
+    commodity: "Gold",
+    sentiment: "bullish",
+    link: "deg-hemi-resource",
+    pubDate: "",
+    ticker: "DEG",
+    exchange: "ASX",
+    company: "De Grey Mining",
+    companyId: 2,
+    severity: "High",
+    filingType: "Resource Update",
+  },
+  {
+    title: "Step-out hole 4 km north of Keats returned 2.1m @ 24 g/t Au, opening a new exploration corridor.",
+    summary: "Step-out hole 4 km north of Keats returned 2.1m @ 24 g/t Au, opening a new exploration corridor.",
+    source: "TMX Newsfile",
+    pubDate: "2026-04-24T05:22:00-04:00",
+    timeAgo: "Apr 24 · 5:22 AM",
+    commodity: "Gold",
+    sentiment: "bullish",
+    link: "nfg-stepout-appleton",
+    pubDate: "",
+    ticker: "NFG",
+    exchange: "TSX-V",
+    company: "New Found Gold",
+    companyId: 3,
+    severity: "High",
+    filingType: "Drill Result",
+  },
+  {
+    title: "First Indicated category at PCE: 19.2 Mlb U₃O₈ at 3.1% U₃O₈, advancing toward feasibility.",
+    summary: "First Indicated category at PCE: 19.2 Mlb U₃O₈ at 3.1% U₃O₈, advancing toward feasibility.",
+    source: "GlobeNewsWire",
+    pubDate: "2026-04-24T04:04:00-04:00",
+    timeAgo: "Apr 24 · 4:04 AM",
+    commodity: "Uranium",
+    sentiment: "bullish",
+    link: "nxe-patterson-east",
+    pubDate: "",
+    ticker: "NXE",
+    exchange: "TSX-V",
+    company: "NexGen Energy",
+    companyId: 4,
+    severity: "High",
+    filingType: "Technical Report",
+  },
+  {
+    title: "$4.2M flow-through placement at $0.18, 0.8× market cap. Insider participation 22%. Funds for Q3 drilling at Keymet.",
+    summary: "$4.2M flow-through placement at $0.18, 0.8× market cap. Insider participation 22%. Funds for Q3 drilling at Keymet.",
+    source: "TMX Newsfile",
+    pubDate: "2026-04-24T02:58:00-04:00",
+    timeAgo: "Apr 24 · 2:58 AM",
+    commodity: null,
+    sentiment: "neutral",
+    link: "gr-keymet-placement",
+    pubDate: "",
+    ticker: "GR",
+    exchange: "CSE",
+    company: "Great Atlantic Resources",
+    companyId: 5,
+    severity: "Medium",
+    filingType: "Private Placement",
+  },
+  {
+    title: "Finniss production 24kt SC6, in line with guidance. Cash $87M. FY26 outlook unchanged.",
+    summary: "Finniss production 24kt SC6, in line with guidance. Cash $87M. FY26 outlook unchanged.",
+    source: "GlobeNewsWire",
+    pubDate: "2026-04-24T09:00:00-04:00",
+    timeAgo: "Apr 24 · 9:00 AM",
+    commodity: "Lithium",
+    sentiment: "neutral",
+    link: "cxo-finniss-quarterly",
+    pubDate: "",
+    ticker: "CXO",
+    exchange: "ASX",
+    company: "Core Lithium",
+    companyId: 6,
+    severity: "Low",
+    filingType: "Quarterly",
+  },
+  {
+    title: "Mt Magnet extension drilling returned 4.1m @ 8.7 g/t Au below existing pit. Confirms continuity.",
+    summary: "Mt Magnet extension drilling returned 4.1m @ 8.7 g/t Au below existing pit. Confirms continuity.",
+    source: "TMX Newsfile",
+    pubDate: "2026-04-24T07:44:00-04:00",
+    timeAgo: "Apr 24 · 7:44 AM",
+    commodity: "Gold",
+    sentiment: "bullish",
+    link: "rms-mt-magnet-extension",
+    pubDate: "",
+    ticker: "RMS",
+    exchange: "ASX",
+    company: "Ramelius Resources",
+    companyId: 7,
+    severity: "Medium",
+    filingType: "Drill Result",
+  },
+  {
+    title: "156m @ 1.4% CuEq from 412m at Filo del Sol, grade and width well above PEA averages.",
+    summary: "156m @ 1.4% CuEq from 412m at Filo del Sol, grade and width well above PEA averages.",
+    source: "GlobeNewsWire",
+    pubDate: "2026-04-24T00:31:00-04:00",
+    timeAgo: "Apr 24 · 12:31 AM",
+    commodity: "Copper",
+    sentiment: "bullish",
+    link: "fil-filo-del-sol",
+    pubDate: "",
+    ticker: "FIL",
+    exchange: "TSX-V",
+    company: "Filo Mining",
+    companyId: 8,
+    severity: "Critical",
+    filingType: "Assay",
+  },
 ];
 
+/** Hero column: company-linked news releases only. */
 const NewsFeed = () => {
-  const { data } = useQuery({
-    queryKey: ["news-feed", 20, "rss"],
-    queryFn: () => fetchNewsFeed({ limit: 20, origin: "rss" }),
+  const { data, isLoading } = useQuery({
+    queryKey: ["news-feed", 20, "rss", "company-linked"],
+    queryFn: () => fetchNewsFeed({ limit: 20, origin: "rss", companyLinked: true }),
     staleTime: 30 * 60 * 1000,
     refetchInterval: 30 * 60 * 1000,
   });
 
-  const items = data?.items && data.items.length > 0 ? data.items : placeholderItems;
-  const toNewsSlug = (item: NewsItem) => encodeURIComponent(item.link || item.title);
+  const items = useMemo(() => {
+    const live = (data?.items || []).filter(isCompanyLinkedNews).filter((item) => item.ticker);
+    if (live.length > 0) return live.slice(0, 8);
+    if (!isLoading) return placeholderItems;
+    return [];
+  }, [data?.items, isLoading]);
 
   return (
     <div className="border border-border bg-surface flex flex-col min-h-0 lg:h-full">
@@ -73,47 +182,41 @@ const NewsFeed = () => {
         <div className="flex items-center gap-2">
           <Newspaper className="w-3.5 h-3.5" />
           <h3 className="font-display text-sm font-bold tracking-tight">News releases</h3>
-          <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">· AI summarized</span>
+          <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">· Summarized</span>
         </div>
-        <Link to="/news" className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground hover:text-foreground">
+        <Link
+          to="/news"
+          className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground hover:text-foreground"
+        >
           All →
         </Link>
       </div>
       <ul className="divide-y divide-border flex-1 overflow-auto min-h-0">
-        {items.slice(0, 20).map((item, i) => {
-          const sev = getSeverity(item.sentiment, item.title);
-          const filingType = getFilingType(item.title);
+        {items.map((item, i) => {
+          const hero = item as HeroNewsItem;
+          const severity = hero.severity || getNewsSeverity(item.sentiment, item.title);
+          const filingType = hero.filingType || getNewsFilingType(item.title);
+          const summary = cleanNewsSummary(item.summary) || item.title;
           return (
-            <li key={i} className="hover:bg-background/60">
-              <Link to={`/news/${toNewsSlug(item)}`} className="block px-3 py-2.5">
-                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <span className={`font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 font-bold ${sev.style}`}>
-                    {sev.label}
-                  </span>
-                  <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground border border-border px-1 py-0.5">
-                    {filingType}
-                  </span>
-                  {item.ticker && (
-                    <span className="font-mono text-[10px] font-bold">{item.ticker}</span>
-                  )}
-                  <span className="ml-auto font-mono text-[9px] text-muted-foreground inline-flex items-center gap-1">
-                    <Clock className="w-2.5 h-2.5" />
-                    {item.timeAgo}
-                  </span>
-                </div>
-                <p className="text-[13px] leading-snug font-medium line-clamp-2 break-words">
-                  {cleanSummary(item.summary) || item.title}
-                </p>
-              </Link>
-            </li>
+            <NewsReleaseItem
+              key={item.link || item.id || i}
+              href={newsItemHref(item)}
+              ticker={item.ticker!}
+              exchange={item.exchange}
+              company={item.company}
+              timeAgo={newsDisplayTime(item)}
+              severity={severity}
+              filingType={filingType}
+              summary={summary}
+            />
           );
         })}
-        <li>
+        <li className="p-3 bg-muted/20">
           <Link
             to="/news"
-            className="block px-4 py-2.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground hover:text-foreground hover:bg-background/60 transition-colors text-center"
+            className="flex items-center justify-center gap-1.5 w-full h-9 bg-foreground text-background font-mono text-[11px] uppercase tracking-widest font-bold hover:opacity-90 transition-opacity"
           >
-            See more news →
+            View all releases <ArrowUpRight className="w-3.5 h-3.5" />
           </Link>
         </li>
       </ul>

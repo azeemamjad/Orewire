@@ -339,6 +339,21 @@ async function migrate() {
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_relay_task_events_created ON relay_task_events(created_at DESC)`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_relay_task_events_slug ON relay_task_events(task_slug)`);
 
+  // AI-generated situational brief per company (company detail page).
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS company_snapshots (
+      company_id    INTEGER PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+      body          TEXT NOT NULL,
+      paragraphs    JSONB NOT NULL DEFAULT '[]',
+      key_points    JSONB NOT NULL DEFAULT '[]',
+      sources_meta  JSONB NOT NULL DEFAULT '{}',
+      input_hash    TEXT,
+      model         TEXT,
+      generated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_company_snapshots_generated ON company_snapshots(generated_at DESC)`);
+
   console.log('[DB] All migrations complete');
 }
 

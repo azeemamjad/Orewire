@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { ArrowUpRight, Clock, Sparkles } from "lucide-react";
 import { fetchNewsFeed, type NewsItem, type Verdict } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
+import { newsDisplayTime } from "@/components/site/news-release-utils";
 
 const REFETCH_MS = 30 * 60 * 1000;
 
@@ -96,7 +97,7 @@ const ReleaseCard = ({ item }: { item: NewsItem }) => {
         )}
         <span className="ml-auto font-mono text-[10px] text-muted-foreground inline-flex items-center gap-1 shrink-0">
           <Clock className="w-2.5 h-2.5" />
-          {item.timeAgo}
+          {newsDisplayTime(item)}
         </span>
       </div>
       <p className="text-[13px] leading-snug text-foreground/85 pl-0.5 break-words line-clamp-2">
@@ -112,13 +113,16 @@ const NewsReleases = () => {
   const [filter, setFilter] = useState<FilterValue>("All");
 
   const { data } = useQuery({
-    queryKey: ["news-releases-section"],
-    queryFn: () => fetchNewsFeed({ page: 1, limit: 50, origin: "rss" }),
+    queryKey: ["news-releases-section", "company-linked"],
+    queryFn: () => fetchNewsFeed({ page: 1, limit: 50, origin: "rss", companyLinked: true }),
     staleTime: REFETCH_MS,
     refetchInterval: REFETCH_MS,
   });
 
-  const items = data?.items && data.items.length > 0 ? data.items : placeholderReleases;
+  const items =
+    data?.items && data.items.length > 0
+      ? data.items.filter((item) => item.companyId != null || item.ticker)
+      : placeholderReleases;
 
   const filtered = useMemo(
     () => (filter === "All" ? items : items.filter((item) => getVerdict(item) === filter)),

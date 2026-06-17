@@ -398,6 +398,23 @@ export async function fetchCompanyInsiders(companyId: number): Promise<CompanyIn
   return res.json();
 }
 
+export interface CompanySnapshot {
+  paragraphs: string[];
+  keyPoints: string[];
+  body?: string;
+  generatedAt: string;
+  sourcesMeta?: Record<string, unknown>;
+  stale?: boolean;
+  model?: string | null;
+}
+
+export async function fetchCompanySnapshot(companyId: number): Promise<CompanySnapshot | null> {
+  const res = await fetch(`${API_BASE}/companies/${companyId}/snapshot`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.snapshot ?? null;
+}
+
 export interface CompanyPerson {
   id: number;
   name: string;
@@ -1050,6 +1067,7 @@ export async function postIndexDiscussion(indexKey: string, body: string): Promi
 // ---------------------------------------------------------------------------
 
 export interface NewsItem {
+  id?: number;
   title: string;
   summary: string;
   description?: string | null;
@@ -1060,6 +1078,9 @@ export interface NewsItem {
   commodity: string | null;
   sentiment: 'bullish' | 'bearish' | 'neutral';
   ticker?: string | null;
+  companyId?: number | null;
+  company?: string | null;
+  exchange?: string | null;
 }
 
 export interface NewsFeedResponse {
@@ -1074,11 +1095,18 @@ export interface NewsFeedResponse {
   };
 }
 
-export async function fetchNewsFeed(params?: { page?: number; limit?: number; origin?: 'google' | 'rss' }): Promise<NewsFeedResponse> {
+export async function fetchNewsFeed(params?: {
+  page?: number;
+  limit?: number;
+  origin?: 'google' | 'rss';
+  /** Only items matched to a company in our database */
+  companyLinked?: boolean;
+}): Promise<NewsFeedResponse> {
   const qs = new URLSearchParams();
   if (params?.page) qs.set("page", String(params.page));
   if (params?.limit) qs.set("limit", String(params.limit));
   if (params?.origin) qs.set("origin", params.origin);
+  if (params?.companyLinked) qs.set("companyLinked", "1");
   const query = qs.toString();
   const res = await fetch(`${API_BASE}/news/feed${query ? `?${query}` : ""}`);
   if (!res.ok) {

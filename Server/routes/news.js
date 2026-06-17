@@ -33,16 +33,30 @@ const FETCH_INTERVAL = 5 * 60 * 1000;
 setTimeout(() => fetchAndStoreNews(), 5000);
 setInterval(() => fetchAndStoreNews(), FETCH_INTERVAL);
 
-function timeAgo(dateStr) {
+/** e.g. Apr 24 · 7:31 AM (exchange-local style timestamp for news rows) */
+function formatPubDateTime(dateStr) {
   if (!dateStr) return '';
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return '';
+  const tz = process.env.TIMEZONE || 'America/Toronto';
+  const datePart = d.toLocaleDateString('en-US', { timeZone: tz, month: 'short', day: 'numeric' });
+  const timePart = d.toLocaleTimeString('en-US', {
+    timeZone: tz,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+  return `${datePart} · ${timePart}`;
+}
+
+function normalizeExchange(ex) {
+  if (!ex) return null;
+  const upper = String(ex).toUpperCase();
+  if (upper === 'TSX') return 'TSX';
+  if (upper.includes('TSXV') || upper.includes('TSX-V')) return 'TSX-V';
+  if (upper.includes('CSE')) return 'CSE';
+  if (upper.includes('ASX')) return 'ASX';
+  return ex;
 }
 
 function formatRow(row) {
@@ -54,10 +68,13 @@ function formatRow(row) {
     source: row.source || 'News',
     link: row.link,
     pubDate: row.pub_date,
-    timeAgo: timeAgo(row.pub_date),
+    timeAgo: formatPubDateTime(row.pub_date),
     commodity: row.commodity || null,
     sentiment: row.sentiment || 'neutral',
     ticker: row.ticker || null,
+    companyId: row.company_id || null,
+    company: row.company_name || null,
+    exchange: normalizeExchange(row.company_exchange),
   };
 }
 
@@ -72,23 +89,38 @@ router.get('/feed', async (req, res) => {
     // origin filter: 'google' = Market News (Google News), 'rss' = News Releases
     // (scheduled feeds). Anything else returns the full feed.
     const origin = (req.query.origin || '').toString().trim().toLowerCase();
+    const companyLinked = ['1', 'true', 'yes'].includes(
+      String(req.query.companyLinked || '').toLowerCase(),
+    );
     let originClause = '';
     const filterParams = [];
     if (origin === 'google') {
-      originClause = ` AND origin = $1`;
+      originClause = ` AND n.origin = $1`;
       filterParams.push('google');
     } else if (origin === 'rss') {
       // COALESCE so legacy rows with a NULL origin still count as feed releases.
-      originClause = ` AND COALESCE(origin, 'rss') <> $1`;
+      originClause = ` AND COALESCE(n.origin, 'rss') <> $1`;
       filterParams.push('google');
     }
 
+    const companyClause = companyLinked ? ' AND n.company_id IS NOT NULL' : '';
+
+    const baseFrom = `FROM news n LEFT JOIN companies c ON c.id = n.company_id`;
+    const baseWhere = `WHERE n.relevant = TRUE${originClause}${companyClause}`;
+
     const [itemsResult, countResult] = await Promise.all([
       db.query(
-        `SELECT * FROM news WHERE relevant = TRUE${originClause} ORDER BY pub_date DESC LIMIT $${filterParams.length + 1} OFFSET $${filterParams.length + 2}`,
+        `SELECT n.*, c.name AS company_name, c.exchange AS company_exchange
+         ${baseFrom}
+         ${baseWhere}
+         ORDER BY n.pub_date DESC
+         LIMIT $${filterParams.length + 1} OFFSET $${filterParams.length + 2}`,
         [...filterParams, limit, offset],
       ),
-      db.query(`SELECT COUNT(*)::int AS total FROM news WHERE relevant = TRUE${originClause}`, filterParams),
+      db.query(
+        `SELECT COUNT(*)::int AS total ${baseFrom} ${baseWhere}`,
+        filterParams,
+      ),
     ]);
 
     const total = countResult.rows[0]?.total || 0;

@@ -561,6 +561,25 @@ router.delete('/:id/people/:personId', async (req, res) => {
   }
 });
 
+// GET /api/companies/:id/snapshot — AI situational brief (cached)
+router.get('/:id/snapshot', async (req, res) => {
+  try {
+    const companyId = parseInt(req.params.id, 10);
+    if (!companyId) return res.status(400).json({ error: 'Invalid company id' });
+    const exists = await db.query('SELECT 1 FROM companies WHERE id = $1', [companyId]);
+    if (exists.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+
+    const force = req.query.refresh === '1' || req.query.refresh === 'true';
+    const { getCompanySnapshot } = require('../lib/company-snapshot');
+    const snapshot = await getCompanySnapshot(companyId, { force });
+    if (!snapshot) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, snapshot });
+  } catch (err) {
+    console.error('Company snapshot failed:', err?.message || err);
+    res.status(503).json({ error: 'Snapshot unavailable' });
+  }
+});
+
 // GET /api/companies/:id/insiders — ownership table + transaction feed.
 // Free (anonymous) users see top 5 owners + latest 3 transactions; registered
 // users (req.user set) see the full history.
