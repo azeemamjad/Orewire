@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Filter, Search, Sparkles, Star, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Filter, Star, X } from "lucide-react";
 import Nav from "@/components/site/Nav";
 import MarketStrip from "@/components/site/MarketStrip";
 import MorningBrief from "@/components/site/MorningBrief";
 import Footer from "@/components/site/Footer";
+import HeroSearchField from "@/components/site/HeroSearchField";
 import { useAuth } from "@/hooks/use-auth";
 import {
   fetchCompanies,
@@ -34,7 +35,7 @@ const EMPTY: Selected = {
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
 
 function fmtMcap(n: number | null | undefined): string {
-  if (n == null) return "—";
+  if (n == null) return "-";
   if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
   if (n >= 1e6) return `$${Math.round(n / 1e6)}M`;
   if (n >= 1e3) return `$${Math.round(n / 1e3)}K`;
@@ -42,23 +43,23 @@ function fmtMcap(n: number | null | undefined): string {
 }
 
 function fmtPct(n: number | null | undefined): string {
-  if (n == null) return "—";
+  if (n == null) return "-";
   return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
 }
 
 function fmtPrice(n: number | null | undefined): string {
-  if (n == null) return "—";
+  if (n == null) return "-";
   return `$${n.toFixed(Math.abs(n) < 1 ? 3 : 2)}`;
 }
 
 function fmtChgAbs(n: number | null | undefined, price: number | null | undefined): string {
-  if (n == null) return "—";
+  if (n == null) return "-";
   const d = price != null && Math.abs(price) < 1 ? 3 : 2;
   return `${n >= 0 ? "+" : "-"}$${Math.abs(n).toFixed(d)}`;
 }
 
 function fmtVol(n: number | null | undefined): string {
-  if (n == null) return "—";
+  if (n == null) return "-";
   if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
   if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
   if (n >= 1e3) return `${Math.round(n / 1e3)}K`;
@@ -173,31 +174,17 @@ const Companies = () => {
             </div>
           </div>
 
-          <form
-            className="flex flex-col sm:flex-row gap-2"
+          <HeroSearchField
+            value={search}
+            onChange={setSearch}
             onSubmit={(e) => {
               e.preventDefault();
               setDebouncedSearch(search.trim());
               setPage(1);
               scrollToTop();
             }}
-          >
-            <div className="relative flex-1">
-              <Sparkles className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-accent" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={`Try: "gold companies in Africa" or "lithium on ASX"`}
-                className="w-full pl-10 pr-10 h-12 text-base bg-background border border-foreground/20 outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              />
-            </div>
-            <button
-              type="submit"
-              className="inline-flex items-center justify-center gap-2 h-12 px-6 bg-accent text-accent-foreground hover:bg-accent/90 font-semibold text-sm transition-colors"
-            >
-              <Search className="w-4 h-4" /> Search
-            </button>
-          </form>
+            placeholder='Search ticker, company, or ask: "gold companies in Africa"'
+          />
         </div>
       </section>
 
@@ -314,7 +301,7 @@ const FilterGroup = ({ title, options, value, onToggle }: FilterGroupProps) => (
   </div>
 );
 
-// Watchlist star — toggles without navigating the row's parent Link. Unauthed
+// Watchlist star - toggles without navigating the row's parent Link. Unauthed
 // clicks bounce to the register page (matches the rest of the site's gating).
 const WatchStar = ({ companyId }: { companyId: number }) => {
   const { isAuthenticated } = useAuth();
@@ -404,10 +391,10 @@ const CompanyRow = ({ c }: { c: Company }) => {
       className={`group ${COL} gap-y-1 gap-x-3 px-4 py-3.5 border-b border-border last:border-b-0 hover:bg-muted/40 transition-colors items-center`}
     >
       {/* Ticker */}
-      <span className="font-mono font-bold text-sm group-hover:underline">{c.ticker || "—"}</span>
+      <span className="font-mono font-bold text-sm group-hover:underline">{c.ticker || "-"}</span>
 
       {/* Exch */}
-      <span className="font-mono text-[10px] text-muted-foreground uppercase">{exLabel || "—"}</span>
+      <span className="font-mono text-[10px] text-muted-foreground uppercase">{exLabel || "-"}</span>
 
       {/* Company */}
       <div className="min-w-0">
@@ -425,7 +412,7 @@ const CompanyRow = ({ c }: { c: Company }) => {
       {/* Chg % */}
       <span className={`md:text-right font-mono text-sm font-semibold inline-flex md:justify-end items-center gap-0.5 ${moveColor}`}>
         {change == null ? (
-          "—"
+          "-"
         ) : (
           <>
             {up ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
@@ -443,7 +430,7 @@ const CompanyRow = ({ c }: { c: Company }) => {
       {/* Tags */}
       <div className="flex flex-wrap gap-1">
         {commodities.length === 0 && geo.length === 0 ? (
-          <span className="text-muted-foreground text-xs">—</span>
+          <span className="text-muted-foreground text-xs">-</span>
         ) : (
           <>
             {commodities.slice(0, 3).map((cm) => (

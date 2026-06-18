@@ -32,7 +32,7 @@ const MorningBrief = () => {
           </span>
           <span className="truncate">
             <span className="font-semibold text-foreground">Morning Brief</span>
-            <span className="text-muted-foreground hidden sm:inline"> — daily summary in your inbox</span>
+            <span className="text-muted-foreground hidden sm:inline">, daily summary in your inbox</span>
           </span>
         </div>
         <form

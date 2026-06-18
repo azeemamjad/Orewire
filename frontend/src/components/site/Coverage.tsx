@@ -2,7 +2,7 @@ const rows = [
   { id: "001", region: "Canada", venue: "TSX-V", filings: "NI 43-101, drill results, MD&A, placements, AIF, material change", count: "1,612", status: "Live" },
   { id: "002", region: "Canada", venue: "CSE", filings: "Drill results, financings, technical disclosures", count: "428", status: "Live" },
   { id: "003", region: "Australia", venue: "ASX", filings: "JORC, exploration results, Appendix 3B, quarterly activities", count: "377", status: "Phase 2" },
-  { id: "004", region: "Global", venue: "CRIRSCO standards", filings: "NI 43-101 + JORC translated under one taxonomy", count: "—", status: "Built-in" },
+  { id: "004", region: "Global", venue: "CRIRSCO standards", filings: "NI 43-101 + JORC translated under one taxonomy", count: "-", status: "Built-in" },
 ];
 
 const Coverage = () => (

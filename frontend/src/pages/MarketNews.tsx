@@ -12,7 +12,7 @@ const placeholderNews: NewsItem[] = [
   { title: "Gold tops $2,420/oz as Fed signals slower rate path; miners rally", summary: "", source: "Reuters", link: "https://www.reuters.com/markets/commodities/", pubDate: "", timeAgo: "18m ago", commodity: "Gold", sentiment: "bullish" },
   { title: "Copper hits 10-week high on China stimulus, LME stocks slide", summary: "", source: "Bloomberg", link: "https://www.bloomberg.com/markets/commodities", pubDate: "", timeAgo: "42m ago", commodity: "Copper", sentiment: "bullish" },
   { title: "Uranium spot prices climb back above $92/lb as utilities return to market", summary: "", source: "Kitco", link: "https://www.kitco.com/news/", pubDate: "", timeAgo: "1h ago", commodity: "Uranium", sentiment: "bullish" },
-  { title: "Lithium glut deepens — Pilbara Minerals warns of further price weakness", summary: "", source: "Mining.com", link: "https://www.mining.com/", pubDate: "", timeAgo: "2h ago", commodity: "Lithium", sentiment: "bearish" },
+  { title: "Lithium glut deepens - Pilbara Minerals warns of further price weakness", summary: "", source: "Mining.com", link: "https://www.mining.com/", pubDate: "", timeAgo: "2h ago", commodity: "Lithium", sentiment: "bearish" },
   { title: "Newmont raises 2026 guidance after record Q1 free cash flow", summary: "", source: "Northern Miner", link: "https://www.northernminer.com/", pubDate: "", timeAgo: "3h ago", commodity: "Gold", sentiment: "bullish" },
   { title: "BHP, Rio Tinto pause exploration in Pilbara on heritage review", summary: "", source: "AFR", link: "https://www.afr.com/companies/mining", pubDate: "", timeAgo: "4h ago", commodity: "Iron Ore", sentiment: "neutral" },
 ];

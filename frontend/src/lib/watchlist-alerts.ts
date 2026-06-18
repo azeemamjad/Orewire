@@ -40,7 +40,7 @@ export function bumpItemAlertWatermark() {
 }
 
 function fmtTicker(ticker: string | null | undefined, exchange: string | null | undefined): string {
-  const tk = ticker || "—";
+  const tk = ticker || "-";
   const ex = exchange ? exchange.toUpperCase() : "";
   return ex ? `${ex}:${tk}` : tk;
 }
@@ -91,7 +91,7 @@ function alertToNotification(alert: WatchlistAlert): { id: string; title: string
   return {
     id: alert.id,
     title: `Insider trade · ${label}`,
-    body: `${who} — ${tx}${shares}`,
+    body: `${who} - ${tx}${shares}`,
     href: alert.href,
     createdAt: alert.at,
   };
@@ -126,7 +126,7 @@ export async function pollItemAlerts(): Promise<void> {
     saveSeen(seen);
     setWatermark(serverTime);
   } catch {
-    /* network / auth — retry on next interval */
+    /* network / auth - retry on next interval */
   } finally {
     polling = false;
   }

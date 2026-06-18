@@ -62,9 +62,9 @@ async function loadDashboard() {
     tbody.innerHTML = recent.map(f => `
       <tr>
         <td>${esc(f.company_name)}</td>
-        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(f.pdf_filename)}">${esc(f.pdf_filename ?? '—')}</td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(f.pdf_filename)}">${esc(f.pdf_filename ?? '-')}</td>
         <td>${verdictBadge(f.verdict)}</td>
-        <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);" title="${esc(f.ticker_summary)}">${esc(f.ticker_summary ?? '—')}</td>
+        <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);" title="${esc(f.ticker_summary)}">${esc(f.ticker_summary ?? '-')}</td>
         <td><button class="btn btn-ghost btn-sm" onclick="showFiling(${f.id})">View</button></td>
       </tr>`).join('');
   } catch { /* ignore */ }
@@ -132,10 +132,10 @@ async function loadCompanies() {
       return `
       <tr>
         <td><strong>${esc(c.name)}</strong></td>
-        <td><span class="badge badge-pending">${esc(c.exchange ?? '—')}</span></td>
-        <td>${esc(c.ticker ?? '—')}</td>
-        <td>${esc(c.sedar_ticker ?? '—')}</td>
-        <td>${c.market_cap != null ? Number(c.market_cap).toLocaleString() : '—'}</td>
+        <td><span class="badge badge-pending">${esc(c.exchange ?? '-')}</span></td>
+        <td>${esc(c.ticker ?? '-')}</td>
+        <td>${esc(c.sedar_ticker ?? '-')}</td>
+        <td>${c.market_cap != null ? Number(c.market_cap).toLocaleString() : '-'}</td>
         <td style="display:flex;gap:4px;flex-wrap:wrap;">
           ${badge(has.desc, 'Desc')}${badge(has.web, 'Web')}${badge(has.hq, 'HQ')}${badge(has.ta, 'TA')}${badge(has.ppl, 'People')}
         </td>
@@ -153,7 +153,7 @@ async function loadCompanies() {
 }
 
 // Pull the company profile (description / website / HQ / transfer agent / officers)
-// from its exchange listing — jumps to the Pipeline tab and runs the scrape for this ticker.
+// from its exchange listing - jumps to the Pipeline tab and runs the scrape for this ticker.
 function quickProfile(ticker) {
   if (document.body.dataset.page !== 'pipeline') {
     window.location.href = `/admin/pipeline.html?pp_ticker=${encodeURIComponent(ticker)}`;
@@ -212,7 +212,7 @@ async function openEditProfile(companyId) {
     if (r.error) throw new Error(r.error);
     _editingPeople = r.people || [];
     document.getElementById('profile-modal-title').textContent =
-      `Edit Profile — ${r.company.name} (${r.company.exchange || ''} ${r.company.ticker || ''})`;
+      `Edit Profile - ${r.company.name} (${r.company.exchange || ''} ${r.company.ticker || ''})`;
     renderEditProfileForm(r.company);
   } catch (e) {
     body.innerHTML = `<p style="color:var(--danger);">Error: ${esc(e.message)}</p>`;
@@ -285,7 +285,7 @@ function renderEditProfileForm(company) {
 function renderPeopleRows() {
   const tbody = document.getElementById('pf-people-body');
   if (_editingPeople.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No managers or directors yet — click "+ Add person".</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No managers or directors yet - click "+ Add person".</td></tr>';
     return;
   }
   tbody.innerHTML = _editingPeople.map((p, idx) => personRowHtml(p, idx)).join('');
@@ -403,10 +403,10 @@ async function loadFilings() {
     tbody.innerHTML = rows.map(f => `
       <tr>
         <td><strong>${esc(f.company_name)}</strong></td>
-        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(f.pdf_filename)}">${esc(f.pdf_filename ?? '—')}</td>
-        <td>${esc(f.filing_type ?? '—')}</td>
+        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(f.pdf_filename)}">${esc(f.pdf_filename ?? '-')}</td>
+        <td>${esc(f.filing_type ?? '-')}</td>
         <td>${verdictBadge(f.verdict)}</td>
-        <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);" title="${esc(f.ticker_summary)}">${esc(f.ticker_summary ?? '—')}</td>
+        <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);" title="${esc(f.ticker_summary)}">${esc(f.ticker_summary ?? '-')}</td>
         <td><span class="badge ${f.analyzed ? 'badge-analyzed' : 'badge-pending'}">${f.analyzed ? 'Analyzed' : 'Pending'}</span></td>
         <td><button class="btn btn-ghost btn-sm" onclick="showFiling(${f.id})">View</button></td>
       </tr>`).join('');
@@ -424,7 +424,7 @@ async function showFiling(id) {
     const f = await fetch(`${API}/api/filings/${id}`).then(r => r.json());
     const a = f.analysis || {};
 
-    document.getElementById('modal-title').textContent = f.company_name + ' — ' + (f.pdf_filename ?? '');
+    document.getElementById('modal-title').textContent = f.company_name + ' - ' + (f.pdf_filename ?? '');
 
     const facts = (() => {
       try { return JSON.parse(a.key_facts || '[]'); } catch { return []; }
@@ -443,11 +443,11 @@ async function showFiling(id) {
       </div>
       <div class="detail-row">
         <div class="detail-label">Ticker Summary</div>
-        <div class="detail-value">${esc(a.ticker_summary ?? '—')}</div>
+        <div class="detail-value">${esc(a.ticker_summary ?? '-')}</div>
       </div>
       <div class="detail-row">
         <div class="detail-label">Summary</div>
-        <div class="detail-value" style="line-height:1.6;">${esc(a.summary ?? '—')}</div>
+        <div class="detail-value" style="line-height:1.6;">${esc(a.summary ?? '-')}</div>
       </div>
       ${facts.length ? `
       <div class="detail-row">
@@ -456,7 +456,7 @@ async function showFiling(id) {
       </div>` : ''}
       <div class="detail-row">
         <div class="detail-label">Context</div>
-        <div class="detail-value" style="color:var(--muted);">${esc(a.context ?? '—')}</div>
+        <div class="detail-value" style="color:var(--muted);">${esc(a.context ?? '-')}</div>
       </div>
       ${a.grade_commentary ? `
       <div class="detail-row">
@@ -465,7 +465,7 @@ async function showFiling(id) {
       </div>` : ''}
       <div class="detail-row">
         <div class="detail-label">Watch For</div>
-        <div class="detail-value" style="color:var(--watch);">${esc(a.what_to_watch ?? '—')}</div>
+        <div class="detail-value" style="color:var(--watch);">${esc(a.what_to_watch ?? '-')}</div>
       </div>
       ${a.cash_position != null ? `
       <div class="detail-row">
@@ -475,7 +475,7 @@ async function showFiling(id) {
       ${res ? `
       <div class="detail-row">
         <div class="detail-label">Resource Est.</div>
-        <div class="detail-value">${esc(res.category ?? '')} ${esc(res.tonnes_mt != null ? res.tonnes_mt + ' Mt' : '')} @ ${esc(res.grade ?? '')} — ${esc(res.contained_metal ?? '')}</div>
+        <div class="detail-value">${esc(res.category ?? '')} ${esc(res.tonnes_mt != null ? res.tonnes_mt + ' Mt' : '')} @ ${esc(res.grade ?? '')} - ${esc(res.contained_metal ?? '')}</div>
       </div>` : ''}
       ${insiders && insiders.length ? `
       <div class="detail-row">
@@ -578,7 +578,7 @@ function switchPreviewSheet(sheet) {
         </div>
       </div>`;
 
-    // AI result is advisory only — never block the import
+    // AI result is advisory only - never block the import
     document.getElementById('import-btn').disabled = false;
     document.getElementById('import-btn').title = '';
   } else {
@@ -726,7 +726,7 @@ async function previewTsx() {
     let html = '';
     for (const [sheet, p] of Object.entries(r.preview)) {
       html += `<div style="margin-bottom:16px;">
-        <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:6px;">${esc(sheet)} — ${p.rowCount} rows</div>
+        <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:6px;">${esc(sheet)} - ${p.rowCount} rows</div>
         <div class="table-wrap" style="max-height:160px;overflow:auto;">
           <table>
             <thead><tr>${p.columns.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead>
@@ -1048,7 +1048,7 @@ function esc(str) {
 }
 
 function verdictBadge(v) {
-  if (!v) return '<span class="badge badge-pending">—</span>';
+  if (!v) return '<span class="badge badge-pending">-</span>';
   const cls = v === 'noteworthy' ? 'badge-noteworthy' : v === 'watch' ? 'badge-watch' : 'badge-routine';
   return `<span class="badge ${cls}">${esc(v)}</span>`;
 }
@@ -1235,7 +1235,7 @@ function renderPipelineStatus(s) {
   const stopB  = document.getElementById('pl-stop-btn');
 
   dot.className = `pl-hero-dot status-dot ${s.status}`;
-  label.textContent = s.status === 'running' ? (s.currentPhase ? `Running — ${s.currentPhase}` : 'Running') : 'Idle';
+  label.textContent = s.status === 'running' ? (s.currentPhase ? `Running - ${s.currentPhase}` : 'Running') : 'Idle';
 
   if (s.status === 'running') {
     const p = s.progress || {};
@@ -1265,10 +1265,10 @@ function renderPipelineStatus(s) {
 
   // Stats
   const p = s.progress || {};
-  document.getElementById('pl-stat-total').textContent = p.total  ?? '—';
-  document.getElementById('pl-stat-done').textContent  = p.done   ?? '—';
-  document.getElementById('pl-stat-err').textContent   = p.errors ?? '—';
-  document.getElementById('pl-stat-phase').textContent = s.currentPhase || '—';
+  document.getElementById('pl-stat-total').textContent = p.total  ?? '-';
+  document.getElementById('pl-stat-done').textContent  = p.done   ?? '-';
+  document.getElementById('pl-stat-err').textContent   = p.errors ?? '-';
+  document.getElementById('pl-stat-phase').textContent = s.currentPhase || '-';
 
   // AI stats
   const ap = s.analysisProgress || {};
@@ -1276,16 +1276,16 @@ function renderPipelineStatus(s) {
   const aiDone  = ap.done  || 0;
   const aiErr   = ap.errors || 0;
   const aiPct   = aiTotal > 0 ? Math.round(aiDone / aiTotal * 100) : 0;
-  document.getElementById('pl-stat-ai-total').textContent = aiTotal || '—';
-  document.getElementById('pl-stat-ai-done').textContent  = aiDone  || '—';
-  document.getElementById('pl-stat-ai-err').textContent   = aiErr   || '—';
-  document.getElementById('pl-stat-ai-pct').textContent  = aiTotal > 0 ? `${aiPct}%` : '—';
+  document.getElementById('pl-stat-ai-total').textContent = aiTotal || '-';
+  document.getElementById('pl-stat-ai-done').textContent  = aiDone  || '-';
+  document.getElementById('pl-stat-ai-err').textContent   = aiErr   || '-';
+  document.getElementById('pl-stat-ai-pct').textContent  = aiTotal > 0 ? `${aiPct}%` : '-';
 
   // Cron status
   const cronEl = document.getElementById('pl-cron-status');
   if (cronEl) {
     if (s.cronEnabled) {
-      cronEl.innerHTML = `<span style="color:var(--success);">● Enabled</span> — <span style="color:var(--muted);">${esc(s.scheduleDescription || s.schedule)}</span>`;
+      cronEl.innerHTML = `<span style="color:var(--success);">● Enabled</span> - <span style="color:var(--muted);">${esc(s.scheduleDescription || s.schedule)}</span>`;
     } else {
       cronEl.innerHTML = `<span style="color:var(--muted);">Disabled</span>`;
     }
@@ -1294,7 +1294,7 @@ function renderPipelineStatus(s) {
   const asxCronEl = document.getElementById('pl-asx-cron-status');
   if (asxCronEl) {
     if (s.cronAsxEnabled) {
-      asxCronEl.innerHTML = `<span style="color:var(--success);">● Enabled</span> — <span style="color:var(--muted);">${esc(s.asxScheduleDescription || s.asxSchedule)}</span>`;
+      asxCronEl.innerHTML = `<span style="color:var(--success);">● Enabled</span> - <span style="color:var(--muted);">${esc(s.asxScheduleDescription || s.asxSchedule)}</span>`;
     } else {
       asxCronEl.innerHTML = `<span style="color:var(--muted);">Disabled</span>`;
     }
@@ -1303,7 +1303,7 @@ function renderPipelineStatus(s) {
   const newsCronEl = document.getElementById('pl-news-cron-status');
   if (newsCronEl) {
     if (s.newsEnabled) {
-      newsCronEl.innerHTML = `<span style="color:var(--success);">● Enabled</span> — ${esc(s.newsScheduleDescription || s.newsSchedule)}${s.newsRunning ? ' <span style="color:var(--accent);">(running)</span>' : ''}`;
+      newsCronEl.innerHTML = `<span style="color:var(--success);">● Enabled</span> - ${esc(s.newsScheduleDescription || s.newsSchedule)}${s.newsRunning ? ' <span style="color:var(--accent);">(running)</span>' : ''}`;
     } else {
       newsCronEl.innerHTML = `<span style="color:var(--muted);">Disabled</span>`;
     }
@@ -1312,14 +1312,14 @@ function renderPipelineStatus(s) {
   const profCronEl = document.getElementById('pl-prof-cron-status');
   if (profCronEl) {
     profCronEl.innerHTML = s.profilesEnabled
-      ? `<span style="color:var(--success);">● Enabled</span> — ${esc(s.profilesScheduleDescription || s.profilesSchedule)}`
+      ? `<span style="color:var(--success);">● Enabled</span> - ${esc(s.profilesScheduleDescription || s.profilesSchedule)}`
       : `<span style="color:var(--muted);">Disabled</span>`;
   }
 
   const seedCronEl = document.getElementById('pl-seed-cron-status');
   if (seedCronEl) {
     seedCronEl.innerHTML = s.seederEnabled
-      ? `<span style="color:var(--success);">● Enabled</span> — ${esc(s.seederScheduleDescription || s.seederSchedule)}`
+      ? `<span style="color:var(--success);">● Enabled</span> - ${esc(s.seederScheduleDescription || s.seederSchedule)}`
       : `<span style="color:var(--muted);">Disabled</span>`;
   }
 }
@@ -1366,7 +1366,7 @@ async function pipelineReloadLogs() {
     }
     _plLogOffset = data.total || 0;
   } catch {
-    renderPlLogEmpty('Could not load logs — check that the server is running.');
+    renderPlLogEmpty('Could not load logs - check that the server is running.');
   }
 }
 
@@ -1580,7 +1580,7 @@ async function transferAgentsStart() {
     }).then((x) => x.json());
     if (r.error) {
       if (r.running) {
-        toast('Already running — switched to Live log', 'ok');
+        toast('Already running - switched to Live log', 'ok');
         _plLogSource = 'transfer-agents';
         const sel = document.getElementById('pl-log-source');
         if (sel) sel.value = 'transfer-agents';
@@ -1664,14 +1664,14 @@ async function refreshSystemMonitor() {
     const data = await fetch(`${API}/api/system/processes`).then((r) => r.json());
     if (data.error) throw new Error(data.error);
 
-    document.getElementById('sys-ram-used').textContent = `${data.host?.ramUsedPct ?? '—'}%`;
-    document.getElementById('sys-ram-sub').textContent = `${data.host?.ramFree ?? '—'} free of ${data.host?.ramTotal ?? '—'}`;
-    document.getElementById('sys-server-ram').textContent = `${data.server?.ramMB ?? '—'} MB`;
-    document.getElementById('sys-server-uptime').textContent = `Uptime ${data.server?.uptime ?? '—'} · ${data.logCount ?? 0} log lines`;
-    document.getElementById('sys-cpus').textContent = data.host?.cpus ?? '—';
-    document.getElementById('sys-load').textContent = `Load ${(data.host?.loadAvg || []).join(', ') || '—'}`;
-    document.getElementById('sys-platform').textContent = data.host?.platform ?? '—';
-    document.getElementById('sys-host-uptime').textContent = `Host uptime ${data.host?.uptime ?? '—'}`;
+    document.getElementById('sys-ram-used').textContent = `${data.host?.ramUsedPct ?? '-'}%`;
+    document.getElementById('sys-ram-sub').textContent = `${data.host?.ramFree ?? '-'} free of ${data.host?.ramTotal ?? '-'}`;
+    document.getElementById('sys-server-ram').textContent = `${data.server?.ramMB ?? '-'} MB`;
+    document.getElementById('sys-server-uptime').textContent = `Uptime ${data.server?.uptime ?? '-'} · ${data.logCount ?? 0} log lines`;
+    document.getElementById('sys-cpus').textContent = data.host?.cpus ?? '-';
+    document.getElementById('sys-load').textContent = `Load ${(data.host?.loadAvg || []).join(', ') || '-'}`;
+    document.getElementById('sys-platform').textContent = data.host?.platform ?? '-';
+    document.getElementById('sys-host-uptime').textContent = `Host uptime ${data.host?.uptime ?? '-'}`;
     document.getElementById('sys-updated').textContent = `Updated ${new Date().toLocaleTimeString()}`;
 
     const diskBody = document.getElementById('sys-disk-body');
@@ -1680,7 +1680,7 @@ async function refreshSystemMonitor() {
       diskBody.innerHTML = '<tr class="empty-row"><td colspan="4">No disk stats available</td></tr>';
     } else {
       diskBody.innerHTML = disks.map((d) => `
-        <tr><td>${esc(d.mount)}</td><td>${esc(d.total)}</td><td>${esc(d.free)}</td><td>${d.usedPct != null ? d.usedPct + '%' : '—'}</td></tr>`).join('');
+        <tr><td>${esc(d.mount)}</td><td>${esc(d.total)}</td><td>${esc(d.free)}</td><td>${d.usedPct != null ? d.usedPct + '%' : '-'}</td></tr>`).join('');
     }
 
     const procBody = document.getElementById('sys-proc-body');
@@ -1695,10 +1695,10 @@ async function refreshSystemMonitor() {
         return `<tr>
           <td><strong>${esc(p.label || p.id)}</strong></td>
           <td class="${stCls}">${esc(st)}</td>
-          <td>${p.metrics?.pid ?? p.pid ?? '—'}</td>
-          <td>${p.metrics?.ramMB != null ? p.metrics.ramMB + ' MB' : '—'}</td>
-          <td>${esc(p.metrics?.cpu ?? '—')}</td>
-          <td>${esc(p.runningFor ?? '—')}</td>
+          <td>${p.metrics?.pid ?? p.pid ?? '-'}</td>
+          <td>${p.metrics?.ramMB != null ? p.metrics.ramMB + ' MB' : '-'}</td>
+          <td>${esc(p.metrics?.cpu ?? '-')}</td>
+          <td>${esc(p.runningFor ?? '-')}</td>
           <td>${canStop ? `<button class="btn btn-ghost btn-sm" onclick="stopSystemJob('${esc(p.id)}')">Stop</button>` : ''}
               ${p.id === 'transfer-agents' && st === 'running' ? `<a class="btn btn-ghost btn-sm" href="pipeline.html?tab=logs&amp;log=transfer-agents">Logs</a>` : ''}</td>
         </tr>`;
@@ -1758,7 +1758,7 @@ function renderAddCoPeopleRows() {
   const tbody = document.getElementById('add-co-people-body');
   if (!tbody) return;
   if (_addCoPeople.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Optional — click "+ Add person" to add managers or directors.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Optional - click "+ Add person" to add managers or directors.</td></tr>';
     return;
   }
   tbody.innerHTML = _addCoPeople.map((p, idx) => addCoPersonRowHtml(p, idx)).join('');

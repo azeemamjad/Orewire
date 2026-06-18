@@ -24,9 +24,9 @@ function fmtDateLong(d = new Date()) {
 }
 
 function fmtPrice(price, unit) {
-  if (price == null) return '—';
+  if (price == null) return '-';
   const n = Number(price);
-  if (Number.isNaN(n)) return '—';
+  if (Number.isNaN(n)) return '-';
   if (unit === 'oz' && n >= 100) return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (n >= 10000) return n.toLocaleString('en-US', { maximumFractionDigits: 0 });
   if (n >= 100) return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -36,7 +36,7 @@ function fmtPrice(price, unit) {
 
 function fmtChangeHtml(pct) {
   if (pct == null || Number.isNaN(Number(pct))) {
-    return '<span style="color:#6b6b6b;">—</span>';
+    return '<span style="color:#6b6b6b;">-</span>';
   }
   const n = Number(pct);
   const up = n >= 0;
@@ -126,14 +126,14 @@ function newsRow(n, last) {
   <div style="font-size:13px;color:#3a3a3a;line-height:1.45;">
     <span style="font-family:'SF Mono',Menlo,Consolas,monospace;font-size:11.5px;color:#1a2541;font-weight:600;">${escapeHtml(n.slugLabel)}</span>
     ${n.companyName ? `<span style="color:#6b6b6b;font-size:12px;"> · ${escapeHtml(n.companyName)}</span>` : ''}
-    <span style="color:#3a3a3a;"> — ${escapeHtml(n.line)}</span>
+    <span style="color:#3a3a3a;"> - ${escapeHtml(n.line)}</span>
   </div>
 </td></tr>`;
 }
 
 function routineLines(items) {
   return items.map((f) =>
-    `<div><span style="font-family:'SF Mono',Menlo,Consolas,monospace;color:#1a2541;">${escapeHtml(f.slugLabel)}</span> <span style="color:#6b6b6b;">—</span> ${escapeHtml(f.summaryShort || f.filingType)}.</div>`,
+    `<div><span style="font-family:'SF Mono',Menlo,Consolas,monospace;color:#1a2541;">${escapeHtml(f.slugLabel)}</span> <span style="color:#6b6b6b;">-</span> ${escapeHtml(f.summaryShort || f.filingType)}.</div>`,
   ).join('');
 }
 
@@ -142,8 +142,8 @@ function renderDailyBriefing(data, opts = {}) {
   const dateLong = fmtDateLong();
   const firstName = opts.firstName;
   const preheader = data.watchlistCount > 0
-    ? `Your daily briefing — ${data.watchlistCount} watchlist filing${data.watchlistCount === 1 ? '' : 's'}, ${data.counts.noteworthy} noteworthy today`
-    : `Your daily briefing — ${data.counts.noteworthy} noteworthy filings today`;
+    ? `Your daily briefing - ${data.watchlistCount} watchlist filing${data.watchlistCount === 1 ? '' : 's'}, ${data.counts.noteworthy} noteworthy today`
+    : `Your daily briefing - ${data.counts.noteworthy} noteworthy filings today`;
 
   const commodityRows = quoteRows(
     data.commodities,
@@ -191,7 +191,7 @@ function renderDailyBriefing(data, opts = {}) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="x-apple-disable-message-reformatting">
-<title>Morning Briefing — OreWire</title>
+<title>Morning Briefing | OreWire</title>
 <style>
   @media (max-width: 600px) {
     .container { width: 100% !important; }
@@ -266,7 +266,7 @@ ${routineBlock}
 
 function briefingSubject() {
   const d = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Toronto' });
-  return `Morning Briefing — ${d}`;
+  return `Morning Briefing - ${d}`;
 }
 
 module.exports = {

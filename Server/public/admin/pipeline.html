@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Pipeline — Mining Intel Admin</title>
+<title>Pipeline | Mining Intel Admin</title>
 <link rel="stylesheet" href="/admin/css/admin.css" />
 </head>
 <body data-page="pipeline">
@@ -51,11 +51,11 @@
         </div>
       </div>
       <div class="pl-hero-stats">
-        <div class="pl-chip">Queued <strong id="pl-stat-total">—</strong></div>
-        <div class="pl-chip ok">Done <strong id="pl-stat-done">—</strong></div>
-        <div class="pl-chip err">Errors <strong id="pl-stat-err">—</strong></div>
-        <div class="pl-chip">Phase <strong id="pl-stat-phase">—</strong></div>
-        <div class="pl-chip">AI <strong id="pl-stat-ai-pct">—</strong></div>
+        <div class="pl-chip">Queued <strong id="pl-stat-total">-</strong></div>
+        <div class="pl-chip ok">Done <strong id="pl-stat-done">-</strong></div>
+        <div class="pl-chip err">Errors <strong id="pl-stat-err">-</strong></div>
+        <div class="pl-chip">Phase <strong id="pl-stat-phase">-</strong></div>
+        <div class="pl-chip">AI <strong id="pl-stat-ai-pct">-</strong></div>
       </div>
       <div class="pl-hero-actions">
         <button class="btn btn-navy" id="pl-start-btn" onclick="pipelineStart()">▶ Main</button>
@@ -83,7 +83,7 @@
           <div class="pl-card-head">
             <div class="pl-card-title">Main filings <span class="pl-card-tag ca">Canada</span></div>
           </div>
-          <p class="pl-card-desc">TSX, TSXV &amp; CSE — download SEDAR filings and optional AI analysis.</p>
+          <p class="pl-card-desc">TSX, TSXV &amp; CSE - download SEDAR filings and optional AI analysis.</p>
           <div class="config-grid" id="pl-main-cron-mount"></div>
           <div class="config-grid">
             <div class="config-field"><label>Download workers</label><input id="pl-concurrency" type="number" min="1" max="20" placeholder="5" /></div>
@@ -95,7 +95,7 @@
             <label class="config-toggle"><input type="checkbox" id="pl-analyze" /> AI analysis</label>
             <label class="config-toggle"><input type="checkbox" id="pl-enabled" onchange="pipelineCronToggle(this.checked, 'main')" /> Scheduled run</label>
           </div>
-          <div class="pl-schedule-row">Cron: <span id="pl-cron-status">—</span></div>
+          <div class="pl-schedule-row">Cron: <span id="pl-cron-status">-</span></div>
         </div>
 
         <div class="pl-card">
@@ -114,7 +114,7 @@
             <label class="config-toggle"><input type="checkbox" id="pl-asx-analyze" checked /> AI analysis</label>
             <label class="config-toggle"><input type="checkbox" id="pl-asx-enabled" onchange="pipelineCronToggle(this.checked, 'asx')" /> Scheduled run</label>
           </div>
-          <div class="pl-schedule-row">Cron: <span id="pl-asx-cron-status">—</span></div>
+          <div class="pl-schedule-row">Cron: <span id="pl-asx-cron-status">-</span></div>
         </div>
       </div>
 
@@ -124,10 +124,10 @@
             <div class="pl-card-title">News releases <span class="pl-card-tag job">Every 3h</span></div>
             <button class="btn btn-ghost btn-sm" onclick="pipelineNewsStart()">Run now</button>
           </div>
-          <p class="pl-card-desc">Per-company press releases — skips companies with no new articles, AI-enriches new items only.</p>
+          <p class="pl-card-desc">Per-company press releases - skips companies with no new articles, AI-enriches new items only.</p>
           <div class="config-grid" id="pl-news-cron-mount"></div>
           <label class="config-toggle"><input type="checkbox" id="pl-news-enabled" onchange="pipelineCronToggle(this.checked, 'news')" /> Enable scheduled fetch</label>
-          <div class="pl-schedule-row" style="margin-top:12px;">Status: <span id="pl-news-cron-status">—</span></div>
+          <div class="pl-schedule-row" style="margin-top:12px;">Status: <span id="pl-news-cron-status">-</span></div>
         </div>
 
         <div class="pl-card">
@@ -135,15 +135,15 @@
             <div class="pl-card-title">Company seeders <span class="pl-card-tag job">Daily</span></div>
             <button class="btn btn-ghost btn-sm" onclick="pipelineSeedersStart()">Run now</button>
           </div>
-          <p class="pl-card-desc">TSX/TSXV, CSE &amp; ASX seeders — adds newly listed companies to the database.</p>
+          <p class="pl-card-desc">TSX/TSXV, CSE &amp; ASX seeders - adds newly listed companies to the database.</p>
           <div class="config-grid" id="pl-seed-cron-mount"></div>
           <label class="config-toggle"><input type="checkbox" id="pl-seed-cron-enabled" onchange="pipelineCronToggle(this.checked, 'seeders')" /> Enable daily run</label>
-          <div class="pl-schedule-row" style="margin-top:12px;">Status: <span id="pl-seed-cron-status">—</span></div>
+          <div class="pl-schedule-row" style="margin-top:12px;">Status: <span id="pl-seed-cron-status">-</span></div>
         </div>
       </div>
 
       <div class="pl-save-bar">
-        <p>Changes to schedules and worker counts require <strong>Save settings</strong> — stored in <code>app_settings</code>, not a local file.</p>
+        <p>Changes to schedules and worker counts require <strong>Save settings</strong> - stored in <code>app_settings</code>, not a local file.</p>
         <button class="btn btn-primary" onclick="pipelineSaveConfig()">Save all pipeline settings</button>
       </div>
     </div>
@@ -159,7 +159,7 @@
           <p class="pl-card-desc">Description, website, HQ, transfer agent, shares &amp; officers from <strong>CSE</strong>, <strong>ASX</strong> &amp; <strong>TMX</strong>.</p>
           <div class="config-grid" id="pl-prof-cron-mount"></div>
           <label class="config-toggle" style="display:block;margin-bottom:14px;"><input type="checkbox" id="pl-prof-enabled" onchange="pipelineCronToggle(this.checked, 'profiles')" /> Scheduled scrape (24h)</label>
-          <div class="pl-schedule-row" style="margin-bottom:14px;">Profiles cron: <span id="pl-prof-cron-status">—</span></div>
+          <div class="pl-schedule-row" style="margin-bottom:14px;">Profiles cron: <span id="pl-prof-cron-status">-</span></div>
           <div class="config-grid">
             <div class="config-field"><label>Limit</label><input id="pp-limit" type="number" min="1" placeholder="50" /></div>
             <div class="config-field"><label>Ticker</label><input id="pp-ticker" type="text" placeholder="e.g. MAU" /></div>
@@ -177,7 +177,7 @@
             <div class="pl-card-title">Transfer agents</div>
             <span class="pl-status-pill" id="ta-status">Idle</span>
           </div>
-          <p class="pl-card-desc">SEDAR+ issuer profiles via Playwright for <strong>TSX / TSX-V</strong>. Only missing agents by default — never wipes existing data.</p>
+          <p class="pl-card-desc">SEDAR+ issuer profiles via Playwright for <strong>TSX / TSX-V</strong>. Only missing agents by default - never wipes existing data.</p>
           <div class="config-grid">
             <div class="config-field"><label>Limit</label><input id="ta-limit" type="number" min="1" placeholder="50" /></div>
             <div class="config-field"><label>Ticker</label><input id="ta-ticker" type="text" placeholder="e.g. TM" /></div>

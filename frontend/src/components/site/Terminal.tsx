@@ -78,17 +78,17 @@ const Terminal = () => (
 
       {/* Three-pane terminal */}
       <div className="grid grid-cols-12 gap-4 lg:gap-5">
-        {/* LEFT — Live news feed */}
+        {/* LEFT - Live news feed */}
         <div className="col-span-12 lg:col-span-4 bg-surface border border-border flex flex-col">
           <PaneHeader title="Live news" sub="148 today" />
           <div className="divide-y divide-border overflow-hidden">
-            <NewsRow tone="noteworthy" sym="TSXV:SCZ" type="Drill" title="Eagle Lake — 12.4m @ 3.2 g/t Au from 287m" time="07:31" active />
-            <NewsRow tone="watch" sym="ASX:DEG" type="JORC" title="Hemi resource upgrade — +18% Indicated category" time="07:42" />
+            <NewsRow tone="noteworthy" sym="TSXV:SCZ" type="Drill" title="Eagle Lake - 12.4m @ 3.2 g/t Au from 287m" time="07:31" active />
+            <NewsRow tone="watch" sym="ASX:DEG" type="JORC" title="Hemi resource upgrade - +18% Indicated category" time="07:42" />
             <NewsRow tone="noteworthy" sym="TSXV:NFG" type="Drill" title="Step-out: 2.1m @ 24 g/t Au, 4km from main zone" time="07:22" />
             <NewsRow tone="watch" sym="CSE:GR" type="Placement" title="$4.2M placement at $0.18, 0.8× market cap" time="07:11" />
-            <NewsRow tone="noteworthy" sym="TSXV:NXE" type="43-101" title="Tech report filed — first Indicated category" time="07:04" />
-            <NewsRow tone="routine" sym="ASX:CXO" type="Quarterly" title="Quarterly activities — production on guidance" time="06:58" />
-            <NewsRow tone="routine" sym="TSXV:LUM" type="AIF" title="AIF re-filing — no material change" time="06:51" />
+            <NewsRow tone="noteworthy" sym="TSXV:NXE" type="43-101" title="Tech report filed - first Indicated category" time="07:04" />
+            <NewsRow tone="routine" sym="ASX:CXO" type="Quarterly" title="Quarterly activities - production on guidance" time="06:58" />
+            <NewsRow tone="routine" sym="TSXV:LUM" type="AIF" title="AIF re-filing - no material change" time="06:51" />
             <NewsRow tone="watch" sym="ASX:RMS" type="Drill" title="Mt Magnet 4.1m @ 8.7 g/t Au extension" time="06:44" />
           </div>
           <div className="mt-auto px-4 py-2.5 border-t border-border text-[10px] font-mono text-muted-foreground flex items-center justify-between">
@@ -97,7 +97,7 @@ const Terminal = () => (
           </div>
         </div>
 
-        {/* CENTER — Featured translation */}
+        {/* CENTER - Featured translation */}
         <div className="col-span-12 lg:col-span-5 bg-surface border border-border flex flex-col">
           <PaneHeader title="Translation" sub="TSXV:SCZ · 07:31 EST" />
           <div className="p-5 lg:p-6 border-b border-border bg-primary text-primary-foreground relative overflow-hidden">
@@ -111,7 +111,7 @@ const Terminal = () => (
                 12.4m @ 3.2 g/t Au<br />from 287m depth
               </h2>
               <p className="text-sm leading-relaxed opacity-95">
-                Santa Cruz Mining hit a high-grade gold intercept at <strong>2.4× the deposit's average</strong>, in a previously untested zone — and the hole ended in mineralization, meaning the system may extend deeper.
+                Santa Cruz Mining hit a high-grade gold intercept at <strong>2.4× the deposit's average</strong>, in a previously untested zone - and the hole ended in mineralization, meaning the system may extend deeper.
               </p>
             </div>
           </div>
@@ -125,7 +125,7 @@ const Terminal = () => (
             <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Why this matters</div>
             <KeyFact i="01" t="Grade vs deposit avg" v="3.2 g/t Au is well above the 1.3 g/t historic district mine average." />
             <KeyFact i="02" t="True width is meaningful" v="12.4m true width indicates a structurally robust zone, not a thin vein." />
-            <KeyFact i="03" t="Open at depth" v="Final assay was the highest of the hole — the deposit is not closed off vertically." />
+            <KeyFact i="03" t="Open at depth" v="Final assay was the highest of the hole - the deposit is not closed off vertically." />
           </div>
           <div className="px-5 lg:px-6 py-3 border-t border-border text-[10px] font-mono text-muted-foreground flex items-center justify-between">
             <span className="flex items-center gap-1.5"><ExternalLink className="w-3 h-3" /> SEDAR+ · NR-2026-04-24-01 · 38 pages</span>
@@ -133,7 +133,7 @@ const Terminal = () => (
           </div>
         </div>
 
-        {/* RIGHT — Screener / movers */}
+        {/* RIGHT - Screener / movers */}
         <div className="col-span-12 lg:col-span-3 flex flex-col gap-4 lg:gap-5">
           {/* Movers */}
           <div className="bg-surface border border-border">

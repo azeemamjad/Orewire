@@ -49,7 +49,7 @@ function shell(page, body, extra = '') {
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>${page} — Mining Intel Admin</title>
+<title>${page} | Mining Intel Admin</title>
 <link rel="stylesheet" href="/admin/css/admin.css" />
 <style>
 nav li a { color: inherit; text-decoration: none; display: flex; align-items: center; gap: 8px; width: 100%; }

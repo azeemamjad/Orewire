@@ -12,7 +12,7 @@ const Problem = () => (
 
       <div className="lg:col-span-7 lg:col-start-6 space-y-6 text-foreground/80 text-lg leading-relaxed max-w-2xl">
         <p>
-          Every day, junior mining companies file dense technical documents — drill assays, NI 43-101 reports,
+          Every day, junior mining companies file dense technical documents - drill assays, NI 43-101 reports,
           JORC resource estimates, private placements. These filings are how you find out a company just hit
           high-grade gold at depth, or just diluted shareholders into oblivion.
         </p>

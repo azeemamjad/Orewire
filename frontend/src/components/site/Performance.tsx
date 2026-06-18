@@ -4,7 +4,7 @@ const rows = [
   { d: "Apr 12", sym: "TSXV:NFG", filing: "Step-out drill 2.1m @ 24 g/t Au", d7: "+18.4%", d30: "+34.2%", d60: "+41.8%", d90: "+52.6%" },
   { d: "Apr 08", sym: "ASX:DEG", filing: "Hemi resource upgrade +18%", d7: "+9.1%", d30: "+14.6%", d60: "+22.3%", d90: "+28.4%" },
   { d: "Mar 28", sym: "TSXV:NXE", filing: "First Indicated category resource", d7: "+12.8%", d30: "+24.7%", d60: "+38.2%", d90: "+44.1%" },
-  { d: "Mar 22", sym: "TSXV:AUR", filing: "PEA — $1.2B NPV @ 8% disc.", d7: "+8.4%", d30: "+19.2%", d60: "+27.8%", d90: "+35.1%" },
+  { d: "Mar 22", sym: "TSXV:AUR", filing: "PEA - $1.2B NPV @ 8% disc.", d7: "+8.4%", d30: "+19.2%", d60: "+27.8%", d90: "+35.1%" },
   { d: "Mar 14", sym: "ASX:CMM", filing: "Karlawinda extension 6.3m @ 11.4 g/t", d7: "+6.7%", d30: "+11.4%", d60: "+18.2%", d90: "+24.8%" },
 ];
 
@@ -19,7 +19,7 @@ const Performance = () => (
           </h2>
         </div>
         <div className="font-mono text-xs text-muted-foreground max-w-sm">
-          Stock price after each Noteworthy verdict — measured at 7, 30, 60 and 90 days. Free users see the latest 10. Paid see the full history.
+          Stock price after each Noteworthy verdict - measured at 7, 30, 60 and 90 days. Free users see the latest 10. Paid see the full history.
         </div>
       </div>
 
@@ -53,7 +53,7 @@ const Performance = () => (
       </div>
 
       <p className="mt-6 text-xs text-muted-foreground max-w-2xl">
-        Past performance shown for transparency only. This platform provides information for educational purposes — nothing here constitutes investment advice.
+        Past performance shown for transparency only. This platform provides information for educational purposes - nothing here constitutes investment advice.
       </p>
     </div>
   </section>

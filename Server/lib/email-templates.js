@@ -86,7 +86,7 @@ function emailShell({ preheader, innerHtml, showMarketingFooter = true }) {
 </html>`;
 }
 
-/** Confirmation email — Morning Brief newsletter signup (public subscribe bar). */
+/** Confirmation email - Morning Brief newsletter signup (public subscribe bar). */
 function renderMorningBriefSubscribeEmail() {
   const cfg = emailConfig();
 
@@ -100,7 +100,7 @@ function renderMorningBriefSubscribeEmail() {
       <tr>
         <td class="px" style="padding:18px 32px 0 32px;">
           <p style="margin:0 0 16px 0;font-size:15px;line-height:1.65;color:#1a1a1a;">
-            Thanks for subscribing to the <strong style="color:#0f1e3d;">Morning Brief</strong> — OreWire's daily summary of the mining market, delivered before the open.
+            Thanks for subscribing to the <strong style="color:#0f1e3d;">Morning Brief</strong> - OreWire's daily summary of the mining market, delivered before the open.
           </p>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px 0;background:#faf7f1;border:1px solid #ece7dc;border-radius:8px;">
             <tr>
@@ -108,7 +108,7 @@ function renderMorningBriefSubscribeEmail() {
                 <div style="font-size:13px;font-weight:700;color:#0f1e3d;margin-bottom:8px;">What you'll get</div>
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                   <tr><td style="padding:6px 0;font-size:14px;line-height:1.55;color:#1a1a1a;">
-                    <span style="color:#d4a13a;font-weight:700;">→</span>&nbsp;&nbsp;The day's most important filings — summarized and scored
+                    <span style="color:#d4a13a;font-weight:700;">→</span>&nbsp;&nbsp;The day's most important filings - summarized and scored
                   </td></tr>
                   <tr><td style="padding:6px 0;font-size:14px;line-height:1.55;color:#1a1a1a;">
                     <span style="color:#d4a13a;font-weight:700;">→</span>&nbsp;&nbsp;Delivered to your inbox by <span style="font-family:'SF Mono',Menlo,Consolas,monospace;font-weight:600;">7:30am ET</span>
@@ -142,14 +142,14 @@ function renderMorningBriefSubscribeEmail() {
   return {
     subject: "You're subscribed to the Morning Brief",
     html: emailShell({
-      preheader: 'Your first briefing arrives by 7:30am ET — mining filings summarized before the open.',
+      preheader: 'Your first briefing arrives by 7:30am ET - mining filings summarized before the open.',
       innerHtml: inner,
       showMarketingFooter: true,
     }),
   };
 }
 
-/** Welcome email — sent after email verification (registration complete). */
+/** Welcome email - sent after email verification (registration complete). */
 function renderWelcomeEmail({ firstName } = {}) {
   const cfg = emailConfig();
   const greeting = firstName ? escapeHtml(firstName) : 'there';
@@ -163,7 +163,7 @@ function renderWelcomeEmail({ firstName } = {}) {
       <tr>
         <td class="px" style="padding:14px 32px 0 32px;">
           <p style="margin:0 0 18px 0;font-size:15px;line-height:1.65;color:#1a1a1a;">
-            Hi ${greeting} — OreWire monitors <span style="font-family:'SF Mono',Menlo,Consolas,monospace;font-weight:600;">2,000+</span> mining companies across Canada and Australia — every filing, every news release — so you don't have to.
+            Hi ${greeting} - OreWire monitors <span style="font-family:'SF Mono',Menlo,Consolas,monospace;font-weight:600;">2,000+</span> mining companies across Canada and Australia - every filing, every news release - so you don't have to.
           </p>
           <p style="margin:0 0 8px 0;font-size:15px;line-height:1.65;color:#1a1a1a;font-weight:600;">
             Here's what happens next:

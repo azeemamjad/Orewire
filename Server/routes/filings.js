@@ -58,8 +58,29 @@ router.get('/', async (req, res) => {
     }
     if (search) {
       paramIdx++;
-      where += ` AND f.company_name ILIKE $${paramIdx}`;
+      where += ` AND (
+        f.company_name ILIKE $${paramIdx}
+        OR COALESCE(a.summary, '') ILIKE $${paramIdx}
+        OR COALESCE(a.ticker_summary, '') ILIKE $${paramIdx}
+        OR COALESCE(f.filing_type, '') ILIKE $${paramIdx}
+        OR COALESCE(c.ticker, '') ILIKE $${paramIdx}
+      )`;
       params.push(`%${search}%`);
+    }
+    if (commodity && commodity !== 'All') {
+      paramIdx++;
+      where += ` AND COALESCE(f.commodity, '') = $${paramIdx}`;
+      params.push(commodity);
+    }
+    if (exchange && exchange !== 'All') {
+      const norm = String(exchange).toUpperCase().replace('TSX-V', 'TSXV').replace('-', '');
+      if (norm === 'TSX') {
+        where += ` AND UPPER(COALESCE(NULLIF(f.exchange, ''), c.exchange, '')) = 'TSX'`;
+      } else {
+        paramIdx++;
+        where += ` AND REPLACE(UPPER(COALESCE(NULLIF(f.exchange, ''), c.exchange, '')), '-', '') = $${paramIdx}`;
+        params.push(norm);
+      }
     }
 
     const selectSql = `
@@ -79,14 +100,13 @@ router.get('/', async (req, res) => {
     }));
 
     // --- Paginated mode: return an envelope with total/totalPages. -----------
-    // Note: exchange/commodity are derived post-query, so pagination supports
-    // only the SQL-level filters (company_id, verdict, search).
     if (page !== undefined) {
       const parsedPage = Math.max(1, parseInt(page, 10) || 1);
       const pageLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 10));
       const offset = (parsedPage - 1) * pageLimit;
 
-      const countQuery = `SELECT COUNT(*)::int AS total FROM filings f LEFT JOIN ai_output a ON a.filing_id = f.id${where}`;
+      const fromJoins = `FROM filings f LEFT JOIN ai_output a ON a.filing_id = f.id LEFT JOIN companies c ON c.id = f.company_id`;
+      const countQuery = `SELECT COUNT(*)::int AS total ${fromJoins}${where}`;
       const dataQuery = `${selectSql}${where} ORDER BY f.created_at DESC LIMIT ${pageLimit} OFFSET ${offset}`;
 
       const [countResult, dataResult] = await Promise.all([

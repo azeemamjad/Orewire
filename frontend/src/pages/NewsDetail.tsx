@@ -1,41 +1,14 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Clock, Sparkles } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useLocation } from "react-router-dom";
 import Nav from "@/components/site/Nav";
 import Footer from "@/components/site/Footer";
 import SearchHeroBar from "@/components/site/SearchHeroBar";
 import Disclaimer from "@/components/site/Disclaimer";
 import { fetchNewsFeed, fetchNewsItem, type NewsItem } from "@/lib/api";
-
-const severityStyle: Record<string, string> = {
-  critical: "bg-destructive text-destructive-foreground",
-  high: "bg-noteworthy text-noteworthy-foreground",
-  medium: "bg-watch text-watch-foreground",
-  low: "bg-routine text-routine-foreground",
-};
-
-function getSeverity(sentiment: string | undefined, title: string): { label: string; style: string } {
-  const t = (title || "").toLowerCase();
-  if (t.includes("drill") && (t.includes("high-grade") || /\d+.*g\/t/.test(t))) return { label: "Critical", style: severityStyle.critical };
-  if (t.includes("resource") || t.includes("feasibility") || t.includes("assay")) return { label: "High", style: severityStyle.high };
-  if (t.includes("placement") || t.includes("financing") || t.includes("acquisition")) return { label: "Medium", style: severityStyle.medium };
-  if (sentiment === "bullish") return { label: "High", style: severityStyle.high };
-  if (sentiment === "bearish") return { label: "Medium", style: severityStyle.medium };
-  return { label: "Low", style: severityStyle.low };
-}
-
-function getFilingType(title: string): string {
-  const t = (title || "").toLowerCase();
-  if (t.includes("drill")) return "Drill Result";
-  if (t.includes("resource")) return "Resource Update";
-  if (t.includes("feasibility") || t.includes("technical report")) return "Technical Report";
-  if (t.includes("placement") || t.includes("financing") || t.includes("bought deal")) return "Private Placement";
-  if (t.includes("quarterly") || t.includes("q1") || t.includes("q2") || t.includes("q3") || t.includes("q4")) return "Quarterly";
-  if (t.includes("assay")) return "Assay";
-  if (t.includes("acquisition") || t.includes("merger")) return "M&A";
-  return "News Release";
-}
+import { detailBackLink } from "@/lib/detail-navigation";
+import { getNewsFilingType, getNewsSeverity, severityStyle } from "@/lib/news-severity";
 
 function formatFullDate(dateStr: string): string {
   if (!dateStr) return "Unknown time";
@@ -76,7 +49,9 @@ function getNewsBody(item: NewsItem): string[] {
 
 const NewsDetail = () => {
   const { slug } = useParams();
+  const location = useLocation();
   const decoded = decodeURIComponent(slug || "");
+  const back = detailBackLink(location.state, "/news", "Back to news");
 
   // Primary: look up the item directly by link.
   const { data: directItem, isLoading: directLoading } = useQuery({
@@ -119,8 +94,8 @@ const NewsDetail = () => {
       <div className="min-h-screen bg-background text-foreground">
         <Nav />
         <main className="max-w-3xl mx-auto px-4 lg:px-6 py-12">
-          <Link to="/news" className="inline-flex items-center gap-1.5 text-[12px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground mb-6">
-            <ArrowLeft className="w-3.5 h-3.5" /> Back to feed
+          <Link to={back.href} className="inline-flex items-center gap-1.5 text-[12px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground mb-6">
+            <ArrowLeft className="w-3.5 h-3.5" /> {back.label}
           </Link>
           <div className="border border-border bg-surface p-6 text-sm text-muted-foreground">News item not found.</div>
         </main>
@@ -129,8 +104,8 @@ const NewsDetail = () => {
     );
   }
 
-  const sev = getSeverity(item.sentiment, item.title);
-  const filingType = getFilingType(item.title);
+  const sevLabel = getNewsSeverity(item.sentiment, item.title);
+  const filingType = getNewsFilingType(item.title);
   const bodyParts = getNewsBody(item);
 
   return (
@@ -138,13 +113,13 @@ const NewsDetail = () => {
       <Nav />
       <SearchHeroBar />
       <main className="max-w-3xl mx-auto px-4 lg:px-6 py-8 lg:py-12">
-        <Link to="/news" className="inline-flex items-center gap-1.5 text-[12px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground mb-6">
-          <ArrowLeft className="w-3.5 h-3.5" /> Back to feed
+        <Link to={back.href} className="inline-flex items-center gap-1.5 text-[12px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground mb-6">
+          <ArrowLeft className="w-3.5 h-3.5" /> {back.label}
         </Link>
 
         <div className="border border-border bg-surface p-5 lg:p-6 mb-6">
           <div className="flex items-center gap-3 flex-wrap mb-4">
-            <span className={`px-2.5 py-1 text-[10px] font-mono uppercase tracking-widest font-bold ${sev.style}`}>{sev.label}</span>
+            <span className={`px-2.5 py-1 text-[10px] font-mono uppercase tracking-widest font-bold ${severityStyle[sevLabel]}`}>{sevLabel}</span>
             <span className="font-mono text-[10px] uppercase tracking-widest border border-border px-1.5 py-1">{filingType}</span>
             {item.commodity && <span className="font-mono text-[11px] font-bold">{item.commodity}</span>}
             <span className="ml-auto font-mono text-[11px] text-muted-foreground inline-flex items-center gap-1">

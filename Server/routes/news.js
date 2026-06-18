@@ -5,6 +5,7 @@ const {
   fetchAndStoreRssFeeds,
   fetchCompanyNews,
   drainUnprocessedNews,
+  companyCategoryKey,
 } = require('../lib/news-fetch');
 
 let fetchRunning = false;
@@ -59,6 +60,52 @@ function normalizeExchange(ex) {
   return ex;
 }
 
+/** Match frontend getNewsSeverity buckets for SQL filtering */
+function severityClause(severity) {
+  const s = String(severity || '').toLowerCase();
+  if (!s || s === 'all') return '';
+  if (s === 'critical') {
+    return ` AND (
+      LOWER(n.title) LIKE '%drill%'
+      AND (LOWER(n.title) LIKE '%high-grade%' OR n.title ~* '\\d+.*g/t')
+    )`;
+  }
+  if (s === 'high') {
+    return ` AND (
+      LOWER(n.title) LIKE '%resource%'
+      OR LOWER(n.title) LIKE '%feasibility%'
+      OR LOWER(n.title) LIKE '%assay%'
+      OR n.sentiment = 'bullish'
+    )`;
+  }
+  if (s === 'medium') {
+    return ` AND (
+      LOWER(n.title) LIKE '%placement%'
+      OR LOWER(n.title) LIKE '%financing%'
+      OR LOWER(n.title) LIKE '%acquisition%'
+      OR n.sentiment = 'bearish'
+    )`;
+  }
+  if (s === 'low') {
+    return ` AND NOT (
+      (LOWER(n.title) LIKE '%drill%' AND (LOWER(n.title) LIKE '%high-grade%' OR n.title ~* '\\d+.*g/t'))
+      OR LOWER(n.title) LIKE '%resource%'
+      OR LOWER(n.title) LIKE '%feasibility%'
+      OR LOWER(n.title) LIKE '%assay%'
+      OR n.sentiment = 'bullish'
+      OR LOWER(n.title) LIKE '%placement%'
+      OR LOWER(n.title) LIKE '%financing%'
+      OR LOWER(n.title) LIKE '%acquisition%'
+      OR n.sentiment = 'bearish'
+    )`;
+  }
+  return '';
+}
+
+function exchangeMatchSql(paramIdx) {
+  return `REPLACE(UPPER(COALESCE(c.exchange, '')), '-', '') = REPLACE(UPPER($${paramIdx}), '-', '')`;
+}
+
 function formatRow(row) {
   return {
     id: row.id,
@@ -92,21 +139,51 @@ router.get('/feed', async (req, res) => {
     const companyLinked = ['1', 'true', 'yes'].includes(
       String(req.query.companyLinked || '').toLowerCase(),
     );
+    const companyIdRaw = parseInt(req.query.companyId, 10);
+    const companyId = Number.isFinite(companyIdRaw) && companyIdRaw > 0 ? companyIdRaw : null;
+    const exchange = (req.query.exchange || '').toString().trim();
+    const search = (req.query.search || '').toString().trim();
+    const commodity = (req.query.commodity || '').toString().trim();
+    const sentiment = (req.query.sentiment || '').toString().trim().toLowerCase();
+    const severity = (req.query.severity || '').toString().trim();
+
     let originClause = '';
     const filterParams = [];
     if (origin === 'google') {
-      originClause = ` AND n.origin = $1`;
+      originClause = ` AND n.origin = $${filterParams.length + 1}`;
       filterParams.push('google');
     } else if (origin === 'rss') {
-      // COALESCE so legacy rows with a NULL origin still count as feed releases.
-      originClause = ` AND COALESCE(n.origin, 'rss') <> $1`;
+      originClause = ` AND COALESCE(n.origin, 'rss') <> $${filterParams.length + 1}`;
       filterParams.push('google');
     }
 
-    const companyClause = companyLinked ? ' AND n.company_id IS NOT NULL' : '';
+    let extraClause = '';
+    if (companyLinked) extraClause += ' AND n.company_id IS NOT NULL';
+    if (companyId) {
+      filterParams.push(companyId);
+      extraClause += ` AND n.company_id = $${filterParams.length}`;
+    }
+    if (exchange && exchange.toLowerCase() !== 'all') {
+      filterParams.push(exchange);
+      extraClause += ` AND ${exchangeMatchSql(filterParams.length)}`;
+    }
+    if (search) {
+      filterParams.push(`%${search}%`);
+      const i = filterParams.length;
+      extraClause += ` AND (n.title ILIKE $${i} OR n.summary ILIKE $${i} OR n.description ILIKE $${i} OR c.name ILIKE $${i} OR c.ticker ILIKE $${i})`;
+    }
+    if (commodity && commodity.toLowerCase() !== 'all') {
+      filterParams.push(commodity);
+      extraClause += ` AND n.commodity = $${filterParams.length}`;
+    }
+    if (sentiment && ['bullish', 'bearish', 'neutral'].includes(sentiment)) {
+      filterParams.push(sentiment);
+      extraClause += ` AND n.sentiment = $${filterParams.length}`;
+    }
+    extraClause += severityClause(severity);
 
     const baseFrom = `FROM news n LEFT JOIN companies c ON c.id = n.company_id`;
-    const baseWhere = `WHERE n.relevant = TRUE${originClause}${companyClause}`;
+    const baseWhere = `WHERE n.relevant = TRUE${originClause}${extraClause}`;
 
     const [itemsResult, countResult] = await Promise.all([
       db.query(
@@ -148,20 +225,51 @@ router.get('/feed', async (req, res) => {
 
 router.get('/company/:name', async (req, res) => {
   try {
-    const companyName = decodeURIComponent(req.params.name);
-    const ticker = req.query.ticker || '';
-    const category = `company:${ticker || companyName}`;
+    const companyName = decodeURIComponent(req.params.name).trim();
+    const ticker = (req.query.ticker || '').trim();
+    const companyIdRaw = parseInt(req.query.companyId, 10);
+    const companyId = Number.isFinite(companyIdRaw) && companyIdRaw > 0 ? companyIdRaw : null;
     const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
     const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
 
-    const fetchLimit = limit + 1;
-    const sql = `SELECT * FROM news WHERE (category = $1 OR ticker = $2) AND relevant = TRUE ORDER BY pub_date DESC LIMIT $3 OFFSET $4`;
+    const categoryByName = companyCategoryKey(companyName);
+    const legacyCategoryByTicker = ticker ? `company:${ticker}` : null;
 
-    let result = await db.query(sql, [category, ticker, fetchLimit, offset]);
+    const fetchLimit = limit + 1;
+    const sql = `
+      SELECT n.*, c.name AS company_name, c.exchange AS company_exchange
+      FROM news n
+      LEFT JOIN companies c ON c.id = n.company_id
+      WHERE n.relevant = TRUE
+        AND (
+          n.category = $1
+          OR ($2::text IS NOT NULL AND n.category = $2)
+          OR ($3::int IS NOT NULL AND n.company_id = $3)
+          OR ($4::text <> '' AND c.name ILIKE $4)
+        )
+      ORDER BY n.pub_date DESC
+      LIMIT $5 OFFSET $6`;
+
+    const nameMatch = companyName ? companyName : null;
+    let result = await db.query(sql, [
+      categoryByName,
+      legacyCategoryByTicker,
+      companyId,
+      nameMatch,
+      fetchLimit,
+      offset,
+    ]);
 
     if (result.rows.length === 0 && offset === 0) {
-      await fetchCompanyNews(companyName, ticker);
-      result = await db.query(sql, [category, ticker, fetchLimit, offset]);
+      await fetchCompanyNews(companyName, ticker, companyId);
+      result = await db.query(sql, [
+        categoryByName,
+        legacyCategoryByTicker,
+        companyId,
+        nameMatch,
+        fetchLimit,
+        offset,
+      ]);
     }
 
     const hasMore = result.rows.length > limit;

@@ -98,7 +98,7 @@ const Login = () => {
             The intelligence layer for junior mining.
           </h1>
           <p className="text-sm text-foreground/70 max-w-md mb-10">
-            TSX-V, CSE and ASX filings — read, ranked and routed to the names you actually own.
+            TSX-V, CSE and ASX filings - read, ranked and routed to the names you actually own.
           </p>
 
           <ul className="space-y-6 max-w-md">
@@ -110,12 +110,12 @@ const Login = () => {
             <Feature
               icon={<TrendingUp className="w-4 h-4" />}
               title="Verdicts on every filing"
-              body="Noteworthy, Watch or Routine — no more 60-page PDFs."
+              body="Noteworthy, Watch or Routine - no more 60-page PDFs."
             />
             <Feature
               icon={<Bell className="w-4 h-4" />}
               title="Mover alerts"
-              body="Insider buys, drill results, financings — pushed to your feed."
+              body="Insider buys, drill results, financings - pushed to your feed."
             />
           </ul>
 

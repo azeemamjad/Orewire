@@ -41,7 +41,7 @@ function cronToggleBuilderFields(prefix) {
 }
 
 function cronDescribe(parts) {
-  if (!parts) return '—';
+  if (!parts) return '-';
   if (parts.frequency === 'every_hours') {
     return `Every ${parts.hours || 3} hour(s)`;
   }
@@ -98,6 +98,6 @@ function cronBuilderHtml(prefix, label) {
         </div>
       </div>
     </div>
-    <div class="cron-preview" id="${prefix}-preview">—</div>
+    <div class="cron-preview" id="${prefix}-preview">-</div>
   </div>`;
 }

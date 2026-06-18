@@ -7,7 +7,7 @@ const NewsHero = () => (
       <div className="max-w-[1440px] mx-auto px-4 lg:px-6 h-9 flex items-center gap-3 text-[11px] font-mono overflow-hidden">
         <span className="bg-destructive text-destructive-foreground px-2 py-0.5 uppercase tracking-widest font-bold">Breaking</span>
         <span className="opacity-90 truncate">
-          TSXV:SCZ — Santa Cruz hits <strong className="text-accent">12.4m @ 3.2 g/t Au</strong> at Eagle Lake, hole ends in mineralization · 07:31 EST
+          TSXV:SCZ · Santa Cruz hits <strong className="text-accent">12.4m @ 3.2 g/t Au</strong> at Eagle Lake, hole ends in mineralization · 07:31 EST
         </span>
         <span className="ml-auto hidden md:flex items-center gap-2 opacity-70">
           <span className="w-1.5 h-1.5 bg-noteworthy animate-pulse-dot" />
@@ -47,7 +47,7 @@ const NewsHero = () => (
           <span className="font-mono text-[11px] text-muted-foreground">TSXV:SCZ · Drill result · 07:31 EST</span>
         </div>
         <h2 className="font-display text-[clamp(2rem,4.5vw,3.75rem)] font-extrabold leading-[0.95] mb-4 text-balance">
-          Santa Cruz strikes 12.4 metres of high-grade gold at Eagle Lake — and the hole isn't done.
+          Santa Cruz strikes 12.4 metres of high-grade gold at Eagle Lake - and the hole isn't done.
         </h2>
         <p className="text-base lg:text-lg text-foreground/75 leading-relaxed mb-5 max-w-2xl">
           A drill hole that bottomed out in mineralization at 287 metres returned grades <strong className="text-foreground">2.4× the deposit average</strong>, suggesting a structurally robust zone with vertical extension still untested. Shares are indicated +38% in pre-market.
@@ -77,11 +77,11 @@ const NewsHero = () => (
             </span>
           </div>
           <ul className="divide-y divide-border">
-            <Headline tone="watch" sym="ASX:DEG" time="07:42" title="Hemi resource upgrade — +18% Indicated category" />
+            <Headline tone="watch" sym="ASX:DEG" time="07:42" title="Hemi resource upgrade - +18% Indicated category" />
             <Headline tone="noteworthy" sym="TSXV:NFG" time="07:22" title="Step-out: 2.1m @ 24 g/t Au, 4km from main zone" />
             <Headline tone="watch" sym="CSE:GR" time="07:11" title="$4.2M placement at $0.18, 0.8× market cap" />
-            <Headline tone="noteworthy" sym="TSXV:NXE" time="07:04" title="Tech report filed — first Indicated category" />
-            <Headline tone="routine" sym="ASX:CXO" time="06:58" title="Quarterly activities — production on guidance" />
+            <Headline tone="noteworthy" sym="TSXV:NXE" time="07:04" title="Tech report filed - first Indicated category" />
+            <Headline tone="routine" sym="ASX:CXO" time="06:58" title="Quarterly activities - production on guidance" />
             <Headline tone="watch" sym="ASX:RMS" time="06:44" title="Mt Magnet 4.1m @ 8.7 g/t Au extension" />
           </ul>
         </div>

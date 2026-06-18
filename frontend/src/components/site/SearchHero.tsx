@@ -1,7 +1,8 @@
-import { Search, Sparkles, Clock, Building2, Gem, LineChart, DollarSign } from "lucide-react";
+import { Clock, Building2, Gem, LineChart, DollarSign } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { type Company } from "@/lib/api";
+import HeroSearchField from "@/components/site/HeroSearchField";
 import {
   allSuggestionHrefs,
   CATEGORY_LABELS,
@@ -159,10 +160,13 @@ const SearchHero = () => {
             Live · Mining terminal
           </div>
           <h1 className="font-display text-3xl lg:text-4xl font-extrabold leading-tight">
-            2,000+ mining &amp; resource companies, commodities &amp; indexes
+            Mining &amp; resource intelligence,
             <br />
-            <span className="text-muted-foreground">across Canada and Australia</span>
+            <span className="text-muted-foreground">translated for humans</span>
           </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            2,000+ companies across TSX · TSX-V · CSE · ASX. Delayed 15m.
+          </p>
         </div>
         <div className="font-mono text-[11px] text-muted-foreground">
           TSX-V · CSE · ASX · TSX · Delayed 15m
@@ -170,35 +174,19 @@ const SearchHero = () => {
       </div>
 
       <div ref={wrapRef} className="relative">
-        <form onSubmit={handleSearch}>
-          <div className="relative">
-            <Sparkles className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-accent pointer-events-none" />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setOpen(true);
-                setActiveIdx(-1);
-              }}
-              onFocus={() => setOpen(true)}
-              onKeyDown={onKeyDown}
-              placeholder='Search ticker, company, or ask: "gold companies in Africa"'
-              autoComplete="off"
-              aria-label="Search ticker or company"
-              aria-expanded={showPanel}
-              aria-autocomplete="list"
-              className="flex w-full border px-3 py-2 ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 md:text-sm pl-10 pr-32 h-12 text-base bg-card rounded-none border-foreground/20 focus-visible:ring-accent"
-            />
-            <button
-              type="submit"
-              className="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 px-4 py-2 absolute right-1 top-1 h-10 rounded-none bg-accent text-accent-foreground hover:bg-accent/90"
-            >
-              <Search className="w-4 h-4 mr-1.5" />
-              Search
-            </button>
-          </div>
-        </form>
+        <HeroSearchField
+          value={query}
+          onChange={(v) => {
+            setQuery(v);
+            setOpen(true);
+            setActiveIdx(-1);
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={onKeyDown}
+          onSubmit={handleSearch}
+          aria-expanded={showPanel}
+          aria-autocomplete="list"
+        />
 
         {showPanel && (
           <div

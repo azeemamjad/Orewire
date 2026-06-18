@@ -45,7 +45,7 @@ function pageShell(active, bodyExtra, scripts) {
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>${active} — Mining Intel Admin</title>
+<title>${active} | Mining Intel Admin</title>
 <link rel="stylesheet" href="/admin/css/admin.css" />
 <style>
 nav li a { color: inherit; text-decoration: none; display: flex; align-items: center; gap: 8px; width: 100%; }
@@ -89,7 +89,7 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function verdictBadge(v) {
-  if (!v) return '<span class="badge badge-pending">—</span>';
+  if (!v) return '<span class="badge badge-pending">-</span>';
   const cls = v === 'noteworthy' ? 'badge-noteworthy' : v === 'watch' ? 'badge-watch' : 'badge-routine';
   return '<span class="badge ' + cls + '">' + esc(v) + '</span>';
 }

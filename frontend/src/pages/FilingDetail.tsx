@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ArrowUpRight, Clock, Sparkles } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useLocation } from "react-router-dom";
 import Nav from "@/components/site/Nav";
 import Footer from "@/components/site/Footer";
 import SearchHeroBar from "@/components/site/SearchHeroBar";
 import Disclaimer from "@/components/site/Disclaimer";
 import { companySlug, fetchFiling, filingDocumentUrl, type Verdict } from "@/lib/api";
+import { detailBackLink } from "@/lib/detail-navigation";
 
 const verdictStyle: Record<Verdict, string> = {
   Noteworthy: "bg-[hsl(var(--noteworthy))] text-[hsl(var(--noteworthy-foreground))]",
@@ -23,6 +24,8 @@ const Section = ({ title, body }: { title: string; body: string }) => (
 
 const FilingDetail = () => {
   const { id } = useParams();
+  const location = useLocation();
+  const back = detailBackLink(location.state, "/filings", "Back to filings");
 
   const { data: filing, isLoading } = useQuery({
     queryKey: ["filing-detail", id],
@@ -47,8 +50,8 @@ const FilingDetail = () => {
       <div className="min-h-screen bg-background text-foreground">
         <Nav />
         <main className="max-w-3xl mx-auto px-4 lg:px-6 py-12">
-          <Link to="/#feed" className="inline-flex items-center gap-1.5 text-[12px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground mb-6">
-            <ArrowLeft className="w-3.5 h-3.5" /> Back to filings
+          <Link to={back.href} className="inline-flex items-center gap-1.5 text-[12px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground mb-6">
+            <ArrowLeft className="w-3.5 h-3.5" /> {back.label}
           </Link>
           <div className="border border-border bg-surface p-6 text-sm text-muted-foreground">Filing not found.</div>
         </main>
@@ -62,8 +65,8 @@ const FilingDetail = () => {
       <Nav />
       <SearchHeroBar />
       <main className="max-w-3xl mx-auto px-4 lg:px-6 py-8 lg:py-12">
-        <Link to="/#feed" className="inline-flex items-center gap-1.5 text-[12px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground mb-6">
-          <ArrowLeft className="w-3.5 h-3.5" /> Back to filings
+        <Link to={back.href} className="inline-flex items-center gap-1.5 text-[12px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground mb-6">
+          <ArrowLeft className="w-3.5 h-3.5" /> {back.label}
         </Link>
 
         <div className="border border-border bg-surface p-5 lg:p-6 mb-6">

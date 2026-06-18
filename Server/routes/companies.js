@@ -570,10 +570,10 @@ router.get('/:id/snapshot', async (req, res) => {
     if (exists.rows.length === 0) return res.status(404).json({ error: 'Not found' });
 
     const force = req.query.refresh === '1' || req.query.refresh === 'true';
-    const { getCompanySnapshot } = require('../lib/company-snapshot');
-    const snapshot = await getCompanySnapshot(companyId, { force });
-    if (!snapshot) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true, snapshot });
+    const { getCompanySnapshotView } = require('../lib/company-snapshot');
+    const view = await getCompanySnapshotView(companyId, { force });
+    if (view.status === 'empty') return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, status: view.status, needsRegen: view.needsRegen, snapshot: view.snapshot });
   } catch (err) {
     console.error('Company snapshot failed:', err?.message || err);
     res.status(503).json({ error: 'Snapshot unavailable' });

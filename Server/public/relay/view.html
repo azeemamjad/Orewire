@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Relay — Live browser</title>
+  <title>Relay | Live browser</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -106,7 +106,7 @@
       <img id="frame" alt="Live browser" draggable="false" />
     </div>
   </div>
-  <p class="hint">Click, type, and scroll in the frame — input is sent to the server browser in real time.</p>
+  <p class="hint">Click, type, and scroll in the frame - input is sent to the server browser in real time.</p>
 
   <script>
     const TOKEN = __TOKEN__;
@@ -222,11 +222,11 @@
       ws.onclose = (ev) => {
         const reason = ev.reason ? ': ' + ev.reason : '';
         const hint = ev.code === 1006 && !ev.reason
-          ? ' (often nginx: enable WebSocket proxy — see Server/deploy/nginx-backend.example.conf)'
+          ? ' (often nginx: enable WebSocket proxy - see Server/deploy/nginx-backend.example.conf)'
           : '';
         setStatus('Disconnected' + reason + hint, false);
       };
-      ws.onerror = () => setStatus('WebSocket failed — check nginx Upgrade headers', false);
+      ws.onerror = () => setStatus('WebSocket failed - check nginx Upgrade headers', false);
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.type === 'ready') {

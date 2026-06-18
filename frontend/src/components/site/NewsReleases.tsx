@@ -60,14 +60,14 @@ function cleanSummary(text: string | null | undefined): string {
 }
 
 const placeholderReleases: NewsItem[] = [
-  { title: "Hole HC-247 returns 12.4m @ 3.2 g/t Au — 2.4× deposit average; ends in mineralization.", summary: "Hole HC-247 returns 12.4m @ 3.2 g/t Au — 2.4× deposit average; ends in mineralization.", source: "TMX Newsfile", link: "#scz", pubDate: "", timeAgo: "12 min ago", commodity: "Gold", sentiment: "bullish", ticker: "SCZ" },
+  { title: "Hole HC-247 returns 12.4m @ 3.2 g/t Au - 2.4× deposit average; ends in mineralization.", summary: "Hole HC-247 returns 12.4m @ 3.2 g/t Au - 2.4× deposit average; ends in mineralization.", source: "TMX Newsfile", link: "#scz", pubDate: "", timeAgo: "12 min ago", commodity: "Gold", sentiment: "bullish", ticker: "SCZ" },
   { title: "Hemi Indicated resource lifted 18% to 6.8 Moz Au ahead of Q3 feasibility.", summary: "Hemi Indicated resource lifted 18% to 6.8 Moz Au ahead of Q3 feasibility.", source: "GlobeNewsWire", link: "#deg", pubDate: "", timeAgo: "47 min ago", commodity: "Gold", sentiment: "bullish", ticker: "DEG" },
   { title: "Step-out 4 km north of Keats returns 2.1m @ 24 g/t Au; opens new corridor.", summary: "Step-out 4 km north of Keats returns 2.1m @ 24 g/t Au; opens new corridor.", source: "TMX Newsfile", link: "#nfg", pubDate: "", timeAgo: "1 hr ago", commodity: "Gold", sentiment: "bullish", ticker: "NFG" },
   { title: "C$4.2M flow-through placement at $0.18; 22% insider participation. Funds Q3 drilling.", summary: "C$4.2M flow-through placement at $0.18; 22% insider participation. Funds Q3 drilling.", source: "TMX Newsfile", link: "#gr", pubDate: "", timeAgo: "2 hrs ago", commodity: null, sentiment: "neutral", ticker: "GR" },
-  { title: "Mt Magnet extension hole returns 4.1m @ 8.7 g/t Au below pit — continuity confirmed.", summary: "Mt Magnet extension hole returns 4.1m @ 8.7 g/t Au below pit — continuity confirmed.", source: "GlobeNewsWire", link: "#rms", pubDate: "", timeAgo: "3 hrs ago", commodity: "Gold", sentiment: "bullish", ticker: "RMS" },
+  { title: "Mt Magnet extension hole returns 4.1m @ 8.7 g/t Au below pit - continuity confirmed.", summary: "Mt Magnet extension hole returns 4.1m @ 8.7 g/t Au below pit - continuity confirmed.", source: "GlobeNewsWire", link: "#rms", pubDate: "", timeAgo: "3 hrs ago", commodity: "Gold", sentiment: "bullish", ticker: "RMS" },
   { title: "Finniss Q3 produces 24kt SC6, in line with guidance. Cash A$87M; FY26 unchanged.", summary: "Finniss Q3 produces 24kt SC6, in line with guidance. Cash A$87M; FY26 unchanged.", source: "GlobeNewsWire", link: "#cxo", pubDate: "", timeAgo: "4 hrs ago", commodity: "Lithium", sentiment: "neutral", ticker: "CXO" },
   { title: "First Indicated at Patterson Corridor East: 19.2 Mlb U₃O₈ @ 3.1%.", summary: "First Indicated at Patterson Corridor East: 19.2 Mlb U₃O₈ @ 3.1%.", source: "TMX Newsfile", link: "#nxe", pubDate: "", timeAgo: "5 hrs ago", commodity: "Uranium", sentiment: "bullish", ticker: "NXE" },
-  { title: "Filo del Sol delivers 156m @ 1.4% CuEq from 412m — well above PEA.", summary: "Filo del Sol delivers 156m @ 1.4% CuEq from 412m — well above PEA.", source: "GlobeNewsWire", link: "#fil", pubDate: "", timeAgo: "6 hrs ago", commodity: "Copper", sentiment: "bullish", ticker: "FIL" },
+  { title: "Filo del Sol delivers 156m @ 1.4% CuEq from 412m - well above PEA.", summary: "Filo del Sol delivers 156m @ 1.4% CuEq from 412m - well above PEA.", source: "GlobeNewsWire", link: "#fil", pubDate: "", timeAgo: "6 hrs ago", commodity: "Copper", sentiment: "bullish", ticker: "FIL" },
   { title: "Annual shareholder meeting reschedules to Aug 14; agenda items unchanged.", summary: "Annual shareholder meeting reschedules to Aug 14; agenda items unchanged.", source: "GlobeNewsWire", link: "#ago", pubDate: "", timeAgo: "7 hrs ago", commodity: null, sentiment: "neutral", ticker: "AGO" },
   { title: "Reggane permit reinstated by Mali tribunal; production restart targeted Q4.", summary: "Reggane permit reinstated by Mali tribunal; production restart targeted Q4.", source: "TMX Newsfile", link: "#abx", pubDate: "", timeAgo: "8 hrs ago", commodity: "Gold", sentiment: "neutral", ticker: "ABX" },
 ];
@@ -150,12 +150,12 @@ const NewsReleases = () => {
           <div className="lg:col-span-7 space-y-4 text-[15px] leading-relaxed text-foreground/80">
             <p>
               Hundreds of news releases hit the wire every trading day from TSX-V, CSE, TSX and ASX miners. Drill
-              results, financings, resource updates, corporate changes — each one buried in jargon, footnotes and 8-page
+              results, financings, resource updates, corporate changes - each one buried in jargon, footnotes and 8-page
               PDFs.
             </p>
             <p>
               We read every single release the moment it's published and distill it into{" "}
-              <strong className="text-foreground">one plain-English line</strong> with a verdict —{" "}
+              <strong className="text-foreground">one plain-English line</strong> with a verdict -{" "}
               <span className="font-semibold text-foreground">Noteworthy</span> if it moves the thesis,{" "}
               <span className="font-semibold text-foreground">Watch</span> if it's worth tracking,{" "}
               <span className="font-semibold text-foreground">Routine</span> if you can skip it. Click any release for the

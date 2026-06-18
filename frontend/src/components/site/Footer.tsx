@@ -15,7 +15,7 @@ const Footer = () => {
           <span className="font-display text-xl font-extrabold tracking-tight">Orewire</span>
         </div>
         <p className="text-sm text-foreground/60 max-w-sm">
-          Junior mining intelligence — translated by AI. TSX-V · CSE · ASX.
+          Junior mining intelligence - translated by AI. TSX-V · CSE · ASX.
         </p>
         <div className="flex items-center gap-3 mt-5">
           <a href="#" aria-label="X" className="w-8 h-8 grid place-items-center border border-border hover:border-accent">

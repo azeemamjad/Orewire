@@ -47,7 +47,7 @@ const SetAlertButton = ({
       await setItemAlert(itemType, itemKey, companyId, next);
       setOn(next);
       if (next) bumpItemAlertWatermark();
-      toast.success(next ? "Alerts on — major updates will appear in your notifications" : "Alerts turned off");
+      toast.success(next ? "Alerts on: major updates will appear in your notifications" : "Alerts turned off");
     } catch {
       toast.error("Could not update alert");
     }

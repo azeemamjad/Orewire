@@ -62,7 +62,7 @@ const Jobs = () => {
               </div>
               <h1 className="font-display text-3xl lg:text-4xl font-extrabold leading-tight">Jobs at listed mining companies</h1>
               <p className="text-sm text-muted-foreground mt-1.5 max-w-2xl">
-                Geologists, engineers, metallurgists and operators — straight from the issuers. Hiring? Post a listing or promote it across the Orewire feed.
+                Geologists, engineers, metallurgists and operators - straight from the issuers. Hiring? Post a listing or promote it across the Orewire feed.
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -138,7 +138,7 @@ const Jobs = () => {
               <div className="py-16 text-center text-sm text-muted-foreground border border-border bg-surface">
                 <Briefcase className="w-8 h-8 mx-auto mb-3 text-muted-foreground/50" />
                 <p className="mb-2">No jobs available right now.</p>
-                <p className="text-xs">Be the first to post — your listing will be seen by thousands of mining professionals.</p>
+                <p className="text-xs">Be the first to post - your listing will be seen by thousands of mining professionals.</p>
                 <button onClick={() => setShowPostForm(true)} className="mt-4 inline-flex items-center gap-2 text-sm font-medium px-4 py-2 bg-accent text-accent-foreground hover:bg-accent/90">
                   <Megaphone className="w-4 h-4" /> Post a job
                 </button>
@@ -203,14 +203,14 @@ const Jobs = () => {
               <ul className="space-y-3 text-sm text-foreground/80">
                 <li className="flex items-start gap-2.5"><Eye className="w-4 h-4 mt-0.5 text-accent shrink-0" /><span>Seen by 4,200+ mining investors and professionals daily</span></li>
                 <li className="flex items-start gap-2.5"><Zap className="w-4 h-4 mt-0.5 text-accent shrink-0" /><span>Promoted listings appear in the news feed alongside filings</span></li>
-                <li className="flex items-start gap-2.5"><BarChart3 className="w-4 h-4 mt-0.5 text-accent shrink-0" /><span>Company-linked — applicants see your stock page and filings</span></li>
+                <li className="flex items-start gap-2.5"><BarChart3 className="w-4 h-4 mt-0.5 text-accent shrink-0" /><span>Company-linked - applicants see your stock page and filings</span></li>
                 <li className="flex items-start gap-2.5"><Users className="w-4 h-4 mt-0.5 text-accent shrink-0" /><span>Targeted audience of geologists, engineers, and operators</span></li>
               </ul>
             </div>
 
             <div className="border border-accent bg-surface p-5">
               <div className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground mb-2">Listing</div>
-              <h3 className="font-display text-xl font-bold mb-1">Post a job — $299/30d</h3>
+              <h3 className="font-display text-xl font-bold mb-1">Post a job - $299/30d</h3>
               <p className="text-sm text-muted-foreground mb-4">Or $799 for promoted placement in the feed.</p>
               <ul className="space-y-2 text-sm mb-5">
                 <li className="flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-[hsl(var(--up))]" /> 30-day listing on the jobs board</li>
@@ -417,9 +417,9 @@ const PostJobDialog = ({
 
             <div className="border border-border bg-muted/30 p-3 text-xs space-y-1.5">
               <div className="font-mono uppercase tracking-widest text-[10px] text-muted-foreground">Pricing</div>
-              <div className="flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-[hsl(var(--up))]" /> Standard listing — $299 · 30 days</div>
-              <div className="flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-[hsl(var(--up))]" /> Promoted (top + accent border + newsletter) — $799 · 30 days</div>
-              <div className="flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-[hsl(var(--up))]" /> Unlimited posts for issuers — from $2,400 / yr</div>
+              <div className="flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-[hsl(var(--up))]" /> Standard listing - $299 · 30 days</div>
+              <div className="flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-[hsl(var(--up))]" /> Promoted (top + accent border + newsletter) - $799 · 30 days</div>
+              <div className="flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-[hsl(var(--up))]" /> Unlimited posts for issuers - from $2,400 / yr</div>
             </div>
 
             <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
@@ -526,7 +526,7 @@ const ApplyDialog = ({
               <input type="url" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="Website / Portfolio (optional)" className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm rounded-none sm:col-span-2 placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
             </div>
 
-            <textarea value={coverLetter} onChange={(e) => setCoverLetter(e.target.value)} placeholder="Cover letter (optional) — why you're a great fit for this role…" rows={4} className="flex min-h-[80px] w-full border border-input bg-background px-3 py-2 text-sm rounded-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
+            <textarea value={coverLetter} onChange={(e) => setCoverLetter(e.target.value)} placeholder="Cover letter (optional): why you're a great fit for this role…" rows={4} className="flex min-h-[80px] w-full border border-input bg-background px-3 py-2 text-sm rounded-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
 
             <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
               <button type="button" onClick={onClose} className="inline-flex items-center justify-center text-sm font-medium h-10 px-4 py-2 rounded-none border border-border hover:bg-muted">Cancel</button>

@@ -186,7 +186,7 @@ const CommodityDetail = () => {
   const simHigh = price ? +(price * 1.003).toFixed(2) : null;
   const simLow = price ? +(price * 0.992).toFixed(2) : null;
   const simPrevClose = price && changeAbs != null ? +(price - changeAbs).toFixed(2) : null;
-  const simVolume = price ? `${(Math.random() * 300 + 50).toFixed(1)}K` : "—";
+  const simVolume = price ? `${(Math.random() * 300 + 50).toFixed(1)}K` : "-";
 
   const fmtPrice = (n: number) =>
     n.toLocaleString(undefined, { maximumFractionDigits: key === "GOLD" || key === "SLVR" ? 2 : 0 });

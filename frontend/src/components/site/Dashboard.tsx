@@ -63,13 +63,13 @@ const Dashboard = () => (
               </div>
             </div>
             <div className="divide-y divide-border overflow-hidden">
-              <FeedItem active sym="TSXV:SCZ" tone="noteworthy" title="Eagle Lake — 12.4m @ 3.2 g/t Au from 287m" type="Drill result" time="07:31" />
-              <FeedItem sym="ASX:DEG" tone="watch" title="Hemi resource upgrade — +18% Indicated" type="JORC update" time="07:42" />
+              <FeedItem active sym="TSXV:SCZ" tone="noteworthy" title="Eagle Lake - 12.4m @ 3.2 g/t Au from 287m" type="Drill result" time="07:31" />
+              <FeedItem sym="ASX:DEG" tone="watch" title="Hemi resource upgrade - +18% Indicated" type="JORC update" time="07:42" />
               <FeedItem sym="TSXV:NFG" tone="noteworthy" title="Step-out: 2.1m @ 24 g/t Au at Queensway" type="Drill result" time="07:22" />
               <FeedItem sym="CSE:GR" tone="watch" title="$4.2M placement at $0.18, 0.8x mkt cap" type="Placement" time="07:11" />
-              <FeedItem sym="TSXV:NXE" tone="noteworthy" title="NI 43-101 filed — first Indicated category" type="Tech report" time="07:04" />
-              <FeedItem sym="ASX:CXO" tone="routine" title="Quarterly activities — Q3 in line with guidance" type="Quarterly" time="06:58" />
-              <FeedItem sym="TSXV:LUM" tone="routine" title="AIF re-filing — no material change" type="AIF" time="06:51" />
+              <FeedItem sym="TSXV:NXE" tone="noteworthy" title="NI 43-101 filed - first Indicated category" type="Tech report" time="07:04" />
+              <FeedItem sym="ASX:CXO" tone="routine" title="Quarterly activities - Q3 in line with guidance" type="Quarterly" time="06:58" />
+              <FeedItem sym="TSXV:LUM" tone="routine" title="AIF re-filing - no material change" type="AIF" time="06:51" />
             </div>
           </div>
 
@@ -110,12 +110,12 @@ const Dashboard = () => (
               <div className="md:col-span-3 p-7 space-y-5 border-r border-border">
                 <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Plain-English translation</div>
                 <p className="font-display text-xl leading-snug font-medium">
-                  Santa Cruz Mining hit a high-grade gold intercept at <span className="bg-highlight px-1">2.4× the deposit's average grade</span>, in a previously untested zone — and the hole ended in mineralization, meaning the system may extend deeper.
+                  Santa Cruz Mining hit a high-grade gold intercept at <span className="bg-highlight px-1">2.4× the deposit's average grade</span>, in a previously untested zone - and the hole ended in mineralization, meaning the system may extend deeper.
                 </p>
                 <div className="space-y-3 text-sm text-foreground/80">
                   <KeyFact i="01" t="Grade vs deposit avg" v="3.2 g/t Au is well above the 1.3 g/t historic mine average for this district." />
                   <KeyFact i="02" t="True width is meaningful" v="12.4m true width at this orientation indicates a structurally robust zone, not a thin vein." />
-                  <KeyFact i="03" t="Open at depth" v="Final assay was the highest of the hole — the deposit is not closed off vertically." />
+                  <KeyFact i="03" t="Open at depth" v="Final assay was the highest of the hole - the deposit is not closed off vertically." />
                 </div>
               </div>
 

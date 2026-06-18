@@ -44,28 +44,28 @@ const CURRENCY_META: Record<string, { name: string; fullName: string; quote: str
     fullName: "US Dollar / Canadian Dollar",
     quote: "CAD",
     about:
-      "USD/CAD spot — the loonie pair, sensitive to crude oil, BoC vs Fed policy spreads and risk-on/off flows. Key for Canadian-listed miner valuations.",
+      "USD/CAD spot - the loonie pair, sensitive to crude oil, BoC vs Fed policy spreads and risk-on/off flows. Key for Canadian-listed miner valuations.",
   },
   AUDUSD: {
     name: "AUD/USD",
     fullName: "Australian Dollar / US Dollar",
     quote: "USD",
     about:
-      "AUD/USD spot — the Aussie pair, driven by commodity prices (iron ore, copper, gold), China growth, and RBA vs Fed policy. Critical for ASX-listed miner economics.",
+      "AUD/USD spot - the Aussie pair, driven by commodity prices (iron ore, copper, gold), China growth, and RBA vs Fed policy. Critical for ASX-listed miner economics.",
   },
   CADAUD: {
     name: "CAD/AUD",
     fullName: "Canadian Dollar / Australian Dollar",
     quote: "AUD",
     about:
-      "CAD/AUD cross — tracks the relative strength of two commodity currencies. Useful for comparing TSX-V vs ASX miner valuations.",
+      "CAD/AUD cross - tracks the relative strength of two commodity currencies. Useful for comparing TSX-V vs ASX miner valuations.",
   },
   DXY: {
     name: "DXY",
     fullName: "US Dollar Index",
     quote: "Index",
     about:
-      "DXY — US Dollar Index measuring USD strength against a basket of major currencies (EUR, JPY, GBP, CAD, SEK, CHF). Inversely correlated with gold and most commodities.",
+      "DXY - US Dollar Index measuring USD strength against a basket of major currencies (EUR, JPY, GBP, CAD, SEK, CHF). Inversely correlated with gold and most commodities.",
   },
 };
 
@@ -268,7 +268,7 @@ const CurrencyDetail = () => {
                     </>
                   )}
                   <dt className="text-xs uppercase tracking-wider text-muted-foreground">Quote</dt>
-                  <dd className="font-mono text-right font-semibold">{meta.quote || "—"}</dd>
+                  <dd className="font-mono text-right font-semibold">{meta.quote || "-"}</dd>
                   <dt className="text-xs uppercase tracking-wider text-muted-foreground">Type</dt>
                   <dd className="font-mono text-right font-semibold">FX Spot</dd>
                 </dl>
@@ -280,7 +280,7 @@ const CurrencyDetail = () => {
                 <h3 className="font-semibold font-display text-base uppercase tracking-wider">Context</h3>
               </div>
               <div className="p-6 pt-0 pb-5 text-sm text-muted-foreground leading-relaxed">
-                FX moves affect mining revenues — most miners price in USD but report in local currency. A weaker CAD or AUD
+                FX moves affect mining revenues - most miners price in USD but report in local currency. A weaker CAD or AUD
                 can boost margins for TSX/ASX-listed producers.
               </div>
             </div>

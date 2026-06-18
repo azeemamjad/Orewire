@@ -11,13 +11,13 @@ function exPrefix(ex: string): string {
 }
 
 function fmtPx(n: number | null): string {
-  if (n == null) return "—";
+  if (n == null) return "-";
   if (n < 1) return n.toFixed(4);
   return n.toFixed(2);
 }
 
 function fmtPct(n: number | null): string {
-  if (n == null) return "—";
+  if (n == null) return "-";
   return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
 }
 
@@ -51,9 +51,9 @@ const MarketStrip = () => {
 
   // Fall back to a static placeholder while loading so the bar height is preserved
   const display = items.length > 0 ? items : [
-    { sym: "TSX-V:—", px: "—", chg: "—", up: true },
-    { sym: "ASX:—", px: "—", chg: "—", up: true },
-    { sym: "CSE:—", px: "—", chg: "—", up: false },
+    { sym: "TSX-V: -", px: "-", chg: "-", up: true },
+    { sym: "ASX: -", px: "-", chg: "-", up: true },
+    { sym: "CSE: -", px: "-", chg: "-", up: false },
   ];
 
   return (

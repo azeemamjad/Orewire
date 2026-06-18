@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Relay — Mining Intel Admin</title>
+<title>Relay | Mining Intel Admin</title>
 <link rel="stylesheet" href="/admin/css/admin.css" />
 <style>
 .relay-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-top: 20px; }
@@ -125,7 +125,7 @@
 <main class="main">
   <div class="page-header">
     <h1>OreWire Relay</h1>
-    <p>10 browsers — 5 datacenter, 3 residential, 2 local IP (no proxy).</p>
+    <p>10 browsers - 5 datacenter, 3 residential, 2 local IP (no proxy).</p>
   </div>
 
   <div class="relay-proxy-banner" id="proxy-banner">Connecting to API…</div>
@@ -145,7 +145,7 @@
     <h2>Browser task catalog</h2>
     <p style="color:var(--muted);font-size:13px;max-width:720px;">
       Which pipeline jobs need Playwright. <strong>Captcha</strong> tasks (SEDAR+) should use residential workers;
-      ASX uses datacenter — not the same browser session while SEDAR is waiting for a human.
+      ASX uses datacenter - not the same browser session while SEDAR is waiting for a human.
     </p>
     <p id="tasks-summary" style="font-size:13px;margin-top:8px;"></p>
     <div class="table-wrap">
@@ -169,7 +169,7 @@
 <script>
 const API_BASE = (window.location.origin || 'http://localhost:3000') + '/api/relay';
 document.getElementById('relay-api-hint').textContent =
-  'API: ' + API_BASE + ' (admin login required — use this site while logged in, not a bare browser tab).';
+  'API: ' + API_BASE + ' (admin login required - use this site while logged in, not a bare browser tab).';
 
 async function api(path, opts = {}) {
   const url = API_BASE + path;
@@ -186,7 +186,7 @@ async function api(path, opts = {}) {
     throw new Error('API returned HTML, not JSON (' + r.status + '). Log in at /admin/login then open relay.html');
   }
   if (r.status === 401) {
-    throw new Error('Not logged in — open /admin/login first, then return to Relay.');
+    throw new Error('Not logged in - open /admin/login first, then return to Relay.');
   }
   if (!r.ok) throw new Error(data.error || 'HTTP ' + r.status);
   return data;
@@ -242,7 +242,7 @@ function renderWorkers(workers) {
         <button type="button" class="btn btn-primary btn-view">View (temp link)</button>
         <button type="button" class="btn btn-secondary btn-respawn" ${w.status === 'error' ? '' : 'hidden'}>Respawn browser</button>
         <button type="button" class="btn btn-secondary btn-reset">Reset browser</button>
-        <button type="button" class="btn btn-secondary btn-human" title="Pause acquisition — running task keeps going until it hits a captcha">Mark needs human</button>
+        <button type="button" class="btn btn-secondary btn-human" title="Pause acquisition: running task keeps going until it hits a captcha">Mark needs human</button>
         <button type="button" class="btn btn-secondary btn-active" title="After solving a captcha in Relay View, click to resume the paused task">Mark active (resume)</button>
       </div>
       <div class="relay-view-url" id="url-${w.id}" hidden></div>
@@ -406,7 +406,7 @@ async function loadProxyBanner() {
     const data = await api('/proxies');
     const inv = data.inventory;
     if (!inv) {
-      el.textContent = 'Proxy info unavailable — restart the server after pulling latest Relay code.';
+      el.textContent = 'Proxy info unavailable - restart the server after pulling latest Relay code.';
       return;
     }
     const dc = inv.datacenter;
@@ -461,10 +461,10 @@ async function loadTasks() {
       return `<tr${rowClass}>
         <td><strong>${escapeHtml(t.slug)}</strong><br><span style="color:var(--muted)">${escapeHtml(t.name)}</span></td>
         <td>${escapeHtml(t.category)}</td>
-        <td>${escapeHtml(t.exchange || '—')}</td>
+        <td>${escapeHtml(t.exchange || '-')}</td>
         <td>${t.needs_browser ? '<span class="tag-yes">Yes</span>' : '<span class="tag-no">No</span>'}</td>
         <td>${t.needs_captcha ? '<span class="tag-captcha">Yes</span>' : '<span class="tag-no">No</span>'}</td>
-        <td>${escapeHtml(t.preferred_relay_tier || '—')}${t.relay_worker_id ? '<br>' + escapeHtml(t.relay_worker_id) : ''}</td>
+        <td>${escapeHtml(t.preferred_relay_tier || '-')}${t.relay_worker_id ? '<br>' + escapeHtml(t.relay_worker_id) : ''}</td>
         <td style="max-width:280px">${escapeHtml(t.notes || '')}</td>
       </tr>`;
     }).join('');

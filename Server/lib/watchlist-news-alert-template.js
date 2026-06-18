@@ -9,7 +9,7 @@ function fmtExchange(ex) {
 function slugLabel(exchange, ticker) {
   const ex = fmtExchange(exchange);
   const tk = (ticker || '').toUpperCase();
-  return ex && tk ? `${ex}: ${tk}` : tk || '—';
+  return ex && tk ? `${ex}: ${tk}` : tk || '-';
 }
 
 function headlineTypeFromTitle(title) {
@@ -47,12 +47,12 @@ function verdictText(sentiment, summary) {
   const tail = (summary || '').trim();
   if (s === 'bullish') {
     return tail
-      ? `Verdict: positive signal for watchlist holders — ${tail}`
+      ? `Verdict: positive signal for watchlist holders - ${tail}`
       : 'Verdict: positive signal for watchlist holders based on this release.';
   }
   if (s === 'bearish') {
     return tail
-      ? `Verdict: worth monitoring closely — ${tail}`
+      ? `Verdict: worth monitoring closely - ${tail}`
       : 'Verdict: worth monitoring closely; review the full release on OreWire.';
   }
   return tail
@@ -80,7 +80,7 @@ function renderWatchlistNewsAlertEmail(data) {
       </tr>`
     : '';
 
-  const preheader = `${badge.emoji} ${tickerLine} — ${headlineType}`;
+  const preheader = `${badge.emoji} ${tickerLine} - ${headlineType}`;
 
   return `<!doctype html>
 <html lang="en">
@@ -88,7 +88,7 @@ function renderWatchlistNewsAlertEmail(data) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="x-apple-disable-message-reformatting">
-<title>Watchlist news — OreWire</title>
+<title>Watchlist news | OreWire</title>
 <style>
   @media (max-width: 600px) {
     .container { width: 100% !important; }
@@ -169,7 +169,7 @@ function newsAlertSubject(data) {
   const badge = sentimentBadge(data.sentiment);
   const tickerLine = slugLabel(data.exchange, data.ticker);
   const headlineType = headlineTypeFromTitle(data.title);
-  return `${badge.emoji} ${tickerLine} — ${headlineType}`;
+  return `${badge.emoji} ${tickerLine} - ${headlineType}`;
 }
 
 module.exports = {

@@ -6,18 +6,18 @@ import { fetchMovers, companySlug, type MoverItem } from "@/lib/api";
 const REFETCH_MS = 30 * 60 * 1000;
 
 function fmtPrice(n: number | null): string {
-  if (n == null) return "—";
+  if (n == null) return "-";
   if (n < 1) return n.toFixed(4);
   return n.toFixed(2);
 }
 
 function fmtPct(n: number | null): string {
-  if (n == null) return "—";
+  if (n == null) return "-";
   return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
 }
 
 function fmtMktCap(n: number | null): string {
-  if (n == null) return "—";
+  if (n == null) return "-";
   if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
   if (n >= 1e6) return `$${(n / 1e6).toFixed(0)}M`;
   if (n >= 1e3) return `$${(n / 1e3).toFixed(0)}K`;
@@ -68,7 +68,7 @@ const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up:
         {rows.length === 0 ? (
           <tr>
             <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground text-xs">
-              No data yet — try again in a moment.
+              No data yet - try again in a moment.
             </td>
           </tr>
         ) : (

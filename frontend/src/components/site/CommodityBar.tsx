@@ -5,14 +5,14 @@ import { fetchCommodities, type CommoditySpot } from "@/lib/api";
 const REFETCH_MS = 30 * 60 * 1000;
 
 function fmtPrice(n: number | null): string {
-  if (n == null) return "—";
+  if (n == null) return "-";
   if (n >= 1000) return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
   if (n >= 100) return n.toFixed(1);
   return n.toFixed(2);
 }
 
 function fmtPct(n: number | null): string {
-  if (n == null) return "—";
+  if (n == null) return "-";
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 }
 

@@ -13,24 +13,24 @@ import {
 const REFETCH_MS = 30 * 60 * 1000;
 
 function fmtPrice(n: number | null): string {
-  if (n == null) return "—";
+  if (n == null) return "-";
   if (n >= 1000) return "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
   if (n >= 100) return "$" + n.toFixed(1);
   return "$" + n.toFixed(2);
 }
 
 function fmtPct(n: number | null): string {
-  if (n == null) return "—";
+  if (n == null) return "-";
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 }
 
 function fmtIndexPrice(n: number | null): string {
-  if (n == null) return "—";
+  if (n == null) return "-";
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
 function fmtFxPrice(n: number | null): string {
-  if (n == null) return "—";
+  if (n == null) return "-";
   return n.toFixed(4);
 }
 
@@ -42,7 +42,7 @@ const commoditySlugMap: Record<string, string> = {
 };
 
 const COMMODITY_FALLBACK: CommoditySpot[] = [
-  // Must show — core metals
+  // Must show - core metals
   { key: "gold",      label: "Gold",            unit: "oz",  price: null, change_pct: null },
   { key: "silver",    label: "Silver",          unit: "oz",  price: null, change_pct: null },
   { key: "copper",    label: "Copper",          unit: "lb",  price: null, change_pct: null },
@@ -50,7 +50,7 @@ const COMMODITY_FALLBACK: CommoditySpot[] = [
   { key: "lithium",   label: "Lithium",         unit: "t",   price: null, change_pct: null },
   { key: "iron_ore",  label: "Iron Ore",        unit: "t",   price: null, change_pct: null },
   { key: "nickel",    label: "Nickel",          unit: "t",   price: null, change_pct: null },
-  // Should show — context
+  // Should show - context
   { key: "zinc",      label: "Zinc",            unit: "t",   price: null, change_pct: null },
   { key: "brent",     label: "Brent Crude Oil", unit: "bbl", price: null, change_pct: null },
   { key: "wti",       label: "WTI Crude Oil",   unit: "bbl", price: null, change_pct: null },
@@ -124,7 +124,7 @@ const TableHeader = () => (
 const ChgCell = ({ value }: { value: number | null }) => {
   if (value == null) {
     return (
-      <td className="px-3 py-2 text-right font-mono font-bold text-muted-foreground">—</td>
+      <td className="px-3 py-2 text-right font-mono font-bold text-muted-foreground">-</td>
     );
   }
   const up = value >= 0;

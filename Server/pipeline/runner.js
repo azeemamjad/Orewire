@@ -411,6 +411,15 @@ async function saveOneFiling(pdfPath, companyDir, companyName, ticker, exchange)
     }
 
     await client.query('COMMIT');
+
+    if (companyRow?.id) {
+      try {
+        const { scheduleSnapshotRegeneration } = require('../lib/company-snapshot');
+        scheduleSnapshotRegeneration(companyRow.id, 'new-filing-analysis');
+      } catch {
+        /* optional */
+      }
+    }
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

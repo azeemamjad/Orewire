@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    /* Editorial financial-news base — warm paper, deep navy ink */
+    /* Editorial financial-news base - warm paper, deep navy ink */
     --background: 36 30% 96%;          /* warm paper #f7f3ec */
     --surface: 0 0% 100%;              /* card surface */
     --foreground: 220 45% 12%;         /* deep navy ink */

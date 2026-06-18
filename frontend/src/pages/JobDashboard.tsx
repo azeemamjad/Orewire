@@ -209,7 +209,7 @@ const ApplicationRow = ({ app, onStatusChange }: { app: JobApplication; onStatus
             <div className="text-xs text-muted-foreground truncate">{app.email}</div>
           </div>
         </div>
-        <div className="font-mono text-xs text-muted-foreground">{app.expectedSalary || "—"}</div>
+        <div className="font-mono text-xs text-muted-foreground">{app.expectedSalary || "-"}</div>
         <div className="font-mono text-xs text-muted-foreground inline-flex items-center gap-1"><Clock className="w-3 h-3" />{app.timeAgo}</div>
         <span className={`font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 font-bold border text-center ${statusStyle[app.status] || "bg-muted text-foreground border-border"}`}>
           {app.status}

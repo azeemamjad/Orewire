@@ -51,7 +51,7 @@ export function isCompanyLinkedNews(item: NewsItem): boolean {
 
 const NEWS_TZ = "America/Toronto";
 
-/** Apr 24 · 7:31 AM — from pubDate; falls back to API timeAgo when missing. */
+/** Apr 24 · 7:31 AM - from pubDate; falls back to API timeAgo when missing. */
 export function formatNewsDateTime(pubDate: string | null | undefined, fallback = ""): string {
   if (!pubDate) return fallback;
   const d = new Date(pubDate);

@@ -6,11 +6,11 @@ const Hero = () => (
         Live · TSX-V · CSE · ASX
       </div>
       <h1 className="font-display text-[clamp(2.5rem,6vw,5rem)] font-extrabold leading-[1.02] tracking-tight text-balance">
-        Junior Mining Intelligence —<br />
+        Junior Mining Intelligence,<br />
         <span className="text-[hsl(38_78%_55%)]">Translated by AI.</span>
       </h1>
       <p className="mt-6 max-w-2xl mx-auto text-lg text-[hsl(36_30%_94%/0.75)] leading-relaxed">
-        Every filing from 2,000+ TSX-V, CSE, and ASX mining companies — summarized in plain English before the market opens.
+        Every filing from 2,000+ TSX-V, CSE, and ASX mining companies - summarized in plain English before the market opens.
       </p>
       <div className="mt-10 flex flex-col items-center gap-3">
         <a

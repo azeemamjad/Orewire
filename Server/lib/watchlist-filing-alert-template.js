@@ -9,7 +9,7 @@ function fmtExchange(ex) {
 function slugLabel(exchange, ticker) {
   const ex = fmtExchange(exchange);
   const tk = (ticker || '').toUpperCase();
-  return ex && tk ? `${ex}: ${tk}` : tk || '—';
+  return ex && tk ? `${ex}: ${tk}` : tk || '-';
 }
 
 function normalizeFilingType(filingType, displayType) {
@@ -68,7 +68,7 @@ function renderWatchlistFilingAlertEmail(data) {
       </tr>`
     : '';
 
-  const preheader = `${badge.emoji} ${tickerLine} — ${filingType}`;
+  const preheader = `${badge.emoji} ${tickerLine} - ${filingType}`;
 
   return `<!doctype html>
 <html lang="en">
@@ -76,7 +76,7 @@ function renderWatchlistFilingAlertEmail(data) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="x-apple-disable-message-reformatting">
-<title>Watchlist alert — OreWire</title>
+<title>Watchlist alert | OreWire</title>
 <style>
   @media (max-width: 600px) {
     .container { width: 100% !important; }
@@ -151,7 +151,7 @@ function filingAlertSubject(data) {
   const badge = verdictBadge(data.verdict);
   const tickerLine = slugLabel(data.exchange, data.ticker);
   const filingType = normalizeFilingType(data.filingType, data.displayType);
-  return `${badge.emoji} ${tickerLine} — ${filingType}`;
+  return `${badge.emoji} ${tickerLine} - ${filingType}`;
 }
 
 module.exports = {

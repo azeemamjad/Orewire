@@ -15,7 +15,7 @@ export interface NewsArticleCardProps {
   summary?: string | null;
   source?: string | null;
   timeAgo?: string | null;
-  /** External news URL — used to build the detail-page slug. */
+  /** External news URL - used to build the detail-page slug. */
   link?: string | null;
   severity: Severity;
   tags?: string[];

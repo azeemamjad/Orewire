@@ -3,7 +3,7 @@ import { FileText, Sparkles, BellRing } from "lucide-react";
 const steps = [
   { icon: FileText, label: "Filed", body: "2,000+ TSX-V, CSE, TSX and ASX mining companies file news releases and regulatory documents every day." },
   { icon: Sparkles, label: "Summarized & translated", body: "We read every release and filing the moment it hits the wire, then translate the jargon into one plain-English line with a significance verdict." },
-  { icon: BellRing, label: "Delivered to your inbox", body: "Sign up for alerts on the individual companies you follow. The moment they file or release news, we summarize it and send it straight to you — so you stay alert and on top, without reading 200-page PDFs." },
+  { icon: BellRing, label: "Delivered to your inbox", body: "Sign up for alerts on the individual companies you follow. The moment they file or release news, we summarize it and send it straight to you - so you stay alert and on top, without reading 200-page PDFs." },
 ];
 
 const HowItWorks = () => (
@@ -14,7 +14,7 @@ const HowItWorks = () => (
         From filing straight to your inbox.
       </h2>
       <p className="text-base lg:text-lg text-foreground/70 leading-relaxed max-w-2xl mb-10">
-        Follow the companies you care about. The moment they file or release news, we summarize it in plain English and deliver it to you — so nothing important slips past.
+        Follow the companies you care about. The moment they file or release news, we summarize it in plain English and deliver it to you - so nothing important slips past.
       </p>
       <div className="grid md:grid-cols-3 gap-px bg-border border border-border">
         {steps.map((s, i) => (

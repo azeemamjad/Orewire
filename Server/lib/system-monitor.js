@@ -8,7 +8,7 @@ const { isNewsPipelineRunning } = require('./news-pipeline');
 const execFileAsync = promisify(execFile);
 
 function fmtBytes(n) {
-  if (n == null || Number.isNaN(n)) return '—';
+  if (n == null || Number.isNaN(n)) return '-';
   const gb = n / (1024 ** 3);
   if (gb >= 1) return `${gb.toFixed(1)} GB`;
   const mb = n / (1024 ** 2);
@@ -16,7 +16,7 @@ function fmtBytes(n) {
 }
 
 function fmtUptime(sec) {
-  if (!sec) return '—';
+  if (!sec) return '-';
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = Math.floor(sec % 60);
@@ -37,7 +37,7 @@ async function getPidMetrics(pid) {
       return {
         pid: p.pid,
         name: p.name,
-        cpu: p.cpuSec != null ? `${p.cpuSec}s CPU` : '—',
+        cpu: p.cpuSec != null ? `${p.cpuSec}s CPU` : '-',
         ramMB: p.ramMB,
       };
     } catch {
@@ -148,8 +148,8 @@ async function getSystemSnapshot() {
     processes.push({
       ...job,
       startedAt: job.startedAt || null,
-      runningFor: job.startedAt ? fmtUptime((Date.now() - job.startedAt) / 1000) : '—',
-      metrics: metrics || { pid: job.pid, name: '—', cpu: '—', ramMB: null },
+      runningFor: job.startedAt ? fmtUptime((Date.now() - job.startedAt) / 1000) : '-',
+      metrics: metrics || { pid: job.pid, name: '-', cpu: '-', ramMB: null },
     });
   }
 
@@ -159,7 +159,7 @@ async function getSystemSnapshot() {
     status: 'running',
     pid: server.pid,
     runningFor: server.uptime,
-    metrics: { pid: server.pid, name: 'node', cpu: '—', ramMB: server.ramMB },
+    metrics: { pid: server.pid, name: 'node', cpu: '-', ramMB: server.ramMB },
     source: 'server',
   });
 

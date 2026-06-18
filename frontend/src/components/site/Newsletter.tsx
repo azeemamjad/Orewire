@@ -31,7 +31,7 @@ const Newsletter = () => {
         Get the morning brief before the market opens.
       </h2>
       <p className="text-base lg:text-lg text-foreground/70 max-w-2xl mx-auto mb-8">
-        The day's most important mining filings — summarized, scored, and delivered to your inbox by 7:30am ET.
+        The day's most important mining filings - summarized, scored, and delivered to your inbox by 7:30am ET.
       </p>
       <form className="flex flex-col sm:flex-row gap-2 max-w-lg mx-auto" onSubmit={handleSubmit}>
         <input

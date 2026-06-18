@@ -32,7 +32,7 @@ const FeedPreview = () => {
           </h3>
           <p className="text-sm leading-relaxed opacity-95 mb-5">
             Santa Cruz Mining hit a high-grade gold intercept that's <strong>2.4× the deposit average</strong>,
-            in a previously untested zone — and the hole ended in mineralization.
+            in a previously untested zone - and the hole ended in mineralization.
           </p>
           <div className="grid grid-cols-3 gap-3 text-xs">
             <Fact k="Grade" v="3.2 g/t" sub="vs 1.3 avg" />
@@ -43,9 +43,9 @@ const FeedPreview = () => {
 
         {/* Routine list */}
         <div className="divide-y divide-border/70">
-          <Row tone="watch" label="Watch" sym="ASX:DEG" title="Hemi resource upgrade — +18% Indicated category" time="07:42" />
+          <Row tone="watch" label="Watch" sym="ASX:DEG" title="Hemi resource upgrade - +18% Indicated category" time="07:42" />
           <Row tone="noteworthy" label="Noteworthy" sym="TSXV:NFG" title="Step-out: 2.1m @ 24 g/t Au, 4km from main zone" time="07:22" />
-          <Row tone="routine" label="Routine" sym="ASX:CXO" title="Quarterly activities — Q3 production on guidance" time="07:18" />
+          <Row tone="routine" label="Routine" sym="ASX:CXO" title="Quarterly activities - Q3 production on guidance" time="07:18" />
         </div>
       </div>
 

@@ -46,7 +46,7 @@ const Verdicts = () => (
           </h2>
         </div>
         <div className="lg:col-span-6 lg:col-start-7 text-foreground/70 text-lg leading-relaxed self-end">
-          Every translation is graded against objective, deposit-aware criteria — not sentiment. The verdict drives delivery: instant alert, digest mention, or one-liner.
+          Every translation is graded against objective, deposit-aware criteria - not sentiment. The verdict drives delivery: instant alert, digest mention, or one-liner.
         </div>
       </div>
 

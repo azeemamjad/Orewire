@@ -44,28 +44,28 @@ const INDEX_LABELS: Record<string, string> = {
 };
 
 function fmtIndexPrice(n: number | null | undefined) {
-  if (n == null) return "—";
+  if (n == null) return "-";
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
 function fmtPrice(n: number | null | undefined) {
-  if (n == null) return "—";
+  if (n == null) return "-";
   return `$${n.toFixed(Math.abs(n) < 1 ? 3 : 2)}`;
 }
 
 function fmtChgAbs(n: number | null | undefined, price: number | null | undefined) {
-  if (n == null) return "—";
+  if (n == null) return "-";
   const d = price != null && Math.abs(price) < 1 ? 3 : 2;
   return `${n >= 0 ? "+" : "-"}$${Math.abs(n).toFixed(d)}`;
 }
 
 function fmtPct(n: number | null | undefined) {
-  if (n == null) return "—";
+  if (n == null) return "-";
   return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
 }
 
 function fmtVol(n: number | null | undefined) {
-  if (n == null) return "—";
+  if (n == null) return "-";
   if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
   if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
   if (n >= 1e3) return `${Math.round(n / 1e3)}K`;
@@ -76,8 +76,8 @@ function fmtVol(n: number | null | undefined) {
 // Full literal (no interpolation) so Tailwind's JIT emits the arbitrary tracks.
 const WATCH_GRID = "grid-cols-[44px_60px_52px_minmax(120px,1.3fr)_80px_84px_72px_78px_90px_minmax(120px,1fr)_72px]";
 
-// Spot tables (commodities / indexes / currencies): no volume/mkt-cap/tags —
-// those don't apply — so a leaner set: [reorder] Symbol Name Price Chg$ Chg% [del+open].
+// Spot tables (commodities / indexes / currencies): no volume/mkt-cap/tags -
+// those don't apply - so a leaner set: [reorder] Symbol Name Price Chg$ Chg% [del+open].
 const SPOT_GRID = "grid-cols-[44px_120px_minmax(120px,1fr)_140px_120px_110px_72px]";
 
 // Absolute change derived from price + percent change (these feeds only give %).
@@ -87,7 +87,7 @@ function deriveChangeAbs(price: number | null | undefined, pct: number | null | 
 }
 
 function fmtMcap(n: number | null | undefined) {
-  if (n == null) return "—";
+  if (n == null) return "-";
   if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
   if (n >= 1e6) return `$${Math.round(n / 1e6)}M`;
   if (n >= 1e3) return `$${Math.round(n / 1e3)}K`;
@@ -283,7 +283,7 @@ const Watchlist = () => {
                       className="bg-surface text-left px-4 py-3 flex items-center justify-between gap-3 hover:bg-background disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                       <div className="min-w-0">
                         <div className="flex items-baseline gap-2">
-                          <span className="font-mono font-bold text-sm">{c.ticker || "—"}</span>
+                          <span className="font-mono font-bold text-sm">{c.ticker || "-"}</span>
                           {c.exchange && <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{c.exchange}</span>}
                         </div>
                         <div className="text-xs text-foreground/70 truncate">{c.name}</div>
@@ -329,8 +329,8 @@ const Watchlist = () => {
                   nameSuffix: data?.unit ? `/ ${data.unit}` : null,
                   href: `/market/commodity/${slug}`,
                   changePct: data?.change_pct ?? null,
-                  priceText: price != null ? `$${price.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "—",
-                  changeAbsText: abs != null ? `${abs >= 0 ? "+" : "-"}$${Math.abs(abs).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "—",
+                  priceText: price != null ? `$${price.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "-",
+                  changeAbsText: abs != null ? `${abs >= 0 ? "+" : "-"}$${Math.abs(abs).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "-",
                 };
               })}
             />
@@ -358,8 +358,8 @@ const Watchlist = () => {
                   nameSuffix: null,
                   href: `/market/index/${slug}`,
                   changePct: data?.change_pct ?? null,
-                  priceText: price != null ? `${fmtIndexPrice(price)}${data?.currency ? ` ${data.currency}` : ""}` : "—",
-                  changeAbsText: abs != null ? `${abs >= 0 ? "+" : "-"}${fmtIndexPrice(Math.abs(abs))}` : "—",
+                  priceText: price != null ? `${fmtIndexPrice(price)}${data?.currency ? ` ${data.currency}` : ""}` : "-",
+                  changeAbsText: abs != null ? `${abs >= 0 ? "+" : "-"}${fmtIndexPrice(Math.abs(abs))}` : "-",
                 };
               })}
             />
@@ -388,8 +388,8 @@ const Watchlist = () => {
                   nameSuffix: meta?.subtitle || data?.subtitle || null,
                   href: `/market/currency/${slug}`,
                   changePct: data?.change_pct ?? null,
-                  priceText: price != null ? price.toFixed(4) : "—",
-                  changeAbsText: abs != null ? `${abs >= 0 ? "+" : "-"}${Math.abs(abs).toFixed(4)}` : "—",
+                  priceText: price != null ? price.toFixed(4) : "-",
+                  changeAbsText: abs != null ? `${abs >= 0 ? "+" : "-"}${Math.abs(abs).toFixed(4)}` : "-",
                 };
               })}
             />
@@ -409,7 +409,7 @@ const Watchlist = () => {
 };
 
 // ---------------------------------------------------------------------------
-// Company watchlist table — full market columns + up/down reordering.
+// Company watchlist table - full market columns + up/down reordering.
 // ---------------------------------------------------------------------------
 
 const CompanyWatchTable = ({
@@ -540,13 +540,13 @@ const CompanyWatchRow = ({
       </div>
 
       {/* Ticker */}
-      <Link to={href} className="font-mono font-bold text-sm hover:underline">{it.ticker || "—"}</Link>
+      <Link to={href} className="font-mono font-bold text-sm hover:underline">{it.ticker || "-"}</Link>
 
       {/* Exch */}
-      <span className="font-mono text-[10px] text-muted-foreground uppercase">{exLabel || "—"}</span>
+      <span className="font-mono text-[10px] text-muted-foreground uppercase">{exLabel || "-"}</span>
 
       {/* Company */}
-      <Link to={href} className="font-display text-[15px] font-semibold truncate hover:underline">{it.companyName || "—"}</Link>
+      <Link to={href} className="font-display text-[15px] font-semibold truncate hover:underline">{it.companyName || "-"}</Link>
 
       {/* Price */}
       <span className="text-right font-mono text-sm font-semibold">{fmtPrice(price)}</span>
@@ -557,7 +557,7 @@ const CompanyWatchRow = ({
       {/* Chg % */}
       <span className={`text-right font-mono text-sm font-semibold inline-flex justify-end items-center gap-0.5 ${moveColor}`}>
         {change == null ? (
-          "—"
+          "-"
         ) : (
           <>
             {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
@@ -575,7 +575,7 @@ const CompanyWatchRow = ({
       {/* Tags */}
       <div className="flex flex-wrap gap-1">
         {commodities.length === 0 && geo.length === 0 ? (
-          <span className="text-muted-foreground text-xs">—</span>
+          <span className="text-muted-foreground text-xs">-</span>
         ) : (
           <>
             {commodities.slice(0, 3).map((cm) => (
@@ -607,7 +607,7 @@ const CompanyWatchRow = ({
 };
 
 // ---------------------------------------------------------------------------
-// Spot watchlist table (commodities / indexes / currencies) — reorder + Chg$.
+// Spot watchlist table (commodities / indexes / currencies) - reorder + Chg$.
 // ---------------------------------------------------------------------------
 
 type SpotRow = {
@@ -737,7 +737,7 @@ const SpotWatchRow = ({
       {/* Chg % */}
       <span className={`text-right font-mono text-sm inline-flex justify-end items-center gap-0.5 ${moveColor}`}>
         {row.changePct == null ? (
-          "—"
+          "-"
         ) : (
           <>
             {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}

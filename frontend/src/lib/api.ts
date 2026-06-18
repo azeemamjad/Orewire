@@ -136,6 +136,10 @@ export async function fetchFilingsPage(params: {
   page: number;
   limit?: number;
   verdict?: string;
+  companyId?: number;
+  exchange?: string;
+  search?: string;
+  commodity?: string;
 }): Promise<PaginatedFilings> {
   const qs = new URLSearchParams();
   qs.set('page', String(params.page));
@@ -143,6 +147,10 @@ export async function fetchFilingsPage(params: {
   if (params.verdict && params.verdict !== 'All') {
     qs.set('verdict', params.verdict.toLowerCase());
   }
+  if (params.companyId) qs.set('company_id', String(params.companyId));
+  if (params.exchange && params.exchange !== 'All') qs.set('exchange', params.exchange);
+  if (params.search) qs.set('search', params.search);
+  if (params.commodity && params.commodity !== 'All') qs.set('commodity', params.commodity);
 
   const res = await fetch(`${API_BASE}/filings?${qs.toString()}`);
   if (!res.ok) {
@@ -408,11 +416,25 @@ export interface CompanySnapshot {
   model?: string | null;
 }
 
-export async function fetchCompanySnapshot(companyId: number): Promise<CompanySnapshot | null> {
+export type CompanySnapshotStatus = "ready" | "generating" | "empty";
+
+export interface CompanySnapshotResponse {
+  status: CompanySnapshotStatus;
+  needsRegen?: boolean;
+  snapshot: CompanySnapshot | null;
+}
+
+export async function fetchCompanySnapshot(companyId: number): Promise<CompanySnapshotResponse> {
   const res = await fetch(`${API_BASE}/companies/${companyId}/snapshot`);
-  if (!res.ok) return null;
+  if (!res.ok) {
+    return { status: "empty", snapshot: null };
+  }
   const data = await res.json();
-  return data.snapshot ?? null;
+  return {
+    status: data.status || (data.snapshot ? "ready" : "empty"),
+    needsRegen: data.needsRegen,
+    snapshot: data.snapshot ?? null,
+  };
 }
 
 export interface CompanyPerson {
@@ -1101,12 +1123,24 @@ export async function fetchNewsFeed(params?: {
   origin?: 'google' | 'rss';
   /** Only items matched to a company in our database */
   companyLinked?: boolean;
+  companyId?: number;
+  exchange?: string;
+  search?: string;
+  commodity?: string;
+  sentiment?: string;
+  severity?: string;
 }): Promise<NewsFeedResponse> {
   const qs = new URLSearchParams();
   if (params?.page) qs.set("page", String(params.page));
   if (params?.limit) qs.set("limit", String(params.limit));
   if (params?.origin) qs.set("origin", params.origin);
   if (params?.companyLinked) qs.set("companyLinked", "1");
+  if (params?.companyId) qs.set("companyId", String(params.companyId));
+  if (params?.exchange && params.exchange !== "All") qs.set("exchange", params.exchange);
+  if (params?.search) qs.set("search", params.search);
+  if (params?.commodity && params.commodity !== "All") qs.set("commodity", params.commodity);
+  if (params?.sentiment && params.sentiment !== "All") qs.set("sentiment", params.sentiment);
+  if (params?.severity && params.severity !== "All") qs.set("severity", params.severity);
   const query = qs.toString();
   const res = await fetch(`${API_BASE}/news/feed${query ? `?${query}` : ""}`);
   if (!res.ok) {
@@ -1147,15 +1181,20 @@ export interface CompanyNewsResponse {
 
 export async function fetchCompanyNews(
   name: string,
-  ticker?: string,
-  exchange?: string,
-  opts: { limit?: number; offset?: number } = {},
+  opts: {
+    companyId?: number;
+    ticker?: string;
+    exchange?: string;
+    limit?: number;
+    offset?: number;
+  } = {},
 ): Promise<CompanyNewsResponse> {
   const params = new URLSearchParams();
-  if (ticker) params.set('ticker', ticker);
-  if (exchange) params.set('exchange', exchange);
-  if (opts.limit != null) params.set('limit', String(opts.limit));
-  if (opts.offset != null) params.set('offset', String(opts.offset));
+  if (opts.companyId) params.set("companyId", String(opts.companyId));
+  if (opts.ticker) params.set("ticker", opts.ticker);
+  if (opts.exchange) params.set("exchange", opts.exchange);
+  if (opts.limit != null) params.set("limit", String(opts.limit));
+  if (opts.offset != null) params.set("offset", String(opts.offset));
   const res = await fetch(`${API_BASE}/news/company/${encodeURIComponent(name)}?${params.toString()}`);
   if (!res.ok) return { items: [], hasMore: false, nextOffset: null };
   const data = await res.json();

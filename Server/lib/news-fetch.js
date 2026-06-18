@@ -74,7 +74,13 @@ async function loadCompanyLookup() {
       for (const v of variants) byTicker.set(v.toUpperCase(), row);
     }
     if (row.name) {
-      byName.push({ id: row.id, name: row.name.toLowerCase(), ticker: row.ticker, exchange: row.exchange });
+      byName.push({
+        id: row.id,
+        name: row.name,
+        nameLower: row.name.toLowerCase(),
+        ticker: row.ticker,
+        exchange: row.exchange,
+      });
     }
   }
 
@@ -88,13 +94,22 @@ function matchCompany(title, description) {
   for (const [ticker, company] of companyLookup.byTicker) {
     if (ticker.length < 2) continue;
     const regex = new RegExp(`\\b${ticker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
-    if (regex.test(text)) return company;
+    if (regex.test(text)) {
+      return {
+        id: company.id,
+        name: company.name,
+        ticker: company.ticker,
+        exchange: company.exchange,
+      };
+    }
   }
 
   const lowerText = `${title} ${description || ''}`.toLowerCase();
   for (const entry of companyLookup.byName) {
-    if (entry.name.length < 5) continue;
-    if (lowerText.includes(entry.name)) return { id: entry.id, ticker: entry.ticker, exchange: entry.exchange };
+    if (entry.nameLower.length < 5) continue;
+    if (lowerText.includes(entry.nameLower)) {
+      return { id: entry.id, name: entry.name, ticker: entry.ticker, exchange: entry.exchange };
+    }
   }
 
   return null;
@@ -198,13 +213,19 @@ async function drainUnprocessedNews(batchSize = 25) {
   return total;
 }
 
+function companyCategoryKey(name) {
+  return `company:${String(name || '').trim()}`;
+}
+
 /**
  * Fetch Google News RSS for one company. Returns count of newly inserted rows.
+ * Category and lookup use company name (not ticker).
  */
 async function fetchCompanyNews(companyName, ticker, companyId = null, { skipCooldown = false } = {}) {
-  if (!companyName && !ticker) return { inserted: 0, newIds: [] };
+  const name = String(companyName || '').trim();
+  if (!name) return { inserted: 0, newIds: [] };
 
-  const key = `company:${ticker || companyName}`;
+  const key = companyCategoryKey(name);
   if (!skipCooldown) {
     const companyFetchTimestamps = fetchCompanyNews._timestamps || (fetchCompanyNews._timestamps = new Map());
     const COMPANY_FETCH_COOLDOWN = 60 * 60 * 1000;
@@ -215,9 +236,10 @@ async function fetchCompanyNews(companyName, ticker, companyId = null, { skipCoo
     companyFetchTimestamps.set(key, Date.now());
   }
 
-  const queries = [];
-  if (ticker) queries.push(`"${ticker}" mining stock`);
-  queries.push(`"${companyName}" mining`);
+  const queries = [`"${name}" mining`];
+  if (ticker && ticker.toUpperCase() !== name.toUpperCase()) {
+    queries.push(`"${name}" "${ticker}" mining`);
+  }
 
   let allItems = [];
   for (const q of queries) {
@@ -246,7 +268,7 @@ async function fetchCompanyNews(companyName, ticker, companyId = null, { skipCoo
     })
     .slice(0, 10);
 
-  const category = `company:${ticker || companyName}`;
+  const category = companyCategoryKey(name);
   const newIds = [];
   let inserted = 0;
 
@@ -288,6 +310,14 @@ async function fetchCompanyNews(companyName, ticker, companyId = null, { skipCoo
       }
     } catch (err) {
       console.error('[News] AI enrichment failed:', err?.message || err);
+    }
+    if (companyId && (inserted > 0 || enriched > 0)) {
+      try {
+        const { scheduleSnapshotRegeneration } = require('./company-snapshot');
+        scheduleSnapshotRegeneration(companyId, 'new-company-news');
+      } catch {
+        /* optional */
+      }
     }
   }
 
@@ -332,7 +362,7 @@ async function fetchAndStoreRssFeeds() {
           item.source || 'News',
           item.pubDate ? new Date(item.pubDate) : new Date(),
           item.description,
-          company ? `company:${company.ticker || company.id}` : 'general',
+          company ? companyCategoryKey(company.name) : 'general',
           company?.id || null,
           company?.ticker || null,
         ]
@@ -348,6 +378,7 @@ async function fetchAndStoreRssFeeds() {
   }
 
   let enriched = 0;
+  const regenCompanyIds = new Set();
   if (insertedIds.length > 0) {
     try {
       enriched = await enrichNewsByIds(insertedIds);
@@ -356,6 +387,26 @@ async function fetchAndStoreRssFeeds() {
       }
     } catch (err) {
       console.error('[News] AI enrichment failed:', err?.message || err);
+    }
+    // Re-query company_ids for inserted rows to refresh snapshots after enrichment
+    try {
+      const idRes = await db.query(
+        `SELECT DISTINCT company_id FROM news WHERE id = ANY($1::int[]) AND company_id IS NOT NULL`,
+        [insertedIds],
+      );
+      for (const row of idRes.rows) {
+        if (row.company_id) regenCompanyIds.add(row.company_id);
+      }
+    } catch {
+      /* optional */
+    }
+    for (const cid of regenCompanyIds) {
+      try {
+        const { scheduleSnapshotRegeneration } = require('./company-snapshot');
+        scheduleSnapshotRegeneration(cid, 'new-rss-news');
+      } catch {
+        /* optional */
+      }
     }
   }
 
@@ -369,6 +420,7 @@ module.exports = {
   fetchRssFeed,
   loadCompanyLookup,
   matchCompany,
+  companyCategoryKey,
   enrichNewsByIds,
   enrichUnprocessedNews,
   drainUnprocessedNews,
