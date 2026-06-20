@@ -6,7 +6,6 @@ import {
   DollarSign, FileText, CheckCircle2, Trash2, Eye, EyeOff,
 } from "lucide-react";
 import Nav from "@/components/site/Nav";
-import MarketStrip from "@/components/site/MarketStrip";
 import Footer from "@/components/site/Footer";
 import { fetchMyJobApplications, updateApplicationStatus, updateJobStatus, deleteJob, type JobWithApplications, type JobApplication } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
@@ -34,7 +33,6 @@ const JobDashboard = () => {
     return (
       <div className="min-h-screen bg-background flex flex-col">
         <Nav />
-        <MarketStrip />
         <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading...</div>
         <Footer />
       </div>
@@ -50,8 +48,6 @@ const JobDashboard = () => {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Nav />
-      <MarketStrip />
-
       <section className="border-b border-border bg-background">
         <div className="max-w-[1200px] mx-auto px-4 lg:px-6 py-8 lg:py-10">
           <div className="flex items-end justify-between flex-wrap gap-4">

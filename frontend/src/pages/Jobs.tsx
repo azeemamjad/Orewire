@@ -6,7 +6,6 @@ import {
   ArrowUpRight, CheckCircle2, Zap, Eye, BarChart3, Users, X,
 } from "lucide-react";
 import Nav from "@/components/site/Nav";
-import MarketStrip from "@/components/site/MarketStrip";
 import MorningBrief from "@/components/site/MorningBrief";
 import SearchHeroBar from "@/components/site/SearchHeroBar";
 import Footer from "@/components/site/Footer";
@@ -49,7 +48,6 @@ const Jobs = () => {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Nav />
-      <MarketStrip />
       <MorningBrief />
       <SearchHeroBar />
 

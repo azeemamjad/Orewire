@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { ChevronDown, ChevronUp, Plus, Search, Trash2, ArrowUpRight, ArrowDownRight, Lock } from "lucide-react";
 import Nav from "@/components/site/Nav";
-import MarketStrip from "@/components/site/MarketStrip";
 import MorningBrief from "@/components/site/MorningBrief";
 import SearchHeroBar from "@/components/site/SearchHeroBar";
 import Footer from "@/components/site/Footer";
@@ -174,7 +173,6 @@ const Watchlist = () => {
     return (
       <div className="min-h-screen bg-background flex flex-col">
         <Nav />
-        <MarketStrip />
         <MorningBrief />
         <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading...</div>
         <Footer />
@@ -186,7 +184,6 @@ const Watchlist = () => {
     return (
       <div className="min-h-screen bg-background text-foreground flex flex-col">
         <Nav />
-        <MarketStrip />
         <MorningBrief />
         <main className="flex-1 flex items-center justify-center px-4 py-20">
           <div className="max-w-md w-full border border-border bg-card p-8 text-center">
@@ -236,7 +233,6 @@ const Watchlist = () => {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <Nav />
-      <MarketStrip />
       <MorningBrief />
       <SearchHeroBar />
 

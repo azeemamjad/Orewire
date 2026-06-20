@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Filter, Star, X } from "lucide-react";
+import ListingPagination from "@/components/site/ListingPagination";
 import Nav from "@/components/site/Nav";
-import MarketStrip from "@/components/site/MarketStrip";
 import MorningBrief from "@/components/site/MorningBrief";
 import Footer from "@/components/site/Footer";
-import HeroSearchField from "@/components/site/HeroSearchField";
+import { ArrowDown, ArrowUp, Filter, Search, Sparkles, Star, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import {
   fetchCompanies,
@@ -155,7 +156,6 @@ const Companies = () => {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <Nav />
-      <MarketStrip />
       <MorningBrief />
 
       {/* Hero */}
@@ -174,17 +174,40 @@ const Companies = () => {
             </div>
           </div>
 
-          <HeroSearchField
-            value={search}
-            onChange={setSearch}
+          <form
             onSubmit={(e) => {
               e.preventDefault();
               setDebouncedSearch(search.trim());
               setPage(1);
               scrollToTop();
             }}
-            placeholder='Search ticker, company, or ask: "gold companies in Africa"'
-          />
+            className="flex flex-col sm:flex-row gap-2"
+          >
+            <div className="relative flex-1">
+              <Sparkles className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-accent" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder='Try: "gold companies in Africa" or "lithium on ASX"'
+                className="pl-10 pr-10 h-12 text-base bg-background rounded-none border-foreground/20 focus-visible:ring-accent"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    setDebouncedSearch("");
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            <Button type="submit" className="h-12 px-6 rounded-none bg-accent text-accent-foreground hover:bg-accent/90 font-semibold">
+              <Search className="w-4 h-4 mr-2" /> Search
+            </Button>
+          </form>
         </div>
       </section>
 
@@ -240,27 +263,13 @@ const Companies = () => {
           </div>
 
           {pagination && pagination.totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2 mt-8">
-              <button
-                onClick={() => goToPage(page - 1)}
-                disabled={!pagination.hasPrev}
-                className="p-2 border border-border disabled:opacity-30 hover:border-accent transition-colors"
-                aria-label="Previous page"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <span className="text-sm font-mono px-3">
-                Page {pagination.page} of {pagination.totalPages}
-              </span>
-              <button
-                onClick={() => goToPage(page + 1)}
-                disabled={!pagination.hasNext}
-                className="p-2 border border-border disabled:opacity-30 hover:border-accent transition-colors"
-                aria-label="Next page"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
+            <ListingPagination
+              page={pagination.page}
+              totalPages={pagination.totalPages}
+              total={pagination.total}
+              onPageChange={goToPage}
+              className="mt-6 border border-border"
+            />
           )}
         </section>
       </main>

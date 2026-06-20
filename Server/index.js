@@ -36,9 +36,14 @@ apiRouter.use('/applications', require('./routes/applications'));
 apiRouter.use('/watchlist',    require('./routes/watchlist'));
 apiRouter.use('/briefing',     require('./routes/briefing'));
 apiRouter.use('/system',       require('./routes/system'));
-app.use('/api', apiRouter);
+apiRouter.use('/contact',      require('./routes/contact').publicRouter);
 
-// Relay API — always mounted; pool starts only when RELAY_ENABLED=true (admin auth required)
+const adminApiRouter = express.Router();
+adminApiRouter.use(auth.requireAdminApi);
+adminApiRouter.use('/users', require('./routes/admin-users'));
+adminApiRouter.use('/contact-messages', require('./routes/contact').adminRouter);
+app.use('/api', apiRouter);
+app.use('/api/admin', adminApiRouter);
 app.use('/api/relay', auth.requireAdminApi, require('./relay/routes'));
 
 // ── Admin panel auth (cookie session) ──────────────────────────────────────

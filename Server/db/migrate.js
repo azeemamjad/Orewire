@@ -354,6 +354,52 @@ async function migrate() {
   `);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_company_snapshots_generated ON company_snapshots(generated_at DESC)`);
 
+  // Contact form messages (public site → admin inbox)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS contact_messages (
+      id         SERIAL PRIMARY KEY,
+      name       TEXT NOT NULL,
+      email      TEXT,
+      company    TEXT,
+      subject    TEXT NOT NULL,
+      message    TEXT NOT NULL,
+      user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      read_at    TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_contact_messages_created ON contact_messages(created_at DESC)`);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_contact_messages_unread ON contact_messages(read_at) WHERE read_at IS NULL`);
+
+  const contactCount = await db.query(`SELECT COUNT(*)::int AS n FROM contact_messages`);
+  if ((contactCount.rows[0]?.n || 0) === 0) {
+    await db.query(
+      `INSERT INTO contact_messages (name, email, company, subject, message, read_at, created_at)
+       VALUES
+         ($1, $2, $3, $4, $5, NULL, NOW() - INTERVAL '2 hours'),
+         ($6, $7, $8, $9, $10, NULL, NOW() - INTERVAL '1 day'),
+         ($11, $12, $13, $14, $15, NOW() - INTERVAL '3 days', NOW() - INTERVAL '4 days')`,
+      [
+        'Sarah Mitchell',
+        'sarah.mitchell@northerngold.ca',
+        'Northern Gold Corp',
+        'Partnership inquiry',
+        'Hi team, we are interested in featuring OreWire in our investor newsletter. Could you share media kit and sponsorship options?',
+        'James Okonkwo',
+        'j.okonkwo@example.com',
+        null,
+        'Bug: watchlist alerts',
+        'I added three TSX-V companies to my watchlist but only received one alert this week. Is there a delay or a setting I missed?',
+        'Elena Vasquez',
+        'elena@pacificresources.io',
+        'Pacific Resources',
+        'Data licensing question',
+        'We would like to discuss API access or bulk export for our internal research desk. Please let me know if this is available.',
+      ],
+    );
+    console.log('[DB] Seeded 3 dummy contact messages');
+  }
+
   console.log('[DB] All migrations complete');
 }
 

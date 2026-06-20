@@ -18,6 +18,9 @@ import MarketNews from "./pages/MarketNews.tsx";
 import NewsDetail from "./pages/NewsDetail.tsx";
 import FilingDetail from "./pages/FilingDetail.tsx";
 import FilingsList from "./pages/FilingsList.tsx";
+import Contact from "./pages/Contact.tsx";
+import Terms from "./pages/Terms.tsx";
+import Privacy from "./pages/Privacy.tsx";
 import Profile from "./pages/Profile.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import WatchlistAlertsRunner from "@/components/site/WatchlistAlertsRunner";
@@ -48,6 +51,9 @@ const App = () => (
           <Route path="/news/:slug" element={<NewsDetail />} />
           <Route path="/filings" element={<FilingsList />} />
           <Route path="/filings/:id" element={<FilingDetail />} />
+          <Route path="/contact" element={<Contact />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy" element={<Privacy />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Login />} />

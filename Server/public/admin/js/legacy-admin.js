@@ -28,6 +28,8 @@ function initAdminPage() {
   }
   if (page === 'pipeline') pipelineInit();
   if (page === 'processes') processesInit();
+  if (page === 'users') loadUsers();
+  if (page === 'contact-messages') initContactMessages();
 }
 document.addEventListener('DOMContentLoaded', initAdminPage);
 
@@ -1844,4 +1846,115 @@ async function submitAddCompany(e) {
     loadCompanies();
     loadExchanges();
   } catch (err) { toast(err.message, 'err'); }
+}
+
+// ── Users (admin) ──
+async function loadUsers() {
+  const tbody = document.getElementById('users-body');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Loading…</td></tr>';
+  try {
+    const data = await fetch(`${API}/api/admin/users`).then((r) => r.json());
+    const items = data.items || [];
+    const totalEl = document.getElementById('users-total');
+    if (totalEl) totalEl.textContent = String(data.total ?? items.length);
+    if (!items.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No registered users yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map((u) => {
+      const name = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || '—';
+      const created = u.createdAt ? new Date(u.createdAt).toLocaleString() : '—';
+      return `<tr>
+        <td>${esc(name)}</td>
+        <td>${esc(u.email)}</td>
+        <td>${esc(u.username || '—')}</td>
+        <td>${u.emailVerified ? '✓' : '—'}</td>
+        <td>${u.watchlistAlertsEnabled ? 'On' : 'Off'}</td>
+        <td style="font-size:12px;color:var(--muted);">${esc(created)}</td>
+      </tr>`;
+    }).join('');
+  } catch (err) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="6">${esc(err.message)}</td></tr>`;
+  }
+}
+
+// ── Contact messages (admin) ──
+let _contactFilter = 'all';
+let _contactSelectedId = null;
+
+function initContactMessages() {
+  const filterSel = document.getElementById('contact-filter');
+  if (filterSel) {
+    filterSel.value = _contactFilter;
+    filterSel.addEventListener('change', () => {
+      _contactFilter = filterSel.value;
+      _contactSelectedId = null;
+      loadContactMessages();
+      renderContactDetailEmpty();
+    });
+  }
+  loadContactMessages();
+  renderContactDetailEmpty();
+}
+
+function renderContactDetailEmpty() {
+  const el = document.getElementById('contact-detail');
+  if (!el) return;
+  el.innerHTML = '<div class="contact-detail-empty">Select a message to read details</div>';
+}
+
+async function loadContactMessages() {
+  const tbody = document.getElementById('contact-messages-body');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr class="empty-row"><td colspan="4">Loading…</td></tr>';
+  try {
+    const data = await fetch(`${API}/api/admin/contact-messages?filter=${encodeURIComponent(_contactFilter)}`).then((r) => r.json());
+    const items = data.items || [];
+    if (!items.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="4">No messages in this filter.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map((m) => {
+      const when = m.createdAt ? new Date(m.createdAt).toLocaleString() : '—';
+      const unread = !m.read;
+      return `<tr class="${unread ? 'contact-row-unread' : ''}" style="cursor:pointer" onclick="selectContactMessage(${m.id})">
+        <td>${unread ? '● ' : ''}${esc(m.subject)}</td>
+        <td>${esc(m.name)}</td>
+        <td style="font-size:12px;color:var(--muted);">${esc(when)}</td>
+        <td>${unread ? '<span style="color:var(--danger);font-weight:700;">Unread</span>' : 'Read'}</td>
+      </tr>`;
+    }).join('');
+    if (typeof refreshContactUnreadBadge === 'function') refreshContactUnreadBadge();
+  } catch (err) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="4">${esc(err.message)}</td></tr>`;
+  }
+}
+
+async function selectContactMessage(id) {
+  _contactSelectedId = id;
+  const el = document.getElementById('contact-detail');
+  if (!el) return;
+  el.innerHTML = '<div class="contact-detail-empty">Loading…</div>';
+  try {
+    await fetch(`${API}/api/admin/contact-messages/${id}/read`, { method: 'POST' });
+    const m = await fetch(`${API}/api/admin/contact-messages/${id}`).then((r) => r.json());
+    const when = m.createdAt ? new Date(m.createdAt).toLocaleString() : '—';
+    const readWhen = m.readAt ? new Date(m.readAt).toLocaleString() : '—';
+    el.innerHTML = `
+      <div class="contact-detail-card">
+        <h2 style="font-size:18px;margin-bottom:12px;">${esc(m.subject)}</h2>
+        <div class="contact-detail-meta">
+          <div><strong>From:</strong> ${esc(m.name)}${m.company ? ` · ${esc(m.company)}` : ''}</div>
+          <div><strong>Email:</strong> ${m.email ? `<a href="mailto:${esc(m.email)}">${esc(m.email)}</a>` : '—'}</div>
+          <div><strong>Received:</strong> ${esc(when)}</div>
+          <div><strong>Status:</strong> ${m.read ? `Read (${esc(readWhen)})` : 'Unread'}</div>
+        </div>
+        <div class="contact-detail-body">${esc(m.message)}</div>
+      </div>`;
+    loadContactMessages();
+    if (typeof refreshContactUnreadBadge === 'function') refreshContactUnreadBadge();
+  } catch (err) {
+    el.innerHTML = `<div class="contact-detail-empty">${esc(err.message)}</div>`;
+  }
 }

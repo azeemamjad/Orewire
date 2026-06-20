@@ -1386,3 +1386,20 @@ export async function updateApplicationStatus(appId: number, status: string): Pr
   if (!res.ok) throw new Error(data?.error || `Failed to update: ${res.status}`);
   return data as JobApplication;
 }
+
+export async function submitContactMessage(payload: {
+  name: string;
+  email: string;
+  company?: string;
+  subject: string;
+  message: string;
+}): Promise<{ ok: boolean; id: number }> {
+  const res = await fetch(`${API_BASE}/contact`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || 'Failed to send message');
+  return data as { ok: boolean; id: number };
+}

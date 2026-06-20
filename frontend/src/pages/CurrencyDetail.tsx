@@ -12,7 +12,6 @@ import {
   X,
 } from "lucide-react";
 import Nav from "@/components/site/Nav";
-import MarketStrip from "@/components/site/MarketStrip";
 import MorningBrief from "@/components/site/MorningBrief";
 import Footer from "@/components/site/Footer";
 import SetAlertButton from "@/components/site/SetAlertButton";
@@ -147,7 +146,6 @@ const CurrencyDetail = () => {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Nav />
-      <MarketStrip />
       <MorningBrief />
 
       <main className="mx-auto max-w-7xl px-4 py-6">

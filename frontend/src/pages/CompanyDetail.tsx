@@ -26,7 +26,6 @@ import { getNewsSeverity, getNewsTags } from "@/components/site/NewsArticleCard"
 import { useAuth } from "@/hooks/use-auth";
 import { useState, useEffect, type ReactNode } from "react";
 import Nav from "@/components/site/Nav";
-import MarketStrip from "@/components/site/MarketStrip";
 import MorningBrief from "@/components/site/MorningBrief";
 import Footer from "@/components/site/Footer";
 import SetAlertButton from "@/components/site/SetAlertButton";
@@ -85,7 +84,6 @@ const CompanyDetail = () => {
     return (
       <div className="min-h-screen bg-background text-foreground">
         <Nav />
-        <MarketStrip />
         <MorningBrief />
         <div className="flex items-center justify-center py-32">
           <div className="text-muted-foreground">Loading company profile...</div>
@@ -116,7 +114,6 @@ const CompanyDetail = () => {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Nav />
-      <MarketStrip />
       <MorningBrief />
 
       <main className="mx-auto max-w-7xl px-4 py-6">

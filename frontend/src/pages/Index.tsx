@@ -1,6 +1,4 @@
 import Nav from "@/components/site/Nav";
-import MarketStatusBar from "@/components/site/MarketStatusBar";
-import MarketStrip from "@/components/site/MarketStrip";
 import MorningBrief from "@/components/site/MorningBrief";
 import CommodityBar from "@/components/site/CommodityBar";
 import SearchHero from "@/components/site/SearchHero";
@@ -19,8 +17,6 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Nav />
-      <MarketStatusBar />
-      <MarketStrip />
       <MorningBrief />
       <CommodityBar />
       <main>
