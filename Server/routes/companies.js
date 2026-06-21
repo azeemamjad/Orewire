@@ -248,10 +248,7 @@ function boolFlag(v) {
 function _normalizePerson(body) {
   return {
     name: (body?.name || '').trim(),
-    role_code: body?.role_code ? String(body.role_code).trim().toUpperCase().slice(0, 8) : null,
     title: body?.title ? String(body.title).trim() : null,
-    age: body?.age != null && body.age !== '' ? parseInt(body.age, 10) : null,
-    since_year: body?.since_year != null && body.since_year !== '' ? parseInt(body.since_year, 10) : null,
     kind: body?.kind === 'director' ? 'director' : 'manager',
   };
 }
@@ -261,16 +258,13 @@ async function upsertCompanyPerson(companyId, body) {
   if (!p.name) return null;
   const r = await db.query(
     `INSERT INTO company_people (company_id, name, role_code, title, age, since_year, kind, source, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'manual', NOW())
+     VALUES ($1, $2, NULL, $3, NULL, NULL, $4, 'manual', NOW())
      ON CONFLICT (company_id, name, kind) DO UPDATE SET
-       role_code  = EXCLUDED.role_code,
        title      = EXCLUDED.title,
-       age        = EXCLUDED.age,
-       since_year = EXCLUDED.since_year,
        source     = 'manual',
        updated_at = NOW()
      RETURNING id, name, role_code, title, age, since_year, kind, source, updated_at`,
-    [companyId, p.name, p.role_code, p.title, p.age, p.since_year, p.kind]
+    [companyId, p.name, p.title, p.kind]
   );
   return r.rows[0];
 }
@@ -535,11 +529,11 @@ router.put('/:id/people/:personId', express.json(), async (req, res) => {
     if (!p.name) return res.status(400).json({ error: 'name required' });
     const r = await db.query(
       `UPDATE company_people SET
-         name = $3, role_code = $4, title = $5, age = $6, since_year = $7, kind = $8,
+         name = $3, title = $4, kind = $5,
          source = 'manual', updated_at = NOW()
        WHERE id = $2 AND company_id = $1
        RETURNING id, name, role_code, title, age, since_year, kind, source, updated_at`,
-      [id, personId, p.name, p.role_code, p.title, p.age, p.since_year, p.kind]
+      [id, personId, p.name, p.title, p.kind]
     );
     if (r.rows.length === 0) return res.status(404).json({ error: 'Not found' });
     res.json(r.rows[0]);

@@ -550,42 +550,60 @@ const PeopleSection = ({ companyId }: { companyId: number }) => {
 
   if (isLoading || !data || !data.people || data.people.length === 0) return null;
 
-  const people = data.people;
+  const managers = data.people.filter((p) => p.kind === "manager");
+  const directors = data.people.filter((p) => p.kind === "director");
   const insiderSlug = (name: string) =>
     name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
+  const renderTable = (rows: typeof data.people) => (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-xs uppercase tracking-wider text-muted-foreground border-b border-border">
+            <th className="text-left font-medium py-2">Name</th>
+            <th className="text-left font-medium py-2">Title</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((p) => (
+            <tr key={p.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+              <td className="py-2 font-medium">
+                <Link className="hover:underline" to={`/insider/${insiderSlug(p.name)}`}>
+                  {p.name}
+                </Link>
+              </td>
+              <td className="py-2 text-muted-foreground">{p.title || "-"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
   return (
     <section className="mt-10">
-      <h2 className="font-display text-2xl tracking-tight mb-4 pb-2 border-b border-border flex items-center gap-2">
-        <Users className="h-4 w-4" />
-        Directors &amp; Senior Management
-      </h2>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-xs uppercase tracking-wider text-muted-foreground border-b border-border">
-              <th className="text-left font-medium py-2">Name</th>
-              <th className="text-left font-medium py-2">Position</th>
-            </tr>
-          </thead>
-          <tbody>
-            {people.map((p) => (
-                <tr key={p.id} className="border-b border-border last:border-0 hover:bg-muted/30">
-                  <td className="py-2 font-medium">
-                    <Link className="hover:underline" to={`/insider/${insiderSlug(p.name)}`}>
-                      {p.name}
-                    </Link>
-                  </td>
-                  <td className="py-2 text-muted-foreground">{p.title || "-"}</td>
-                </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {managers.length > 0 && (
+        <div className="mb-8">
+          <h2 className="font-display text-2xl tracking-tight mb-4 pb-2 border-b border-border flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            Management
+          </h2>
+          {renderTable(managers)}
+        </div>
+      )}
+      {directors.length > 0 && (
+        <div>
+          <h2 className="font-display text-2xl tracking-tight mb-4 pb-2 border-b border-border flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            Directors
+          </h2>
+          {renderTable(directors)}
+        </div>
+      )}
       <p className="text-xs text-muted-foreground mt-3 font-mono">
-        Source: {people[0]?.source === "manual"
+        Source: {data.people[0]?.source === "manual"
           ? "Manually entered"
-          : people[0]?.source === "exchange"
+          : data.people[0]?.source === "exchange"
           ? "Official exchange listing data"
           : "Latest management information circular"}
       </p>

@@ -258,74 +258,79 @@ function renderEditProfileForm(company) {
 
       <div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <div class="section-title" style="margin:0;">Managers &amp; Directors</div>
-          <button class="btn btn-primary btn-sm" onclick="addPersonRow()">+ Add person</button>
+          <div class="section-title" style="margin:0;">Managers</div>
+          <button class="btn btn-primary btn-sm" type="button" onclick="addPersonRow('manager')">+ Add manager</button>
         </div>
-        <div class="table-wrap" style="max-height:340px;overflow:auto;">
+        <div class="table-wrap" style="max-height:220px;overflow:auto;margin-bottom:16px;">
           <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th style="width:90px;">Role</th>
-                <th>Title</th>
-                <th style="width:65px;">Age</th>
-                <th style="width:80px;">Since</th>
-                <th style="width:100px;">Kind</th>
-                <th style="width:60px;"></th>
-              </tr>
-            </thead>
-            <tbody id="pf-people-body"></tbody>
+            <thead><tr><th>Name</th><th>Title</th><th style="width:60px;"></th></tr></thead>
+            <tbody id="pf-managers-body"></tbody>
           </table>
         </div>
-        <div style="font-size:11px;color:var(--muted);margin-top:8px;">Edit any cell and click <strong>Save</strong> on that row. Removed rows are deleted immediately.</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div class="section-title" style="margin:0;">Directors</div>
+          <button class="btn btn-primary btn-sm" type="button" onclick="addPersonRow('director')">+ Add director</button>
+        </div>
+        <div class="table-wrap" style="max-height:220px;overflow:auto;">
+          <table>
+            <thead><tr><th>Name</th><th>Title</th><th style="width:60px;"></th></tr></thead>
+            <tbody id="pf-directors-body"></tbody>
+          </table>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px;">Edit name or title and click <strong>Save</strong> on that row. Removed rows are deleted immediately.</div>
       </div>
     </div>
   `;
   renderPeopleRows();
 }
 
+function _peopleForKind(kind) {
+  return _editingPeople
+    .map((p, idx) => ({ p, idx }))
+    .filter(({ p }) => (p.kind || 'manager') === kind);
+}
+
 function renderPeopleRows() {
-  const tbody = document.getElementById('pf-people-body');
-  if (_editingPeople.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No managers or directors yet - click "+ Add person".</td></tr>';
+  renderPeopleSection('manager', 'pf-managers-body');
+  renderPeopleSection('director', 'pf-directors-body');
+}
+
+function renderPeopleSection(kind, tbodyId) {
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  const items = _peopleForKind(kind);
+  if (!items.length) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="3">No ${kind}s yet.</td></tr>`;
     return;
   }
-  tbody.innerHTML = _editingPeople.map((p, idx) => personRowHtml(p, idx)).join('');
+  tbody.innerHTML = items.map(({ p, idx }) => personRowHtml(p, idx)).join('');
 }
 
 function personRowHtml(p, idx) {
   const persistedId = p.id != null ? String(p.id) : '';
   return `
     <tr data-idx="${idx}" data-id="${persistedId}">
-      <td><input value="${esc(p.name ?? '')}" data-field="name" style="width:100%;padding:5px;font:inherit;" /></td>
-      <td><input value="${esc(p.role_code ?? '')}" data-field="role_code" placeholder="CEO" style="width:100%;padding:5px;font:inherit;text-transform:uppercase;" /></td>
-      <td><input value="${esc(p.title ?? '')}" data-field="title" style="width:100%;padding:5px;font:inherit;" /></td>
-      <td><input type="number" value="${p.age ?? ''}" data-field="age" style="width:100%;padding:5px;font:inherit;" /></td>
-      <td><input type="number" value="${p.since_year ?? ''}" data-field="since_year" placeholder="2024" style="width:100%;padding:5px;font:inherit;" /></td>
-      <td>
-        <select data-field="kind" style="width:100%;padding:5px;font:inherit;">
-          <option value="manager"${p.kind === 'manager' ? ' selected' : ''}>Manager</option>
-          <option value="director"${p.kind === 'director' ? ' selected' : ''}>Director</option>
-        </select>
-      </td>
+      <td><input value="${esc(p.name ?? '')}" data-field="name" placeholder="Full name" style="width:100%;padding:5px;font:inherit;" /></td>
+      <td><input value="${esc(p.title ?? '')}" data-field="title" placeholder="Title" style="width:100%;padding:5px;font:inherit;" /></td>
       <td style="display:flex;gap:4px;">
-        <button class="btn btn-primary btn-sm" onclick="savePersonRow(${idx})" title="Save row">💾</button>
-        <button class="btn btn-danger btn-sm" onclick="removePersonRow(${idx})" title="Remove">✕</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="savePersonRow(${idx})" title="Save row">💾</button>
+        <button type="button" class="btn btn-danger btn-sm" onclick="removePersonRow(${idx})" title="Remove">✕</button>
       </td>
     </tr>
   `;
 }
 
-function addPersonRow() {
-  _editingPeople.push({ id: null, name: '', role_code: '', title: '', age: null, since_year: null, kind: 'manager', source: 'manual' });
+function addPersonRow(kind) {
+  _editingPeople.push({ id: null, name: '', title: '', kind: kind === 'director' ? 'director' : 'manager', source: 'manual' });
   renderPeopleRows();
 }
 
 function _readPersonRow(idx) {
-  const tr = document.querySelector(`#pf-people-body tr[data-idx="${idx}"]`);
+  const tr = document.querySelector(`tr[data-idx="${idx}"]`);
   if (!tr) return null;
   const data = {};
   tr.querySelectorAll('[data-field]').forEach(el => { data[el.dataset.field] = el.value; });
+  data.kind = _editingPeople[idx]?.kind || 'manager';
   return data;
 }
 
@@ -1742,49 +1747,56 @@ function addCoPersonRowHtml(p, idx) {
   return `
     <tr data-idx="${idx}">
       <td><input value="${esc(p.name ?? '')}" data-field="name" placeholder="Full name" /></td>
-      <td><input value="${esc(p.role_code ?? '')}" data-field="role_code" placeholder="CEO" style="text-transform:uppercase;" /></td>
       <td><input value="${esc(p.title ?? '')}" data-field="title" placeholder="Title" /></td>
-      <td><input type="number" value="${p.age ?? ''}" data-field="age" /></td>
-      <td><input type="number" value="${p.since_year ?? ''}" data-field="since_year" placeholder="2024" /></td>
-      <td>
-        <select data-field="kind">
-          <option value="manager"${p.kind !== 'director' ? ' selected' : ''}>Manager</option>
-          <option value="director"${p.kind === 'director' ? ' selected' : ''}>Director</option>
-        </select>
-      </td>
       <td><button type="button" class="btn btn-danger btn-sm" onclick="removeAddCoPersonRow(${idx})" title="Remove">✕</button></td>
     </tr>`;
 }
 
+function _addCoPeopleForKind(kind) {
+  return _addCoPeople
+    .map((p, idx) => ({ p, idx }))
+    .filter(({ p }) => (p.kind || 'manager') === kind);
+}
+
 function renderAddCoPeopleRows() {
-  const tbody = document.getElementById('add-co-people-body');
+  renderAddCoPeopleSection('manager', 'add-co-managers-body');
+  renderAddCoPeopleSection('director', 'add-co-directors-body');
+}
+
+function renderAddCoPeopleSection(kind, tbodyId) {
+  const tbody = document.getElementById(tbodyId);
   if (!tbody) return;
-  if (_addCoPeople.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Optional - click "+ Add person" to add managers or directors.</td></tr>';
+  const items = _addCoPeopleForKind(kind);
+  if (!items.length) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="3">Optional — click &ldquo;+ Add ${kind}&rdquo;.</td></tr>`;
     return;
   }
-  tbody.innerHTML = _addCoPeople.map((p, idx) => addCoPersonRowHtml(p, idx)).join('');
+  tbody.innerHTML = items.map(({ p, idx }) => addCoPersonRowHtml(p, idx)).join('');
 }
 
 function collectAllAddCoPersonRows() {
-  const tbody = document.getElementById('add-co-people-body');
-  if (!tbody) return [];
-  const rows = [];
-  tbody.querySelectorAll('tr[data-idx]').forEach((tr) => {
-    const data = {};
-    tr.querySelectorAll('[data-field]').forEach((el) => { data[el.dataset.field] = el.value; });
-    rows.push(data);
+  const rows = [..._addCoPeople];
+  document.querySelectorAll('#add-co-managers-body tr[data-idx], #add-co-directors-body tr[data-idx]').forEach((tr) => {
+    const idx = parseInt(tr.dataset.idx, 10);
+    if (!Number.isFinite(idx) || !rows[idx]) return;
+    tr.querySelectorAll('[data-field]').forEach((el) => { rows[idx][el.dataset.field] = el.value; });
   });
   return rows;
 }
 
 function collectAddCoPeople() {
-  return collectAllAddCoPersonRows().filter((p) => p.name?.trim());
+  return collectAllAddCoPersonRows()
+    .filter((p) => p.name?.trim())
+    .map((p) => ({
+      name: p.name.trim(),
+      title: (p.title || '').trim() || null,
+      kind: p.kind === 'director' ? 'director' : 'manager',
+    }));
 }
 
-function addCoPersonRow() {
+function addCoPersonRow(kind) {
   const rows = collectAllAddCoPersonRows();
-  rows.push({ name: '', role_code: '', title: '', age: '', since_year: '', kind: 'manager' });
+  rows.push({ name: '', title: '', kind: kind === 'director' ? 'director' : 'manager' });
   _addCoPeople = rows;
   renderAddCoPeopleRows();
 }

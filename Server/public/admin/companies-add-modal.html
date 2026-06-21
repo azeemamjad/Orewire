@@ -48,24 +48,26 @@
         </div>
         <div class="form-section">
           <div class="add-co-people-head">
-            <div class="form-section-title" style="margin:0;border:none;padding:0;">Managers &amp; directors</div>
-            <button type="button" class="btn btn-primary btn-sm" onclick="addCoPersonRow()">+ Add person</button>
+            <div class="form-section-title" style="margin:0;border:none;padding:0;">Managers</div>
+            <button type="button" class="btn btn-primary btn-sm" onclick="addCoPersonRow('manager')">+ Add manager</button>
+          </div>
+          <div class="add-co-people-wrap table-wrap" style="margin-bottom:14px;">
+            <table>
+              <thead><tr><th>Name</th><th>Title</th><th style="width:40px;"></th></tr></thead>
+              <tbody id="add-co-managers-body">
+                <tr class="empty-row"><td colspan="3">Optional — click &ldquo;+ Add manager&rdquo;.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="add-co-people-head">
+            <div class="form-section-title" style="margin:0;border:none;padding:0;">Directors</div>
+            <button type="button" class="btn btn-primary btn-sm" onclick="addCoPersonRow('director')">+ Add director</button>
           </div>
           <div class="add-co-people-wrap table-wrap">
             <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th style="width:72px;">Role</th>
-                  <th>Title</th>
-                  <th style="width:52px;">Age</th>
-                  <th style="width:62px;">Since</th>
-                  <th style="width:88px;">Kind</th>
-                  <th style="width:40px;"></th>
-                </tr>
-              </thead>
-              <tbody id="add-co-people-body">
-                <tr class="empty-row"><td colspan="7">Optional - click &ldquo;+ Add person&rdquo; to add managers or directors.</td></tr>
+              <thead><tr><th>Name</th><th>Title</th><th style="width:40px;"></th></tr></thead>
+              <tbody id="add-co-directors-body">
+                <tr class="empty-row"><td colspan="3">Optional — click &ldquo;+ Add director&rdquo;.</td></tr>
               </tbody>
             </table>
           </div>
