@@ -555,7 +555,11 @@ const PeopleSection = ({ companyId }: { companyId: number }) => {
 
   const renderTable = (rows: typeof data.people) => (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className="w-full text-sm table-fixed">
+        <colgroup>
+          <col className="w-1/2" />
+          <col className="w-1/2" />
+        </colgroup>
         <thead>
           <tr className="text-xs uppercase tracking-wider text-muted-foreground border-b border-border">
             <th className="text-left font-medium py-2">Name</th>
@@ -578,34 +582,37 @@ const PeopleSection = ({ companyId }: { companyId: number }) => {
     </div>
   );
 
+  const sourceLabel =
+    data.people[0]?.source === "manual"
+      ? "Manually entered"
+      : data.people[0]?.source === "exchange"
+        ? "Official exchange listing data"
+        : "Latest management information circular";
+
   return (
-    <section className="mt-10">
+    <>
       {managers.length > 0 && (
-        <div className="mb-8">
+        <section className="mt-10">
           <h2 className="font-display text-2xl tracking-tight mb-4 pb-2 border-b border-border flex items-center gap-2">
             <Users className="h-4 w-4" />
             Management
           </h2>
           {renderTable(managers)}
-        </div>
+        </section>
       )}
       {directors.length > 0 && (
-        <div>
+        <section className="mt-10">
           <h2 className="font-display text-2xl tracking-tight mb-4 pb-2 border-b border-border flex items-center gap-2">
             <Users className="h-4 w-4" />
-            Directors
+            Board of Directors
           </h2>
           {renderTable(directors)}
-        </div>
+        </section>
       )}
       <p className="text-xs text-muted-foreground mt-3 font-mono">
-        Source: {data.people[0]?.source === "manual"
-          ? "Manually entered"
-          : data.people[0]?.source === "exchange"
-          ? "Official exchange listing data"
-          : "Latest management information circular"}
+        Source: {sourceLabel}
       </p>
-    </section>
+    </>
   );
 };
 
