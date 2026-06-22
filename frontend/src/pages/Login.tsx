@@ -2,10 +2,23 @@ import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Lock, Bookmark, TrendingUp, Bell } from "lucide-react";
 import Nav from "@/components/site/Nav";
+import Footer from "@/components/site/Footer";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 import { forgotPassword, login, register, resendOtp, resetPassword, verifyLoginOtp, verifyRegistrationOtp } from "@/lib/api";
 
 type Mode = "signin" | "register";
 type Stage = "form" | "verify-register" | "verify-login" | "reset-request" | "reset-verify";
+
+const FEATURES = [
+  { icon: Bookmark, title: "Custom watchlists", body: "Track the juniors you care about. Reorder by conviction." },
+  { icon: TrendingUp, title: "Verdicts on every filing", body: "Noteworthy, Watch or Routine — no more 60-page PDFs." },
+  { icon: Bell, title: "Mover alerts", body: "Insider buys, drill results, financings — pushed to your feed." },
+];
+
+const fieldClass = "h-11 rounded-none border-foreground/15 bg-muted/40 focus-visible:ring-accent focus-visible:border-foreground/40";
+const labelClass = "text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-1.5 block";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -17,6 +30,7 @@ const Login = () => {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [username, setUsername] = useState("");
+  const [company, setCompany] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
@@ -69,7 +83,14 @@ const Login = () => {
           navigate(redirectTo);
         }
       } else {
-        const resp = await register(firstName.trim(), lastName.trim(), username.trim(), email.trim(), password);
+        const resp = await register(
+          firstName.trim(),
+          lastName.trim(),
+          username.trim(),
+          email.trim(),
+          password,
+          company.trim() || undefined,
+        );
         if (resp.requiresVerification) {
           setStage("verify-register");
           startCountdown(60);
@@ -84,299 +105,242 @@ const Login = () => {
     }
   };
 
+  const submitLabel =
+    submitting
+      ? "Please wait…"
+      : stage === "verify-register"
+        ? "Verify OTP"
+        : stage === "verify-login"
+          ? "Verify sign in"
+          : stage === "reset-request"
+            ? "Send reset code"
+            : stage === "reset-verify"
+              ? "Reset password"
+              : mode === "register"
+                ? "Sign Up"
+                : "Login";
+
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <Nav />
 
-      <main className="flex-1 grid lg:grid-cols-2">
-        {/* Left: pitch */}
-        <section className="bg-background border-r border-border px-8 lg:px-16 py-12 lg:py-20 flex flex-col">
-          <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-4">
-            Orewire / Terminal
-          </div>
-          <h1 className="font-display text-4xl lg:text-5xl font-extrabold leading-tight mb-5 max-w-xl">
-            The intelligence layer for junior mining.
-          </h1>
-          <p className="text-sm text-foreground/70 max-w-md mb-10">
-            TSX-V, CSE and ASX filings - read, ranked and routed to the names you actually own.
-          </p>
-
-          <ul className="space-y-6 max-w-md">
-            <Feature
-              icon={<Bookmark className="w-4 h-4" />}
-              title="Custom watchlists"
-              body="Track the juniors you care about. Reorder by conviction."
-            />
-            <Feature
-              icon={<TrendingUp className="w-4 h-4" />}
-              title="Verdicts on every filing"
-              body="Noteworthy, Watch or Routine - no more 60-page PDFs."
-            />
-            <Feature
-              icon={<Bell className="w-4 h-4" />}
-              title="Mover alerts"
-              body="Insider buys, drill results, financings - pushed to your feed."
-            />
-          </ul>
-
-          <div className="mt-auto pt-12 border-t border-border">
-            <p className="font-mono text-[10px] text-muted-foreground">
-              Not investment advice. Information only.
-            </p>
-          </div>
-        </section>
-
-        {/* Right: form */}
-        <section className="bg-surface/40 px-6 lg:px-12 py-12 lg:py-20 flex items-center justify-center">
-          <div className="w-full max-w-md">
-            {/* Tabs */}
-            <div className="grid grid-cols-2 mb-6">
-              <button
-                onClick={() => { setMode("signin"); setStage("form"); setError(null); }}
-                className={`h-12 font-mono text-[11px] uppercase tracking-[0.2em] font-semibold transition-colors ${
-                  mode === "signin"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-surface text-foreground/70 border border-border border-l-0"
-                }`}
-              >
-                Sign in
-              </button>
-              <button
-                onClick={() => { setMode("register"); setStage("form"); setError(null); }}
-                className={`h-12 font-mono text-[11px] uppercase tracking-[0.2em] font-semibold transition-colors ${
-                  mode === "register"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-surface text-foreground/70 border border-border border-r-0"
-                }`}
-              >
-                Register
-              </button>
-            </div>
-
-            <form onSubmit={onSubmit} className="space-y-5 bg-surface border border-border border-t-0 p-6 -mt-px">
-              {mode === "register" && stage === "form" && (
-                <>
-                  <div>
-                    <label htmlFor="firstName" className="block font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
-                      First name
-                    </label>
-                    <input
-                      id="firstName"
-                      type="text"
-                      required
-                      minLength={2}
-                      value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
-                      className="w-full h-11 px-3 bg-background border border-border text-sm outline-none focus:border-accent"
-                      placeholder="John"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="lastName" className="block font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
-                      Last name
-                    </label>
-                    <input
-                      id="lastName"
-                      type="text"
-                      required
-                      minLength={2}
-                      value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
-                      className="w-full h-11 px-3 bg-background border border-border text-sm outline-none focus:border-accent"
-                      placeholder="Doe"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="username" className="block font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
-                      Username
-                    </label>
-                    <input
-                      id="username"
-                      type="text"
-                      required
-                      minLength={3}
-                      maxLength={24}
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, ""))}
-                      className="w-full h-11 px-3 bg-background border border-border text-sm outline-none focus:border-accent"
-                      placeholder="john_doe"
-                    />
-                  </div>
-                </>
-              )}
-
-              {(stage === "form" || stage === "reset-request") && (
-              <div>
-                <label htmlFor="email" className="block font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
-                  {mode === "signin" ? "Email or username" : "Email"}
-                </label>
-                <input
-                  id="email"
-                  type={mode === "signin" ? "text" : "email"}
-                  required
-                  autoComplete={mode === "signin" ? "username" : "email"}
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full h-11 px-3 bg-background border border-border text-sm outline-none focus:border-accent"
-                  placeholder="you@example.com"
-                />
+      <main className="flex-1">
+        <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-10 lg:py-16">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-start">
+            <div className="lg:pr-8 lg:border-r lg:border-border lg:min-h-[640px]">
+              <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-muted-foreground mb-4">
+                OreWire / Terminal
               </div>
-              )}
-
-              {stage === "form" && (
-              <div>
-                <label htmlFor="password" className="block font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
-                  Password
-                </label>
-                <input
-                  id="password"
-                  type="password"
-                  required
-                  minLength={6}
-                  autoComplete={mode === "signin" ? "current-password" : "new-password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full h-11 px-3 bg-background border border-border text-sm outline-none focus:border-accent"
-                  placeholder="••••••••"
-                />
-              </div>
-              )}
-
-              {(stage === "verify-register" || stage === "verify-login" || stage === "reset-verify") && (
-                <div>
-                  <p className="font-mono text-[11px] text-foreground/80 mb-4">
-                    OTP sent to <span className="text-accent">{email.trim()}</span>
-                  </p>
-                  <label htmlFor="otp" className="block font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
-                    OTP code
-                  </label>
-                  <input
-                    id="otp"
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={6}
-                    required
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                    className="w-full h-11 px-3 bg-background border border-border text-sm outline-none focus:border-accent tracking-[0.3em] font-mono"
-                    placeholder="123456"
-                  />
-                  <div className="mt-2 text-xs text-muted-foreground">
-                    {resendLeft > 0 ? `Resend available in ${resendLeft}s` : (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            await resendOtp(
-                              email.trim(),
-                              stage === "verify-register"
-                                ? "register"
-                                : stage === "verify-login"
-                                  ? "login_2fa"
-                                  : "reset_password"
-                            );
-                            startCountdown(60);
-                          } catch (err) {
-                            setError(err instanceof Error ? err.message : "Could not resend");
-                          }
-                        }}
-                        className="text-accent hover:underline"
-                      >
-                        Resend email
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {stage === "reset-verify" && (
-                <div>
-                  <label htmlFor="newPassword" className="block font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
-                    New password
-                  </label>
-                  <input
-                    id="newPassword"
-                    type="password"
-                    required
-                    minLength={6}
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full h-11 px-3 bg-background border border-border text-sm outline-none focus:border-accent"
-                    placeholder="••••••••"
-                  />
-                </div>
-              )}
-
-              {error && (
-                <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2">
-                  {error}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full inline-flex items-center justify-center gap-2 bg-accent text-accent-foreground h-12 text-sm font-mono uppercase tracking-[0.2em] font-bold hover:opacity-90 disabled:opacity-60 transition-opacity"
-              >
-                <Lock className="w-4 h-4" />
-                {submitting
-                  ? "Please wait..."
-                  : stage === "verify-register"
-                    ? "Verify OTP"
-                    : stage === "verify-login"
-                      ? "Verify sign in"
-                    : stage === "reset-request"
-                      ? "Send reset code"
-                      : stage === "reset-verify"
-                        ? "Reset password"
-                        : mode === "register"
-                          ? "Sign up"
-                          : "Login"}
-              </button>
-
-              {mode === "signin" && stage === "form" && (
-                <button
-                  type="button"
-                  onClick={() => { setStage("reset-request"); setError(null); }}
-                  className="text-xs text-accent hover:underline"
-                >
-                  Forgot password?
-                </button>
-              )}
-
-              {(stage === "verify-register" || stage === "verify-login" || stage === "reset-request" || stage === "reset-verify") && (
-                <button
-                  type="button"
-                  onClick={() => { setStage("form"); setError(null); setOtp(""); }}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                >
-                  Back
-                </button>
-              )}
-
-              <p className="font-mono text-[10px] text-muted-foreground leading-relaxed">
-                By continuing you agree to our terms. Orewire is editorial intelligence, not investment advice.
+              <h1 className="font-display text-4xl md:text-5xl lg:text-6xl font-bold leading-[1.05] tracking-tight">
+                The intelligence layer for junior mining.
+              </h1>
+              <p className="text-muted-foreground mt-5 text-base md:text-lg max-w-md leading-relaxed">
+                TSX, TSX-V, CSE and ASX filings — read, ranked and routed to the names you actually own.
               </p>
 
-              <Link to="/" className="block font-mono text-[11px] text-foreground/70 hover:text-foreground">
-                ← Back to home
-              </Link>
-            </form>
+              <ul className="mt-10 space-y-5 max-w-md">
+                {FEATURES.map(({ icon: Icon, title, body }) => (
+                  <li key={title} className="flex items-start gap-4 pb-5 border-b border-border last:border-0">
+                    <div className="w-11 h-11 border border-border bg-card flex items-center justify-center shrink-0">
+                      <Icon className="w-4 h-4 text-accent" />
+                    </div>
+                    <div>
+                      <div className="font-display font-bold text-[15px]">{title}</div>
+                      <div className="text-sm text-muted-foreground mt-0.5">{body}</div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+
+              <p className="mt-10 text-[11px] font-mono uppercase tracking-widest text-muted-foreground">
+                Not investment advice. Information only.
+              </p>
+            </div>
+
+            <div className="w-full max-w-[480px] mx-auto lg:mx-0">
+              <div className="grid grid-cols-2" role="tablist">
+                {(["signin", "register"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    role="tab"
+                    aria-selected={mode === m}
+                    onClick={() => { setMode(m); setStage("form"); setError(null); }}
+                    className={cn(
+                      "h-12 font-mono text-[11px] uppercase tracking-[0.22em] font-bold border transition-colors",
+                      mode === m
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-card text-foreground/80 border-border hover:text-foreground",
+                    )}
+                  >
+                    {m === "signin" ? "Sign In" : "Register"}
+                  </button>
+                ))}
+              </div>
+
+              <div className="border border-t-0 border-border bg-card p-6 md:p-8">
+                <form onSubmit={onSubmit} className="space-y-4">
+                  {mode === "register" && stage === "form" && (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <Label className={labelClass} htmlFor="firstName">First name</Label>
+                          <Input id="firstName" className={fieldClass} value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="John" required minLength={2} />
+                        </div>
+                        <div>
+                          <Label className={labelClass} htmlFor="lastName">Last name</Label>
+                          <Input id="lastName" className={fieldClass} value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Doe" required minLength={2} />
+                        </div>
+                      </div>
+                      <div>
+                        <Label className={labelClass} htmlFor="username">Username</Label>
+                        <Input id="username" className={fieldClass} value={username} onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, ""))} placeholder="john_doe" required minLength={3} maxLength={24} />
+                      </div>
+                      <div>
+                        <Label className={labelClass} htmlFor="company">
+                          Company <span className="normal-case tracking-normal text-muted-foreground/70 font-sans">(optional)</span>
+                        </Label>
+                        <Input id="company" className={fieldClass} value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Acme Capital" maxLength={100} />
+                      </div>
+                    </>
+                  )}
+
+                  {(stage === "form" || stage === "reset-request") && (
+                    <div>
+                      <Label className={labelClass} htmlFor="email">
+                        {mode === "signin" ? "Email or username" : "Email"}
+                      </Label>
+                      <Input
+                        id="email"
+                        type={mode === "signin" ? "text" : "email"}
+                        className={fieldClass}
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="you@example.com"
+                        required
+                        autoComplete={mode === "signin" ? "username" : "email"}
+                      />
+                    </div>
+                  )}
+
+                  {stage === "form" && (
+                    <div>
+                      <Label className={labelClass} htmlFor="password">Password</Label>
+                      <Input
+                        id="password"
+                        type="password"
+                        className={fieldClass}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="••••••••"
+                        required
+                        minLength={6}
+                        autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                      />
+                    </div>
+                  )}
+
+                  {(stage === "verify-register" || stage === "verify-login" || stage === "reset-verify") && (
+                    <div>
+                      <p className="font-mono text-[11px] text-foreground/80 mb-4">
+                        OTP sent to <span className="text-accent">{email.trim()}</span>
+                      </p>
+                      <Label className={labelClass} htmlFor="otp">OTP code</Label>
+                      <Input
+                        id="otp"
+                        className={cn(fieldClass, "tracking-[0.3em] font-mono")}
+                        value={otp}
+                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                        placeholder="123456"
+                        inputMode="numeric"
+                        maxLength={6}
+                        required
+                      />
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        {resendLeft > 0 ? `Resend available in ${resendLeft}s` : (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await resendOtp(
+                                  email.trim(),
+                                  stage === "verify-register" ? "register" : stage === "verify-login" ? "login_2fa" : "reset_password",
+                                );
+                                startCountdown(60);
+                              } catch (err) {
+                                setError(err instanceof Error ? err.message : "Could not resend");
+                              }
+                            }}
+                            className="text-accent hover:underline font-medium"
+                          >
+                            Resend email
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {stage === "reset-verify" && (
+                    <div>
+                      <Label className={labelClass} htmlFor="newPassword">New password</Label>
+                      <Input id="newPassword" type="password" className={fieldClass} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="••••••••" required minLength={6} />
+                    </div>
+                  )}
+
+                  {error && (
+                    <div className="text-sm text-destructive bg-destructive/10 border border-destructive/20 px-3 py-2">
+                      {error}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="w-full h-12 bg-accent text-accent-foreground hover:bg-accent/90 disabled:opacity-60 font-mono text-[12px] uppercase tracking-[0.22em] font-bold inline-flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    {submitLabel}
+                  </button>
+
+                  {mode === "signin" && stage === "form" && (
+                    <button type="button" onClick={() => { setStage("reset-request"); setError(null); }} className="text-sm text-accent hover:underline font-medium">
+                      Forgot password?
+                    </button>
+                  )}
+
+                  {(stage === "verify-register" || stage === "verify-login" || stage === "reset-request" || stage === "reset-verify") && (
+                    <button type="button" onClick={() => { setStage("form"); setError(null); setOtp(""); }} className="text-sm text-muted-foreground hover:text-foreground">
+                      Back
+                    </button>
+                  )}
+
+                  <p className="text-xs text-muted-foreground mt-6 leading-relaxed">
+                    By continuing you agree to our{" "}
+                    <Link to="/terms" className="underline hover:text-foreground">terms</Link>. OreWire is editorial intelligence, not investment advice.
+                  </p>
+
+                  <div className="mt-6 pt-5 border-t border-border flex items-center justify-between text-xs">
+                    <Link to="/" className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+                      ← Back to home
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => setMode(mode === "register" ? "signin" : "register")}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      {mode === "register" ? "Have an account? Sign in" : "New here? Create account"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
           </div>
-        </section>
+        </div>
       </main>
+
+      <Footer />
     </div>
   );
 };
-
-const Feature = ({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) => (
-  <li className="flex gap-4">
-    <span className="w-9 h-9 grid place-items-center border border-border text-accent shrink-0">{icon}</span>
-    <div>
-      <div className="font-display text-[15px] font-bold mb-1">{title}</div>
-      <p className="text-sm text-foreground/70">{body}</p>
-    </div>
-  </li>
-);
 
 export default Login;

@@ -3,6 +3,7 @@ const router  = express.Router();
 const crypto  = require('crypto');
 const jwt     = require('jsonwebtoken');
 const db      = require('../db');
+const { hashPassword, verifyPassword } = require('../lib/password');
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'orewire2024';
 const ADMIN_COOKIE   = 'orewire_admin';
@@ -32,20 +33,6 @@ function sha256(str) {
 
 function generateOtpCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
-}
-
-function hashPassword(password, salt) {
-  const useSalt = salt || crypto.randomBytes(16).toString('hex');
-  const derived = crypto.scryptSync(password, useSalt, 64).toString('hex');
-  return { salt: useSalt, hash: derived };
-}
-
-function verifyPassword(password, salt, expectedHash) {
-  const { hash } = hashPassword(password, salt);
-  const a = Buffer.from(hash, 'hex');
-  const b = Buffer.from(expectedHash, 'hex');
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
 }
 
 // ---------------------------------------------------------------------------
@@ -177,9 +164,15 @@ function validateName(value, label) {
   return { ok: true, value: trimmed };
 }
 
+function trimCompany(value) {
+  const s = String(value || '').trim();
+  if (!s) return null;
+  return s.length > 100 ? s.slice(0, 100) : s;
+}
+
 router.post('/register', express.json(), async (req, res) => {
   try {
-    const { firstName, lastName, username, email, password } = req.body || {};
+    const { firstName, lastName, username, email, password, company } = req.body || {};
     if (!firstName || !lastName || !username || !email || !password) return res.status(400).json({ error: 'First name, last name, username, email and password are required' });
     const first = validateName(firstName, 'First name');
     if (!first.ok) return res.status(400).json({ error: first.error });
@@ -202,10 +195,10 @@ router.post('/register', express.json(), async (req, res) => {
       return res.status(409).json({ error: 'Username is already taken' });
     }
     const inserted = await db.query(
-      `INSERT INTO users (first_name, last_name, username, email, password, salt, email_verified)
-       VALUES ($1, $2, $3, $4, $5, $6, FALSE)
+      `INSERT INTO users (first_name, last_name, username, email, password, salt, email_verified, company)
+       VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7)
        RETURNING id`,
-      [first.value, last.value, username.trim(), email.toLowerCase(), hash, salt]
+      [first.value, last.value, username.trim(), email.toLowerCase(), hash, salt, trimCompany(company)]
     );
     const userId = inserted.rows[0].id;
 
@@ -416,7 +409,7 @@ router.post('/verify-login-otp', express.json(), async (req, res) => {
 router.get('/profile', requireUser, async (req, res) => {
   try {
     const r = await db.query(
-      `SELECT id, email, username, first_name, last_name, two_step_enabled, email_verified, created_at
+      `SELECT id, email, username, first_name, last_name, company, two_step_enabled, email_verified, created_at
          FROM users
         WHERE id = $1`,
       [req.user.id]
@@ -430,6 +423,7 @@ router.get('/profile', requireUser, async (req, res) => {
         username: user.username || null,
         firstName: user.first_name || '',
         lastName: user.last_name || '',
+        company: user.company || null,
         twoStepEnabled: !!user.two_step_enabled,
         emailVerified: !!user.email_verified,
         createdAt: user.created_at,
@@ -443,7 +437,7 @@ router.get('/profile', requireUser, async (req, res) => {
 
 router.patch('/profile', requireUser, express.json(), async (req, res) => {
   try {
-    const { firstName, lastName, username } = req.body || {};
+    const { firstName, lastName, username, company } = req.body || {};
     if (!firstName || !lastName || !username) {
       return res.status(400).json({ error: 'First name, last name and username are required' });
     }
@@ -459,10 +453,10 @@ router.patch('/profile', requireUser, express.json(), async (req, res) => {
     if (exists.rows[0]) return res.status(409).json({ error: 'Username is already taken' });
     const updated = await db.query(
       `UPDATE users
-          SET first_name = $1, last_name = $2, username = $3
-        WHERE id = $4
-      RETURNING id, email, username, first_name, last_name, two_step_enabled, email_verified, created_at`,
-      [first.value, last.value, String(username).trim(), req.user.id]
+          SET first_name = $1, last_name = $2, username = $3, company = $4
+        WHERE id = $5
+      RETURNING id, email, username, first_name, last_name, company, two_step_enabled, email_verified, created_at`,
+      [first.value, last.value, String(username).trim(), trimCompany(company), req.user.id]
     );
     const user = updated.rows[0];
     res.json({
@@ -472,6 +466,7 @@ router.patch('/profile', requireUser, express.json(), async (req, res) => {
         username: user.username || null,
         firstName: user.first_name || '',
         lastName: user.last_name || '',
+        company: user.company || null,
         twoStepEnabled: !!user.two_step_enabled,
         emailVerified: !!user.email_verified,
         createdAt: user.created_at,

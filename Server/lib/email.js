@@ -2,6 +2,7 @@ const {
   renderWelcomeEmail,
   renderOtpEmail,
   renderMorningBriefSubscribeEmail,
+  renderAdminCredentialsEmail,
 } = require('./email-templates');
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
@@ -58,6 +59,11 @@ async function sendWatchlistAlertEmail({ email, subject, html }) {
   await sendEmailViaResend(email.toLowerCase(), subject, html, ALERTS_FROM_EMAIL);
 }
 
+async function sendAdminCredentialsEmail({ email, firstName, tempPassword, isNewAccount }) {
+  const { subject, html } = renderAdminCredentialsEmail({ firstName, tempPassword, isNewAccount });
+  await sendEmailViaResend(email.toLowerCase(), subject, html);
+}
+
 /** @deprecated use sendWatchlistAlertEmail */
 async function sendWatchlistNewsAlertEmail(opts) {
   return sendWatchlistAlertEmail(opts);
@@ -70,5 +76,6 @@ module.exports = {
   sendMorningBriefSubscribeEmail,
   sendBriefingEmail,
   sendWatchlistAlertEmail,
+  sendAdminCredentialsEmail,
   sendWatchlistNewsAlertEmail,
 };

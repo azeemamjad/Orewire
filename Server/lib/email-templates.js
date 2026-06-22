@@ -261,11 +261,61 @@ function renderOtpEmail({ code, purpose, ttlMinutes }) {
   };
 }
 
+/** Admin-created account or password reset — sends temporary password. */
+function renderAdminCredentialsEmail({ firstName, tempPassword, isNewAccount }) {
+  const cfg = emailConfig();
+  const greeting = firstName ? `Hi ${escapeHtml(firstName)},` : 'Hi,';
+  const headline = isNewAccount ? 'Your OreWire account is ready' : 'Your password was reset';
+  const intro = isNewAccount
+    ? 'An administrator created an OreWire account for you. Sign in with the credentials below.'
+    : 'An administrator reset your OreWire password. Use the temporary password below to sign in.';
+
+  const inner = `
+      <tr>
+        <td class="px" style="padding:36px 32px 8px 32px;">
+          <div style="font-size:26px;font-weight:700;color:#0f1e3d;letter-spacing:-0.3px;">${headline}</div>
+        </td>
+      </tr>
+      <tr>
+        <td class="px" style="padding:14px 32px 0 32px;">
+          <p style="margin:0 0 16px 0;font-size:15px;line-height:1.65;color:#1a1a1a;">${greeting}</p>
+          <p style="margin:0 0 20px 0;font-size:15px;line-height:1.65;color:#1a1a1a;">${intro}</p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td align="center" style="background:#faf7f1;border:1px solid #ece7dc;border-radius:8px;padding:22px 16px;">
+                <div style="font-family:'SF Mono',Menlo,Consolas,monospace;font-size:14px;color:#6b6b6b;margin-bottom:8px;">Temporary password</div>
+                <div style="font-family:'SF Mono',Menlo,Consolas,monospace;font-size:22px;font-weight:700;letter-spacing:2px;color:#0f1e3d;">${escapeHtml(tempPassword)}</div>
+              </td>
+            </tr>
+          </table>
+          <p style="margin:20px 0 0 0;font-size:14px;line-height:1.6;color:#6b6b6b;">
+            For security, change this password after your first login from your
+            <a href="${escapeHtml(cfg.profileUrl)}" style="color:#2d8a8a;text-decoration:underline;">profile settings</a>.
+          </p>
+        </td>
+      </tr>
+      <tr>
+        <td class="px" align="left" style="padding:26px 32px 32px 32px;">
+          <a href="${escapeHtml(cfg.feedUrl)}" style="display:inline-block;background:#d4a13a;color:#1a2541;font-size:15px;font-weight:700;text-decoration:none;padding:13px 26px;border-radius:6px;">Sign in to OreWire →</a>
+        </td>
+      </tr>`;
+
+  return {
+    subject: isNewAccount ? 'Your OreWire account credentials' : 'Your OreWire password was reset',
+    html: emailShell({
+      preheader: 'Your temporary OreWire password',
+      innerHtml: inner,
+      showMarketingFooter: false,
+    }),
+  };
+}
+
 module.exports = {
   escapeHtml,
   emailConfig,
   renderMorningBriefSubscribeEmail,
   renderWelcomeEmail,
   renderOtpEmail,
+  renderAdminCredentialsEmail,
   appBaseUrl,
 };

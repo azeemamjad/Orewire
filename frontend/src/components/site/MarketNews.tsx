@@ -20,15 +20,15 @@ const placeholderNews: NewsItem[] = [
 ];
 
 const NewsRow = ({ item }: { item: NewsItem }) => (
-  <li>
+  <li className="flex-1 flex">
     <a
       href={item.link}
       target="_blank"
       rel="noopener noreferrer"
-      className="group flex items-start gap-3 px-4 py-3.5 hover:bg-background/60 transition-colors"
+      className="group flex items-start gap-3 px-4 py-4 w-full hover:bg-background/60 transition-colors"
     >
-      <div className="flex-1 min-w-0">
-        <div className="text-[14px] font-semibold leading-snug text-foreground group-hover:text-accent transition-colors">
+      <div className="flex-1 min-w-0 flex flex-col justify-between gap-2">
+        <div className="text-[14px] font-semibold leading-snug text-foreground group-hover:text-accent transition-colors line-clamp-2">
           {item.title}
         </div>
         <div className="mt-1.5 flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
@@ -68,44 +68,43 @@ const MarketNews = () => {
   }, [items]);
 
   return (
-    <div className="max-w-[1440px] mx-auto px-4 lg:px-6 py-10 lg:py-12">
-      <div className="flex items-end justify-between flex-wrap gap-3 mb-5">
-        <div>
-          <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-1.5 flex items-center gap-2">
-            <Newspaper className="w-3 h-3 text-accent" /> Global market news
+    <section id="market-news" className="border-b border-border bg-background">
+      <div className="max-w-[1440px] mx-auto px-4 lg:px-6 py-10 lg:py-12">
+        <div className="flex items-end justify-between flex-wrap gap-3 mb-5">
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-1.5 flex items-center gap-2">
+              <Newspaper className="w-3 h-3 text-accent" /> Global market news
+            </div>
+            <h2 className="font-display text-2xl lg:text-3xl font-extrabold tracking-tight">Latest Market News</h2>
           </div>
-          <h2 className="font-display text-2xl lg:text-3xl font-extrabold tracking-tight">Latest Market News</h2>
+          <Link
+            to="/market-news"
+            className="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted-foreground hover:text-foreground"
+          >
+            View all <ArrowUpRight className="w-3.5 h-3.5" />
+          </Link>
         </div>
-        <Link
-          to="/market-news"
-          className="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted-foreground hover:text-foreground"
-        >
-          View all <ArrowUpRight className="w-3.5 h-3.5" />
-        </Link>
-      </div>
 
-      <div className="border border-border bg-surface grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
-        <ul className="divide-y divide-border">
-          {left.map((item) => (
-            <NewsRow key={item.link || item.title} item={item} />
+        <div className="border border-border bg-surface grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
+          {[left, right].map((col, idx) => (
+            <ul key={idx} className="divide-y divide-border flex flex-col">
+              {col.map((item) => (
+                <NewsRow key={item.link || item.title} item={item} />
+              ))}
+            </ul>
           ))}
-        </ul>
-        <ul className="divide-y divide-border">
-          {right.map((item) => (
-            <NewsRow key={item.link || item.title} item={item} />
-          ))}
-        </ul>
-      </div>
+        </div>
 
-      <div className="mt-4 flex justify-center">
-        <Link
-          to="/market-news"
-          className="inline-flex items-center gap-1.5 h-10 px-5 bg-foreground text-background font-mono text-[11px] uppercase tracking-widest font-bold hover:opacity-90 transition-opacity"
-        >
-          View all market news <ArrowUpRight className="w-3.5 h-3.5" />
-        </Link>
+        <div className="mt-10 lg:mt-12 flex justify-center">
+          <Link
+            to="/market-news"
+            className="inline-flex items-center gap-1.5 h-11 px-6 bg-foreground text-background font-mono text-[11px] uppercase tracking-widest font-bold hover:opacity-90 transition-opacity"
+          >
+            View all market news <ArrowUpRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
       </div>
-    </div>
+    </section>
   );
 };
 

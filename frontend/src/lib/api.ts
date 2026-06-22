@@ -740,6 +740,7 @@ export interface AuthUser {
   username?: string | null;
   firstName?: string | null;
   lastName?: string | null;
+  company?: string | null;
   twoStepEnabled?: boolean;
   emailVerified?: boolean;
   createdAt?: string;
@@ -896,19 +897,34 @@ export async function login(email: string, password: string): Promise<AuthRespon
   return resp;
 }
 
-export async function register(a: string, b: string, c?: string, d?: string, e?: string): Promise<AuthResponse> {
-  // Backwards compatible:
-  // register(email, password)
-  // register(firstName, lastName, email, password)
-  // register(firstName, lastName, username, email, password)
-  const isFiveArg = !!(c && d && e);
-  const isFourArg = !!(c && d && !e);
-  const firstName = isFiveArg || isFourArg ? a : "User";
-  const lastName = isFiveArg || isFourArg ? b : "Member";
-  const username = isFiveArg ? c : (isFourArg ? `${firstName}${lastName}`.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 24) || "user" : "user");
-  const email = isFiveArg ? d! : (isFourArg ? c! : a);
-  const password = isFiveArg ? e! : (isFourArg ? d! : b);
-  const resp = await authRequest('/register', { firstName, lastName, username, email, password });
+export async function register(
+  firstNameOrEmail: string,
+  lastNameOrPassword: string,
+  username?: string,
+  email?: string,
+  password?: string,
+  company?: string,
+): Promise<AuthResponse> {
+  // Legacy: register(email, password) — e.g. CurrencyDetail modal
+  const isLegacy = firstNameOrEmail.includes('@') && !username;
+  const body = isLegacy
+    ? {
+        firstName: 'User',
+        lastName: 'Member',
+        username:
+          firstNameOrEmail.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '').slice(0, 24) || 'user',
+        email: firstNameOrEmail,
+        password: lastNameOrPassword,
+      }
+    : {
+        firstName: firstNameOrEmail,
+        lastName: lastNameOrPassword,
+        username: username!,
+        email: email!,
+        password: password!,
+        company: company?.trim() || undefined,
+      };
+  const resp = await authRequest('/register', body);
   if (resp.accessToken || resp.token) setAuth(resp);
   return resp;
 }
@@ -955,7 +971,12 @@ export async function fetchProfile(): Promise<ProfileResponse> {
   return data as ProfileResponse;
 }
 
-export async function updateProfile(input: { firstName: string; lastName: string; username: string }): Promise<ProfileResponse> {
+export async function updateProfile(input: {
+  firstName: string;
+  lastName: string;
+  username: string;
+  company?: string;
+}): Promise<ProfileResponse> {
   const res = await authFetch(`${API_BASE}/auth/profile`, {
     method: "PATCH",
     body: JSON.stringify(input),

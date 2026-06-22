@@ -29,6 +29,7 @@ function initAdminPage() {
   if (page === 'pipeline') pipelineInit();
   if (page === 'processes') processesInit();
   if (page === 'users') loadUsers();
+  if (page === 'va-tasks') initVaTasks();
   if (page === 'contact-messages') initContactMessages();
 }
 document.addEventListener('DOMContentLoaded', initAdminPage);
@@ -1861,17 +1862,78 @@ async function submitAddCompany(e) {
 }
 
 // ── Users (admin) ──
+function openAddUserModal() {
+  document.getElementById('add-user-form')?.reset();
+  const sendEl = document.getElementById('au-send-email');
+  if (sendEl) sendEl.checked = true;
+  document.getElementById('add-user-modal')?.classList.add('open');
+}
+function closeAddUserModal() {
+  document.getElementById('add-user-modal')?.classList.remove('open');
+}
+function showTempPasswordModal(password, emailed) {
+  const val = document.getElementById('temp-pw-value');
+  const note = document.getElementById('temp-pw-email-note');
+  if (val) val.textContent = password;
+  if (note) {
+    note.textContent = emailed
+      ? 'Credentials were emailed to the user.'
+      : 'Email was not sent — share this password securely.';
+  }
+  document.getElementById('temp-pw-modal')?.classList.add('open');
+}
+function closeTempPwModal() {
+  document.getElementById('temp-pw-modal')?.classList.remove('open');
+}
+async function submitAddUser(e) {
+  e.preventDefault();
+  const body = {
+    firstName: document.getElementById('au-first')?.value.trim(),
+    lastName: document.getElementById('au-last')?.value.trim(),
+    email: document.getElementById('au-email')?.value.trim(),
+    company: document.getElementById('au-company')?.value.trim() || undefined,
+    username: document.getElementById('au-username')?.value.trim() || undefined,
+    password: document.getElementById('au-password')?.value.trim() || undefined,
+    sendEmail: document.getElementById('au-send-email')?.checked !== false,
+  };
+  try {
+    const r = await fetch(`${API}/api/admin/users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    closeAddUserModal();
+    toast(r.emailed ? 'User created — email sent' : 'User created');
+    if (r.tempPassword) showTempPasswordModal(r.tempPassword, r.emailed);
+    loadUsers();
+  } catch (err) { toast(err.message, 'err'); }
+}
+async function resetUserPassword(userId, sendEmail) {
+  if (!confirm(sendEmail ? 'Generate a new temp password and email it to this user?' : 'Generate a new temp password?')) return;
+  try {
+    const r = await fetch(`${API}/api/admin/users/${userId}/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sendEmail }),
+    }).then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    toast(r.emailed ? 'Password reset — email sent' : 'Password reset');
+    if (r.tempPassword) showTempPasswordModal(r.tempPassword, r.emailed);
+    loadUsers();
+  } catch (err) { toast(err.message, 'err'); }
+}
 async function loadUsers() {
   const tbody = document.getElementById('users-body');
   if (!tbody) return;
-  tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Loading…</td></tr>';
+  tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Loading…</td></tr>';
   try {
     const data = await fetch(`${API}/api/admin/users`).then((r) => r.json());
     const items = data.items || [];
     const totalEl = document.getElementById('users-total');
     if (totalEl) totalEl.textContent = String(data.total ?? items.length);
     if (!items.length) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No registered users yet.</td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No registered users yet.</td></tr>';
       return;
     }
     tbody.innerHTML = items.map((u) => {
@@ -1880,15 +1942,158 @@ async function loadUsers() {
       return `<tr>
         <td>${esc(name)}</td>
         <td>${esc(u.email)}</td>
+        <td>${esc(u.company || '—')}</td>
         <td>${esc(u.username || '—')}</td>
         <td>${u.emailVerified ? '✓' : '—'}</td>
-        <td>${u.watchlistAlertsEnabled ? 'On' : 'Off'}</td>
         <td style="font-size:12px;color:var(--muted);">${esc(created)}</td>
+        <td class="user-actions">
+          <button class="btn btn-primary btn-sm" type="button" onclick="resetUserPassword(${u.id}, true)" title="Generate temp password and email">📧 Send password</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="resetUserPassword(${u.id}, false)" title="Generate temp password only">🔑 Temp PW</button>
+        </td>
       </tr>`;
     }).join('');
   } catch (err) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="7">${esc(err.message)}</td></tr>`;
+  }
+}
+
+// ── VA tasks (admin) ──
+let _vaFilter = 'open';
+let _vaSelectedId = null;
+let _vaTasksCache = [];
+
+function initVaTasks() {
+  const filterSel = document.getElementById('va-filter');
+  if (filterSel) {
+    filterSel.value = _vaFilter;
+    filterSel.addEventListener('change', () => {
+      _vaFilter = filterSel.value;
+      _vaSelectedId = null;
+      renderVaTaskDetailEmpty();
+      loadVaTasks();
+    });
+  }
+  syncVaTasks().then(() => loadVaTasks());
+}
+
+function renderVaTaskDetailEmpty() {
+  const el = document.getElementById('va-task-detail');
+  if (!el) return;
+  el.innerHTML = '<div class="va-task-detail-empty">Select a task for details and actions</div>';
+}
+
+function vaSeverityClass(sev) {
+  return `va-sev-${sev || 'medium'}`;
+}
+
+async function syncVaTasks() {
+  try {
+    await fetch(`${API}/api/admin/va-tasks/sync`, { method: 'POST' });
+    if (typeof refreshVaTasksBadge === 'function') refreshVaTasksBadge();
+  } catch {
+    /* ignore */
+  }
+}
+
+async function loadVaTasks() {
+  const tbody = document.getElementById('va-tasks-body');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Loading…</td></tr>';
+  try {
+    const data = await fetch(`${API}/api/admin/va-tasks?filter=${encodeURIComponent(_vaFilter)}`).then((r) => r.json());
+    _vaTasksCache = data.items || [];
+    const openEl = document.getElementById('va-open-count');
+    if (openEl && _vaFilter === 'open') {
+      openEl.textContent = `${_vaTasksCache.length} open task(s)`;
+    } else if (openEl) {
+      openEl.textContent = '';
+    }
+    if (!_vaTasksCache.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No tasks in this filter. Click Sync now to scan the system.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = _vaTasksCache.map((t) => {
+      const when = t.lastSeenAt ? new Date(t.lastSeenAt).toLocaleString() : '—';
+      const open = t.status === 'open' || t.status === 'in_progress';
+      return `<tr class="${open ? 'va-task-row-open' : ''}" style="cursor:pointer" onclick="selectVaTask(${t.id})">
+        <td class="${vaSeverityClass(t.severity)}">${esc(t.severity)}</td>
+        <td style="font-size:12px;">${esc(t.module)}</td>
+        <td>${esc(t.title)}</td>
+        <td>${t.occurrenceCount > 1 ? `<strong>${t.occurrenceCount}</strong>` : '1'}</td>
+        <td>${esc(t.status)}</td>
+        <td style="font-size:12px;color:var(--muted);">${esc(when)}</td>
+      </tr>`;
+    }).join('');
+    if (_vaSelectedId) {
+      const still = _vaTasksCache.find((t) => t.id === _vaSelectedId);
+      if (still) selectVaTask(still.id);
+      else renderVaTaskDetailEmpty();
+    }
+  } catch (err) {
     tbody.innerHTML = `<tr class="empty-row"><td colspan="6">${esc(err.message)}</td></tr>`;
   }
+}
+
+function selectVaTask(id) {
+  _vaSelectedId = id;
+  const t = _vaTasksCache.find((x) => x.id === id);
+  const el = document.getElementById('va-task-detail');
+  if (!el || !t) return;
+  const sample = t.sampleDetail
+    ? `<div style="margin-top:12px;font-size:12px;"><strong>Sample:</strong><pre style="white-space:pre-wrap;margin:6px 0 0;padding:10px;background:var(--bg);border-radius:6px;font-size:11px;">${esc(t.sampleDetail)}</pre></div>`
+    : '';
+  const actionBtn = t.actionUrl
+    ? `<a class="btn btn-primary btn-sm" href="${esc(t.actionUrl)}">Open section →</a>`
+    : '';
+  el.innerHTML = `
+    <div class="va-sev-${esc(t.severity)}" style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">${esc(t.severity)} · ${esc(t.module)} · ${esc(t.errorType)}</div>
+    <h3 style="margin:0 0 8px;font-size:18px;">${esc(t.title)}</h3>
+    <p style="margin:0;font-size:14px;line-height:1.55;color:var(--muted);">${esc(t.description || '')}</p>
+    ${sample}
+    <div style="margin-top:10px;font-size:12px;color:var(--muted);">
+      Occurrences: <strong>${t.occurrenceCount}</strong> · Status: <strong>${esc(t.status)}</strong>
+    </div>
+    <div class="va-task-actions">
+      ${actionBtn}
+      <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'in_progress')">▶ In progress</button>
+      <button class="btn btn-primary btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'done')">✓ Done</button>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'dismissed')">Dismiss</button>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'open')">Reopen</button>
+    </div>
+    <div style="margin-top:14px;">
+      <label style="font-size:12px;color:var(--muted);">VA note</label>
+      <textarea id="va-note-input" rows="2" style="width:100%;margin-top:4px;font:inherit;padding:8px;" placeholder="Optional note for the team">${esc(t.assignedNote || '')}</textarea>
+      <button class="btn btn-ghost btn-sm" type="button" style="margin-top:6px;" onclick="saveVaTaskNote(${t.id})">Save note</button>
+    </div>`;
+}
+
+async function updateVaTaskStatus(id, status) {
+  try {
+    const r = await fetch(`${API}/api/admin/va-tasks/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    }).then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    toast(status === 'done' ? 'Task marked done' : `Status: ${status}`);
+    await syncVaTasks();
+    loadVaTasks();
+    if (typeof refreshVaTasksBadge === 'function') refreshVaTasksBadge();
+  } catch (err) { toast(err.message, 'err'); }
+}
+
+async function saveVaTaskNote(id) {
+  const note = document.getElementById('va-note-input')?.value ?? '';
+  try {
+    const r = await fetch(`${API}/api/admin/va-tasks/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignedNote: note }),
+    }).then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    toast('Note saved');
+    loadVaTasks();
+  } catch (err) { toast(err.message, 'err'); }
 }
 
 // ── Contact messages (admin) ──

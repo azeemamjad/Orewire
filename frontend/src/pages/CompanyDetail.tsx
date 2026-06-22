@@ -26,7 +26,6 @@ import { getNewsSeverity, getNewsTags } from "@/components/site/NewsArticleCard"
 import { useAuth } from "@/hooks/use-auth";
 import { useState, useEffect, type ReactNode } from "react";
 import Nav from "@/components/site/Nav";
-import MorningBrief from "@/components/site/MorningBrief";
 import Footer from "@/components/site/Footer";
 import SetAlertButton from "@/components/site/SetAlertButton";
 import TradingViewChart from "@/components/site/TradingViewChart";
@@ -84,7 +83,6 @@ const CompanyDetail = () => {
     return (
       <div className="min-h-screen bg-background text-foreground">
         <Nav />
-        <MorningBrief />
         <div className="flex items-center justify-center py-32">
           <div className="text-muted-foreground">Loading company profile...</div>
         </div>
@@ -114,7 +112,6 @@ const CompanyDetail = () => {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Nav />
-      <MorningBrief />
 
       <main className="mx-auto max-w-7xl px-4 py-6">
         <nav className="text-xs text-muted-foreground mb-4 font-mono">
@@ -285,9 +282,9 @@ const CompanyDetail = () => {
             <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
               Not Yet Available
             </div>
-            <h3 className="font-display text-xl tracking-tight mb-2">Are you a Company Director?</h3>
+            <h3 className="font-display text-xl tracking-tight mb-2">Are you a company director?</h3>
             <p className="text-sm text-muted-foreground max-w-md mx-auto mb-3">
-              Put your Investment Case to Orewire's audience.
+              Present your investment case to OreWire&apos;s audience.
             </p>
             <a
               href="mailto:hello@orewire.com"
@@ -323,7 +320,8 @@ const CompanyDetail = () => {
         <DiscussionSection companyId={companyId} ticker={data.ticker || data.name} />
 
         <p className="text-xs text-muted-foreground mt-10 leading-relaxed border-t border-border pt-4">
-          Orewire publishes editorial summaries of public filings for informational purposes only and does not provide investment advice. Data may be delayed. Always read the original filing.
+          OreWire publishes editorial summaries of public filings for informational purposes only and does not provide
+          investment advice. Data may be delayed. Always read the original filing.
         </p>
       </main>
 
@@ -1248,6 +1246,7 @@ const DiscussionSection = ({ companyId, ticker }: { companyId: number; ticker: s
         </div>
 
         <div className="mb-8 bg-card border border-border p-3 shadow-sm">
+          {isAuthenticated ? (
           <form onSubmit={handlePost}>
             <div className="flex gap-3">
               <div
@@ -1276,6 +1275,20 @@ const DiscussionSection = ({ companyId, ticker }: { companyId: number; ticker: s
               </button>
             </div>
           </form>
+          ) : (
+            <div className="flex items-center justify-between gap-4 flex-wrap py-2">
+              <div className="flex items-center gap-3">
+                <Lock className="w-4 h-4 text-muted-foreground" />
+                <p className="text-sm">Sign in to join the discussion on {ticker}.</p>
+              </div>
+              <Link
+                to={`/register?redirect=${encodeURIComponent(window.location.pathname)}`}
+                className="inline-flex items-center justify-center h-9 px-4 bg-accent text-accent-foreground font-mono text-[11px] uppercase tracking-wider font-bold hover:bg-accent/90 transition-colors"
+              >
+                Sign up free
+              </Link>
+            </div>
+          )}
         </div>
 
         {sorted.length === 0 ? (

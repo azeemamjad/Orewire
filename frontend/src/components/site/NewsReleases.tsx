@@ -149,17 +149,15 @@ const NewsReleases = () => {
           </div>
           <div className="lg:col-span-7 space-y-4 text-[15px] leading-relaxed text-foreground/80">
             <p>
-              Hundreds of news releases hit the wire every trading day from TSX-V, CSE, TSX and ASX miners. Drill
-              results, financings, resource updates, corporate changes - each one buried in jargon, footnotes and 8-page
-              PDFs.
+              Hundreds of releases hit the wire every trading day. Drill results, financings, resource updates,
+              corporate changes — each one buried in jargon, footnotes and 8-page PDFs.
             </p>
             <p>
-              We read every single release the moment it's published and distill it into{" "}
-              <strong className="text-foreground">one plain-English line</strong> with a verdict -{" "}
+              Every release is summarized into <strong className="text-foreground">one plain-English line</strong> with a
+              significance verdict the moment it is published.{" "}
               <span className="font-semibold text-foreground">Noteworthy</span> if it moves the thesis,{" "}
-              <span className="font-semibold text-foreground">Watch</span> if it's worth tracking,{" "}
-              <span className="font-semibold text-foreground">Routine</span> if you can skip it. Click any release for the
-              full announcement, context and related coverage on the company page.
+              <span className="font-semibold text-foreground">Watch</span> if it is worth tracking,{" "}
+              <span className="font-semibold text-foreground">Routine</span> if you can skip it.
             </p>
           </div>
         </div>

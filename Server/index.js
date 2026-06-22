@@ -41,6 +41,7 @@ apiRouter.use('/contact',      require('./routes/contact').publicRouter);
 const adminApiRouter = express.Router();
 adminApiRouter.use(auth.requireAdminApi);
 adminApiRouter.use('/users', require('./routes/admin-users'));
+adminApiRouter.use('/va-tasks', require('./routes/admin-va-tasks'));
 adminApiRouter.use('/contact-messages', require('./routes/contact').adminRouter);
 app.use('/api', apiRouter);
 app.use('/api/admin', adminApiRouter);
@@ -124,6 +125,16 @@ async function start() {
       initRelay(app, server).catch((err) => {
         console.error('[Relay] Failed to start:', err?.message || err);
       });
+    }
+
+    try {
+      const { syncVaTasks } = require('./lib/va-tasks-sync');
+      syncVaTasks().catch((err) => console.error('[VA tasks] Initial sync failed:', err?.message || err));
+      setInterval(() => {
+        syncVaTasks().catch((err) => console.error('[VA tasks] Sync failed:', err?.message || err));
+      }, 60 * 1000);
+    } catch (err) {
+      console.error('[VA tasks] Scheduler failed to start:', err?.message || err);
     }
   });
 }

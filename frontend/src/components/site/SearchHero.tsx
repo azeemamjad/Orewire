@@ -157,20 +157,16 @@ const SearchHero = () => {
         <div>
           <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-1.5 flex items-center gap-2">
             <span className="w-1.5 h-1.5 bg-[hsl(var(--up))] animate-pulse-dot" />
-            Live · TSX · TSX-V · CSE · ASX
+            Live · Mining terminal
           </div>
           <h1 className="font-display text-3xl lg:text-4xl font-extrabold leading-tight">
-            Mining and resource intelligence,
-            <br />
-            <span className="text-accent">clearly summarized.</span>
+            Mining and resource data, news, and filings. All in one place.
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground max-w-xl">
-            Stock prices, decoded filings, and news release summaries for 2,000+ mining and resource companies across Canada and Australia.
+          <p className="mt-2 text-sm text-muted-foreground max-w-3xl">
+            Stock prices, decoded filings, news release summaries, market news and data for 2,000+ mining and resource companies across Canada and Australia.
           </p>
         </div>
-        <div className="font-mono text-[11px] text-muted-foreground">
-          TSX-V · CSE · ASX · TSX · Delayed 15m
-        </div>
+        <div className="font-mono text-[11px] text-muted-foreground">TSX · TSX-V · CSE · ASX</div>
       </div>
 
       <div ref={wrapRef} className="relative">

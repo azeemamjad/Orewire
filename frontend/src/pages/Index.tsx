@@ -1,5 +1,4 @@
 import Nav from "@/components/site/Nav";
-import MorningBrief from "@/components/site/MorningBrief";
 import CommodityBar from "@/components/site/CommodityBar";
 import SearchHero from "@/components/site/SearchHero";
 import Movers from "@/components/site/Movers";
@@ -17,7 +16,6 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Nav />
-      <MorningBrief />
       <CommodityBar />
       <main>
         <section className="border-b border-border bg-background">
@@ -32,10 +30,7 @@ const Index = () => {
           </div>
         </section>
 
-        <section className="border-b border-border bg-background">
-          <MarketNews />
-        </section>
-
+        <MarketNews />
         <NewsReleases />
         <LiveFeed />
         <HowItWorks />

@@ -99,7 +99,7 @@ const LiveFeed = () => {
   const locked = isAuthenticated ? [] : filtered.slice(5, 10);
 
   return (
-    <section id="feed" className="border-b border-border bg-background">
+    <section id="feed" className="border-b border-border bg-surface/40">
       <div className="max-w-[1200px] mx-auto px-4 lg:px-6 py-12 lg:py-16">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
           <div className="lg:col-span-5">
@@ -114,14 +114,13 @@ const LiveFeed = () => {
           </div>
           <div className="lg:col-span-7 space-y-4 text-[15px] leading-relaxed text-foreground/80">
             <p>
-              Regulatory filings are where the real story lives - and where most retail investors never look. A 200-page
-              NI 43-101 buries the grade. A subscription agreement hides the warrant terms. An Early Warning Report
-              signals a stake build days before the headlines.
+              Most retail investors never look at filings. That&apos;s where the real story lives. A 200-page NI 43-101
+              buries the grade. A subscription agreement hides the warrant terms. An Early Warning Report signals a stake
+              build days before the headlines.
             </p>
             <p>
-              We pull every filing from SEDAR+, ASX Announcements and the CSE the moment it's lodged, then surface the
-              numbers and decisions that matter. Tap through to any company page to read the full filing alongside its
-              history, ownership and chart context.
+              Every filing from SEDAR+, ASX Announcements, and the CSE is decoded the moment it is lodged, surfacing the
+              numbers and decisions that matter.
             </p>
           </div>
         </div>

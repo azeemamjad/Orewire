@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="/admin/css/admin.css" />
 <style>
 nav li a { color: inherit; text-decoration: none; display: flex; align-items: center; gap: 8px; width: 100%; }
+.user-actions { display: flex; flex-wrap: wrap; gap: 4px; }
 </style>
 </head>
 <body data-page="users">
@@ -20,6 +21,7 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
       <li><a href="scraper.html"><span class="icon">🤖</span>Run Scraper</a></li>
       <li><a href="pipeline.html"><span class="icon">⚙️</span>Pipeline</a></li>
       <li><a href="relay.html"><span class="icon">🌐</span>Relay</a></li>
+      <li><a href="va-tasks.html"><span class="icon">📋</span>VA Tasks<span class="nav-badge" data-va-tasks-badge hidden></span></a></li>
       <li class="active"><a href="users.html"><span class="icon">👤</span>Users</a></li>
       <li><a href="contact-messages.html"><span class="icon">📧</span>Contact<span class="nav-badge" data-contact-unread-badge hidden></span></a></li>
       <li><a href="processes.html"><span class="icon">🖥</span>System</a></li>
@@ -31,9 +33,10 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
 <main class="main">
   <div class="page-header">
     <h1>Registered users</h1>
-    <p>Everyone who has signed up on OreWire (<span id="users-total">0</span> shown)</p>
+    <p>Create accounts, send temporary passwords, and manage site users (<span id="users-total">0</span> shown)</p>
   </div>
   <div class="toolbar">
+    <button class="btn btn-primary btn-sm" type="button" onclick="openAddUserModal()">+ Add user</button>
     <button class="btn btn-ghost btn-sm" type="button" onclick="loadUsers()">↻ Refresh</button>
   </div>
   <div class="table-wrap">
@@ -42,18 +45,65 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
         <tr>
           <th>Name</th>
           <th>Email</th>
+          <th>Company</th>
           <th>Username</th>
           <th>Verified</th>
-          <th>Watchlist alerts</th>
           <th>Signed up</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody id="users-body">
-        <tr class="empty-row"><td colspan="6">Loading…</td></tr>
+        <tr class="empty-row"><td colspan="7">Loading…</td></tr>
       </tbody>
     </table>
   </div>
 </main>
+
+<div class="modal-backdrop" id="add-user-modal" onclick="if(event.target===this)closeAddUserModal()">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-header">
+      <h2>Add user</h2>
+      <button class="modal-close" type="button" onclick="closeAddUserModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="add-user-form" onsubmit="submitAddUser(event)">
+        <div class="form-grid" style="grid-template-columns:1fr 1fr;">
+          <div class="config-field"><label for="au-first">First name *</label><input id="au-first" required /></div>
+          <div class="config-field"><label for="au-last">Last name *</label><input id="au-last" required /></div>
+          <div class="config-field span-2"><label for="au-email">Email *</label><input id="au-email" type="email" required /></div>
+          <div class="config-field span-2"><label for="au-company">Company</label><input id="au-company" placeholder="Optional" /></div>
+          <div class="config-field span-2"><label for="au-username">Username</label><input id="au-username" placeholder="Optional — 3–24 chars" /></div>
+          <div class="config-field span-2"><label for="au-password">Password</label><input id="au-password" type="text" placeholder="Leave blank to auto-generate" autocomplete="off" /></div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;margin:14px 0;font-size:14px;">
+          <input type="checkbox" id="au-send-email" checked /> Email credentials to user
+        </label>
+        <div class="add-co-form-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeAddUserModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create user</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="temp-pw-modal" onclick="if(event.target===this)closeTempPwModal()">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <h2>Temporary password</h2>
+      <button class="modal-close" type="button" onclick="closeTempPwModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:14px;color:var(--muted);margin:0 0 12px;">Copy this password now — it won't be shown again.</p>
+      <div id="temp-pw-value" style="font-family:monospace;font-size:20px;font-weight:700;padding:14px;background:var(--card);border:1px solid var(--border);border-radius:6px;letter-spacing:1px;"></div>
+      <p id="temp-pw-email-note" style="font-size:13px;margin:12px 0 0;color:var(--muted);"></p>
+      <div style="margin-top:16px;text-align:right;">
+        <button type="button" class="btn btn-primary btn-sm" onclick="closeTempPwModal()">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 <script src="/admin/js/admin-sidebar.js"></script>
 <script src="/admin/js/legacy-admin.js"></script>

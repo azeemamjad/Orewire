@@ -371,6 +371,36 @@ async function migrate() {
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_contact_messages_created ON contact_messages(created_at DESC)`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_contact_messages_unread ON contact_messages(read_at) WHERE read_at IS NULL`);
 
+  await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE`);
+  await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS created_by_admin BOOLEAN NOT NULL DEFAULT FALSE`);
+  await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_set_at TIMESTAMPTZ`);
+  await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS company TEXT`);
+
+  // VA task queue — deduplicated items needing human attention
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS va_tasks (
+      id               SERIAL PRIMARY KEY,
+      source_key       TEXT NOT NULL UNIQUE,
+      module           TEXT NOT NULL,
+      error_type       TEXT NOT NULL,
+      title            TEXT NOT NULL,
+      description      TEXT,
+      action_url       TEXT,
+      severity         TEXT NOT NULL DEFAULT 'medium',
+      occurrence_count INTEGER NOT NULL DEFAULT 1,
+      sample_detail    TEXT,
+      auto_managed     BOOLEAN NOT NULL DEFAULT TRUE,
+      status           TEXT NOT NULL DEFAULT 'open',
+      assigned_note    TEXT,
+      first_seen_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      resolved_at      TIMESTAMPTZ,
+      resolved_by      TEXT
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_va_tasks_status ON va_tasks(status, last_seen_at DESC)`);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_va_tasks_module ON va_tasks(module, error_type)`);
+
   const contactCount = await db.query(`SELECT COUNT(*)::int AS n FROM contact_messages`);
   if ((contactCount.rows[0]?.n || 0) === 0) {
     await db.query(
