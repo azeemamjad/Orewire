@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, Clock, Building2, Gem, LineChart, DollarSign } from "lucide-react";
+import { Search, Clock, Building2, Gem, LineChart, DollarSign, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { fetchCommodities, fetchCompanies, fetchCurrencies, fetchIndexes, type Company } from "@/lib/api";
@@ -43,6 +43,8 @@ const NavSearch = () => {
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [open, setOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [recent, setRecent] = useState<RecentSearchItem[]>([]);
   const [activeIdx, setActiveIdx] = useState(-1);
 
@@ -54,6 +56,18 @@ const NavSearch = () => {
     window.addEventListener("orewire-recent-searches-change", onChange);
     return () => window.removeEventListener("orewire-recent-searches-change", onChange);
   }, [refreshRecent]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(query.trim()), 280);
@@ -193,9 +207,9 @@ const NavSearch = () => {
   const showPanel = open && (debounced.length >= 1 || recent.length > 0);
 
   return (
-    <div ref={wrapRef} className="flex-1 flex justify-center min-w-0 px-2">
+    <div ref={wrapRef} className="flex-1 flex justify-center min-w-0">
       <form
-        className="relative hidden md:block w-full max-w-md"
+        className="relative w-full max-w-4xl group hidden md:block"
         onSubmit={(e) => {
           e.preventDefault();
           if (activeIdx >= 0 && flatItems[activeIdx]?.hit) goHit(flatItems[activeIdx].hit!);
@@ -203,8 +217,16 @@ const NavSearch = () => {
           else goSearch(query);
         }}
       >
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+        <div
+          className={`absolute inset-0 -z-10 bg-accent/20 blur-md transition-opacity ${focused ? "opacity-100" : "opacity-0"}`}
+        />
+        <Search
+          className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors pointer-events-none ${
+            focused ? "text-accent" : "text-foreground/70"
+          }`}
+        />
         <input
+          ref={inputRef}
           type="search"
           value={query}
           onChange={(e) => {
@@ -212,19 +234,41 @@ const NavSearch = () => {
             setOpen(true);
             setActiveIdx(-1);
           }}
-          onFocus={() => setOpen(true)}
+          onFocus={() => {
+            setOpen(true);
+            setFocused(true);
+          }}
+          onBlur={() => {
+            setFocused(false);
+            setTimeout(() => setOpen(false), 150);
+          }}
           onKeyDown={onKeyDown}
-          placeholder="Search ticker or company…"
+          placeholder="Search any ticker, company, or mineral…"
           autoComplete="off"
-          aria-label="Search ticker or company"
+          aria-label="Search companies"
           aria-expanded={showPanel}
           aria-autocomplete="list"
-          className="w-full h-9 pl-8 pr-3 text-sm bg-muted/40 border border-border focus:bg-background focus:border-foreground/30 outline-none transition-colors"
+          className="w-full h-11 pl-11 pr-10 text-[15px] font-medium bg-background border-2 border-foreground/20 hover:border-foreground/40 placeholder:text-muted-foreground focus:bg-background focus:border-accent focus:shadow-[0_0_0_4px_hsl(var(--accent)/0.18)] outline-none transition-all rounded-md"
         />
+        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+          {query && (
+            <button
+              type="button"
+              onClick={() => {
+                setQuery("");
+                inputRef.current?.focus();
+              }}
+              aria-label="Clear search"
+              className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
 
         {showPanel && (
           <div
-            className="absolute left-0 right-0 top-full mt-1 z-50 border border-border bg-popover text-popover-foreground shadow-md overflow-hidden max-h-[min(70vh,420px)] overflow-y-auto"
+            className="absolute z-30 left-0 right-0 top-full mt-1 bg-card border border-border shadow-xl overflow-hidden max-h-[min(70vh,420px)] overflow-y-auto"
             role="listbox"
           >
             {debounced.length >= 1 && (

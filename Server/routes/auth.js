@@ -279,7 +279,7 @@ router.post('/login', express.json(), async (req, res) => {
 
     if (email) {
       const result = await db.query(
-        'SELECT id, email, username, password, salt, two_step_enabled, email_verified, first_name, last_name FROM users WHERE email = $1 OR LOWER(username) = LOWER($1)',
+        'SELECT id, email, username, password, salt, two_step_enabled, email_verified, first_name, last_name, must_change_password FROM users WHERE email = $1 OR LOWER(username) = LOWER($1)',
         [email.toLowerCase()]
       );
       const user = result.rows[0];
@@ -320,6 +320,7 @@ router.post('/login', express.json(), async (req, res) => {
           firstName: user.first_name || null,
           lastName: user.last_name || null,
           twoStepEnabled: !!user.two_step_enabled,
+          mustChangePassword: !!user.must_change_password,
         },
         token: accessToken,
       });
@@ -378,7 +379,7 @@ router.post('/verify-login-otp', express.json(), async (req, res) => {
     const verify = await consumeOtp(email, 'login_2fa', otp);
     if (!verify.ok) return res.status(400).json({ error: verify.error });
     const userResult = await db.query(
-      `SELECT id, email, username, first_name, last_name, two_step_enabled, email_verified
+      `SELECT id, email, username, first_name, last_name, two_step_enabled, email_verified, must_change_password
          FROM users
         WHERE id = $1`,
       [verify.userId]
@@ -397,6 +398,7 @@ router.post('/verify-login-otp', express.json(), async (req, res) => {
         firstName: user.first_name || null,
         lastName: user.last_name || null,
         twoStepEnabled: !!user.two_step_enabled,
+        mustChangePassword: !!user.must_change_password,
       },
       token: accessToken,
     });
@@ -409,7 +411,8 @@ router.post('/verify-login-otp', express.json(), async (req, res) => {
 router.get('/profile', requireUser, async (req, res) => {
   try {
     const r = await db.query(
-      `SELECT id, email, username, first_name, last_name, company, two_step_enabled, email_verified, created_at
+      `SELECT id, email, username, first_name, last_name, company, two_step_enabled, email_verified, created_at,
+              must_change_password, briefing_enabled, watchlist_alerts_enabled
          FROM users
         WHERE id = $1`,
       [req.user.id]
@@ -427,6 +430,9 @@ router.get('/profile', requireUser, async (req, res) => {
         twoStepEnabled: !!user.two_step_enabled,
         emailVerified: !!user.email_verified,
         createdAt: user.created_at,
+        mustChangePassword: !!user.must_change_password,
+        briefingEnabled: user.briefing_enabled != null ? !!user.briefing_enabled : true,
+        watchlistAlertsEnabled: user.watchlist_alerts_enabled != null ? !!user.watchlist_alerts_enabled : true,
       },
     });
   } catch (err) {
@@ -507,6 +513,74 @@ router.patch('/profile/two-step', requireUser, express.json(), async (req, res) 
   }
 });
 
+// POST /api/auth/change-password — change own password (clears the
+// admin-issued temporary-password flag). Requires the current password.
+router.post('/change-password', requireUser, express.json(), async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current and new password are required' });
+    }
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+    const r = await db.query('SELECT password, salt FROM users WHERE id = $1', [req.user.id]);
+    const user = r.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!verifyPassword(currentPassword, user.salt, user.password)) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+    if (verifyPassword(newPassword, user.salt, user.password)) {
+      return res.status(400).json({ error: 'New password must be different from the current password' });
+    }
+    const { salt, hash } = hashPassword(newPassword);
+    await db.query(
+      `UPDATE users
+          SET password = $1, salt = $2, must_change_password = FALSE, password_set_at = NOW()
+        WHERE id = $3`,
+      [hash, salt, req.user.id]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Change password error:', err);
+    res.status(500).json({ error: 'Failed to change password' });
+  }
+});
+
+// PATCH /api/auth/profile/notifications — toggle email notification preferences
+router.patch('/profile/notifications', requireUser, express.json(), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const sets = [];
+    const params = [];
+    if (typeof body.briefingEnabled === 'boolean') {
+      params.push(body.briefingEnabled);
+      sets.push(`briefing_enabled = $${params.length}`);
+    }
+    if (typeof body.watchlistAlertsEnabled === 'boolean') {
+      params.push(body.watchlistAlertsEnabled);
+      sets.push(`watchlist_alerts_enabled = $${params.length}`);
+    }
+    if (sets.length === 0) return res.status(400).json({ error: 'No notification settings provided' });
+    params.push(req.user.id);
+    const updated = await db.query(
+      `UPDATE users SET ${sets.join(', ')}
+        WHERE id = $${params.length}
+      RETURNING briefing_enabled, watchlist_alerts_enabled`,
+      params
+    );
+    const user = updated.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({
+      briefingEnabled: user.briefing_enabled != null ? !!user.briefing_enabled : true,
+      watchlistAlertsEnabled: user.watchlist_alerts_enabled != null ? !!user.watchlist_alerts_enabled : true,
+    });
+  } catch (err) {
+    console.error('Notification update error:', err);
+    res.status(500).json({ error: 'Failed to update notifications' });
+  }
+});
+
 // POST /api/auth/refresh — exchange refresh token for a new access token
 router.post('/refresh', express.json(), (req, res) => {
   const { refreshToken } = req.body || {};
@@ -522,11 +596,19 @@ router.post('/refresh', express.json(), (req, res) => {
   });
 });
 
-router.get('/me', (req, res) => {
+router.get('/me', async (req, res) => {
   const token = req.headers['authorization']?.replace(/^Bearer\s+/i, '') || req.headers['x-auth-token'];
   const payload = verifyAccessToken(token);
   if (!payload) return res.status(401).json({ authenticated: false });
-  res.json({ authenticated: true, user: { id: payload.sub, email: payload.email, username: payload.username || null } });
+  let mustChangePassword = false;
+  try {
+    const r = await db.query('SELECT must_change_password FROM users WHERE id = $1', [payload.sub]);
+    mustChangePassword = !!r.rows[0]?.must_change_password;
+  } catch { /* best-effort; fall back to false */ }
+  res.json({
+    authenticated: true,
+    user: { id: payload.sub, email: payload.email, username: payload.username || null, mustChangePassword },
+  });
 });
 
 router.get('/check', (req, res) => {

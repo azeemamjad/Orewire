@@ -27,7 +27,7 @@ const placeholderFilings: Filing[] = [
 const Filings = () => {
   const { data } = useQuery({
     queryKey: ["filings-feed"],
-    queryFn: () => fetchFilings({ limit: 12 }),
+    queryFn: () => fetchFilings({ limit: 20 }),
     staleTime: REFETCH_MS,
     refetchInterval: REFETCH_MS,
   });
@@ -47,7 +47,7 @@ const Filings = () => {
         </Link>
       </div>
       <ul className="divide-y divide-border flex-1 overflow-auto min-h-0">
-        {items.slice(0, 9).map((f) => (
+        {items.slice(0, 20).map((f) => (
           <li key={f.id} className="hover:bg-background/60">
             <Link to={`/filings/${f.id}`} className="block px-3.5 py-3">
               <div className="flex items-center gap-2 mb-1.5">

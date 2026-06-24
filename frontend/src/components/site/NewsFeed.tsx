@@ -171,7 +171,7 @@ const NewsFeed = () => {
 
   const items = useMemo(() => {
     const live = (data?.items || []).filter(isCompanyLinkedNews).filter((item) => item.ticker);
-    if (live.length > 0) return live.slice(0, 8);
+    if (live.length > 0) return live.slice(0, 20);
     if (!isLoading) return placeholderItems;
     return [];
   }, [data?.items, isLoading]);

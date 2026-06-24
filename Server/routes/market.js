@@ -104,7 +104,7 @@ router.get('/movers', async (req, res) => {
   if (exchange === 'ALL') {
     const sampleSize = Math.max(40, limit * 6);
     const r = await db.query(
-      `SELECT DISTINCT ON (ticker, exchange) ticker, name, exchange, market_cap
+      `SELECT DISTINCT ON (ticker, exchange) ticker, name, exchange, market_cap, shares_outstanding
          FROM companies
         WHERE ticker IS NOT NULL
           AND exchange IN ('TSXV','TSX','CSE','ASX')
@@ -118,10 +118,10 @@ router.get('/movers', async (req, res) => {
     companies = companies.slice(0, sampleSize);
   } else {
     const r = await db.query(
-      `SELECT DISTINCT ticker, name, exchange
+      `SELECT DISTINCT ON (ticker, exchange) ticker, name, exchange, market_cap, shares_outstanding
          FROM companies
         WHERE ticker IS NOT NULL AND exchange = $1
-        ORDER BY ticker
+        ORDER BY ticker, exchange, market_cap DESC NULLS LAST
         LIMIT $2`,
       [exchange, Math.max(20, limit * 4)]
     );
@@ -136,12 +136,20 @@ router.get('/movers', async (req, res) => {
       const data = await fetchTradingView(c.exchange, c.ticker);
       const norm = normalizePrice(data);
       if (norm.price === null || norm.change_pct === null) return;
+      // Market cap = live price × shares outstanding (mirrors the company detail
+      // page, which keeps it in the trading currency and current with the price).
+      // The scraped companies.market_cap column is a stale fallback only.
+      const sharesOut = Number(c.shares_outstanding);
+      const computedMcap = norm.price != null && Number.isFinite(sharesOut) && sharesOut > 0
+        ? norm.price * sharesOut
+        : null;
       const item = {
         ticker: c.ticker,
         name: c.name,
         exchange: c.exchange,
         price: norm.price,
         change_pct: norm.change_pct,
+        market_cap: computedMcap ?? c.market_cap ?? null,
         volume: norm.volume,
         perf_ytd: norm.perf_ytd,
       };

@@ -52,12 +52,14 @@ function formatOllamaHttpError(res, body) {
 const SNAPSHOT_SYSTEM = `You are a senior mining analyst writing a "what's happening now" snapshot for retail investors on TSX-V, CSE, TSX, and ASX junior miners.
 
 Rules:
-- Use ONLY facts from the user message. If a field is "null", omit it — do not invent.
+- Use ONLY facts from the user message. If a field is "null", omit it; do not invent.
 - Write exactly 3 short paragraphs of plain English prose, separated by blank lines.
 - Paragraph 1: trading context (price, % change, volume vs average if provided) and what drove the move from the most recent news or filing.
 - Paragraph 2: balance sheet, financing, cash/burn, and insider activity when provided.
 - Paragraph 3: big-picture company/project context, near-term catalysts, and one risk to watch.
-- No headings, bullet lists, markdown, or JSON.`;
+- No headings, bullet lists, markdown, or JSON.
+- Never use em dashes or en dashes (— or –). Use commas, periods, or parentheses instead.
+- Write in direct, natural prose. Avoid AI filler ("it's worth noting", "in conclusion", "overall") and curly quotes; use plain straight quotes.`;
 
 function fmtNull(value) {
   if (value === null || value === undefined || value === '') return 'null';
@@ -176,8 +178,34 @@ async function callOllama(prompt) {
   return content;
 }
 
+// Strip AI-tell punctuation from generated prose: em/en dashes, smart quotes,
+// ellipsis characters and stray markdown emphasis. Em dashes used as a
+// parenthetical separator become commas; numeric ranges become hyphens.
+// Whitespace around dashes is limited to spaces/tabs so paragraph breaks survive.
+function sanitizeProse(text) {
+  if (text == null) return text;
+  let s = String(text);
+  // Smart quotes -> straight quotes
+  s = s.replace(/[‘’‚‛]/g, "'").replace(/[“”„‟]/g, '"');
+  // Ellipsis -> three dots
+  s = s.replace(/…/g, '...');
+  // Numeric ranges joined by a dash -> hyphen (e.g. "12–15" -> "12-15")
+  s = s.replace(/(\d)[ \t]*[‒–—―−][ \t]*(\d)/g, '$1-$2');
+  // Remaining em/en/figure/horizontal-bar/minus dashes used as separators -> comma
+  s = s.replace(/[ \t]*[‒–—―−][ \t]*/g, ', ');
+  // Strip markdown emphasis the model may emit despite instructions
+  s = s.replace(/\*\*(.+?)\*\*/g, '$1').replace(/__(.+?)__/g, '$1');
+  // Tidy artifacts left by the replacements
+  s = s
+    .replace(/[ \t]+,/g, ',')          // " ," -> ","
+    .replace(/,[ \t]*,/g, ',')         // ",," -> ","
+    .replace(/,[ \t]*([.!?;:])/g, '$1') // ", ." -> "."
+    .replace(/[ \t]{2,}/g, ' ');       // collapse runs of spaces
+  return s.trim();
+}
+
 function parseSnapshotText(text) {
-  const cleaned = text.replace(/^```(?:\w+)?\s*/i, '').replace(/\s*```$/, '').trim();
+  const cleaned = sanitizeProse(text.replace(/^```(?:\w+)?\s*/i, '').replace(/\s*```$/, '').trim());
   const split = cleaned.split(/\n\s*Key points\s*\n/i);
   const bodyPart = (split[0] || '').trim();
   const keyPart = (split[1] || '').trim();
@@ -491,10 +519,12 @@ async function saveSnapshot(companyId, parsed, inputHash, model, sourcesMeta) {
 }
 
 function formatResponse(row, stale = false) {
+  // Sanitize on read too, so snapshots cached before this rule shipped are
+  // cleaned without waiting for a regeneration.
   return {
-    paragraphs: row.paragraphs || [],
-    keyPoints: row.key_points || [],
-    body: row.body,
+    paragraphs: (row.paragraphs || []).map(sanitizeProse),
+    keyPoints: (row.key_points || []).map(sanitizeProse),
+    body: sanitizeProse(row.body),
     generatedAt: row.generated_at,
     sourcesMeta: row.sources_meta || {},
     stale,

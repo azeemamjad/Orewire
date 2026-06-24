@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, ExternalLink, Newspaper } from "lucide-react";
@@ -19,19 +18,19 @@ const placeholderNews: NewsItem[] = [
   { title: "Junior gold ETF GDXJ posts best monthly gain since 2020", summary: "", source: "Bloomberg", link: "https://www.bloomberg.com/markets/commodities", pubDate: "", timeAgo: "8h ago", commodity: "Gold", sentiment: "bullish" },
 ];
 
-const NewsRow = ({ item }: { item: NewsItem }) => (
-  <li className="flex-1 flex">
+const NewsRow = ({ item, className = "" }: { item: NewsItem; className?: string }) => (
+  <div className={`h-full ${className}`}>
     <a
       href={item.link}
       target="_blank"
       rel="noopener noreferrer"
-      className="group flex items-start gap-3 px-4 py-4 w-full hover:bg-background/60 transition-colors"
+      className="group flex h-full min-h-[5.5rem] items-start gap-3 px-4 py-4 w-full hover:bg-background/60 transition-colors"
     >
-      <div className="flex-1 min-w-0 flex flex-col justify-between gap-2">
+      <div className="flex-1 min-w-0 flex h-full flex-col justify-between gap-2">
         <div className="text-[14px] font-semibold leading-snug text-foreground group-hover:text-accent transition-colors line-clamp-2">
           {item.title}
         </div>
-        <div className="mt-1.5 flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
+        <div className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
           <span className="uppercase tracking-wider text-foreground/80">{item.source}</span>
           {item.timeAgo && (
             <>
@@ -49,7 +48,7 @@ const NewsRow = ({ item }: { item: NewsItem }) => (
       </div>
       <ExternalLink className="w-3.5 h-3.5 text-muted-foreground group-hover:text-accent shrink-0 mt-1" />
     </a>
-  </li>
+  </div>
 );
 
 const MarketNews = () => {
@@ -61,11 +60,6 @@ const MarketNews = () => {
   });
 
   const items = data?.items && data.items.length > 0 ? data.items.slice(0, 10) : placeholderNews;
-
-  const [left, right] = useMemo(() => {
-    const half = Math.ceil(items.length / 2);
-    return [items.slice(0, half), items.slice(half)];
-  }, [items]);
 
   return (
     <section id="market-news" className="border-b border-border bg-background">
@@ -85,13 +79,17 @@ const MarketNews = () => {
           </Link>
         </div>
 
-        <div className="border border-border bg-surface grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
-          {[left, right].map((col, idx) => (
-            <ul key={idx} className="divide-y divide-border flex flex-col">
-              {col.map((item) => (
-                <NewsRow key={item.link || item.title} item={item} />
-              ))}
-            </ul>
+        <div className="border border-border bg-surface grid grid-cols-1 md:grid-cols-2">
+          {items.map((item, index) => (
+            <NewsRow
+              key={item.link || item.title}
+              item={item}
+              className={`border-b border-border md:odd:border-r ${
+                index === items.length - 1 ? "max-md:border-b-0" : ""
+              } ${
+                index >= items.length - (items.length % 2 === 0 ? 2 : 1) ? "md:border-b-0" : ""
+              }`}
+            />
           ))}
         </div>
 

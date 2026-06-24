@@ -26,12 +26,12 @@ const Newsletter = () => {
   return (
   <section id="cta" className="border-b border-border bg-background">
     <div className="max-w-[900px] mx-auto px-6 lg:px-10 py-16 lg:py-20 text-center">
-      <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-3">/// Morning brief</div>
+      <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-3">/// Morning briefing</div>
       <h2 className="font-display text-3xl lg:text-5xl font-extrabold leading-tight mb-3">
-        Get the morning brief before the market opens.
+        Get the morning briefing before the market opens.
       </h2>
       <p className="text-base lg:text-lg text-foreground/70 max-w-2xl mx-auto mb-8">
-        The day's most important mining filings - summarized, scored, and delivered to your inbox by 7:30am ET.
+        The day's most important filings and news releases from mining and resource companies, summarized, scored, and delivered by 7:30am ET.
       </p>
       <form className="flex flex-col sm:flex-row gap-2 max-w-lg mx-auto" onSubmit={handleSubmit}>
         <input

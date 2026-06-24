@@ -22,8 +22,10 @@ import Contact from "./pages/Contact.tsx";
 import Terms from "./pages/Terms.tsx";
 import Privacy from "./pages/Privacy.tsx";
 import Profile from "./pages/Profile.tsx";
+import ChangePassword from "./pages/ChangePassword.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import WatchlistAlertsRunner from "@/components/site/WatchlistAlertsRunner";
+import ForcePasswordChangeGuard from "@/components/site/ForcePasswordChangeGuard";
 import ScrollToTop from "@/components/ScrollToTop";
 
 const queryClient = new QueryClient();
@@ -36,6 +38,7 @@ const App = () => (
       <WatchlistAlertsRunner />
       <BrowserRouter>
         <ScrollToTop />
+        <ForcePasswordChangeGuard />
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/companies" element={<Companies />} />
@@ -55,6 +58,7 @@ const App = () => (
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/change-password" element={<ChangePassword />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Login />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

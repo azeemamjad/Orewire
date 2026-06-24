@@ -48,7 +48,7 @@ const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up:
           <TrendingDown className="w-3.5 h-3.5 text-[hsl(var(--down))]" />
         )}
         <h3 className="font-display text-sm font-bold tracking-tight">{title}</h3>
-        <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">· Today · Mining</span>
+        <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">· Today</span>
       </div>
       <Link to="/companies" className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground hover:text-foreground">
         All →
@@ -96,7 +96,7 @@ const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up:
                 </span>
               </td>
               <td className="px-3 py-2 text-right font-mono text-muted-foreground hidden sm:table-cell">
-                {fmtMktCap(r.volume)}
+                {fmtMktCap(r.market_cap)}
               </td>
             </tr>
           ))
@@ -111,13 +111,13 @@ const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up:
 const Movers = () => {
   const { data, isLoading } = useQuery({
     queryKey: ["movers", "ALL"],
-    queryFn: () => fetchMovers({ exchange: "ALL", limit: 8 }),
+    queryFn: () => fetchMovers({ exchange: "ALL", limit: 10 }),
     refetchInterval: REFETCH_MS,
     staleTime: REFETCH_MS,
   });
 
-  const gainers = data?.gainers?.slice(0, 8) ?? [];
-  const losers = data?.losers?.slice(0, 8) ?? [];
+  const gainers = data?.gainers?.slice(0, 10) ?? [];
+  const losers = data?.losers?.slice(0, 10) ?? [];
 
   if (isLoading) {
     return (

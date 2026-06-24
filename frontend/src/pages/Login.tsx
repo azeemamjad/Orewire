@@ -61,8 +61,8 @@ const Login = () => {
         await verifyRegistrationOtp(email.trim(), otp.trim());
         navigate(redirectTo);
       } else if (stage === "verify-login") {
-        await verifyLoginOtp(email.trim(), otp.trim());
-        navigate(redirectTo);
+        const resp = await verifyLoginOtp(email.trim(), otp.trim());
+        navigate(resp.user?.mustChangePassword ? `/change-password?redirect=${encodeURIComponent(redirectTo)}` : redirectTo);
       } else if (stage === "reset-request") {
         await forgotPassword(email.trim());
         setStage("reset-verify");
@@ -79,6 +79,8 @@ const Login = () => {
         if (resp.requiresTwoStep) {
           setStage("verify-login");
           startCountdown(Math.max(1, Math.ceil((resp.retryAfterMs ?? 60000) / 1000)));
+        } else if (resp.user?.mustChangePassword) {
+          navigate(`/change-password?redirect=${encodeURIComponent(redirectTo)}`);
         } else {
           navigate(redirectTo);
         }

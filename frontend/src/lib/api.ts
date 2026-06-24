@@ -497,6 +497,7 @@ export interface MoverItem {
   exchange: string;
   price: number | null;
   change_pct: number | null;
+  market_cap: number | null;
   volume: number | null;
   perf_ytd: number | null;
 }
@@ -744,6 +745,9 @@ export interface AuthUser {
   twoStepEnabled?: boolean;
   emailVerified?: boolean;
   createdAt?: string;
+  mustChangePassword?: boolean;
+  briefingEnabled?: boolean;
+  watchlistAlertsEnabled?: boolean;
 }
 
 export interface AuthResponse {
@@ -968,6 +972,8 @@ export async function fetchProfile(): Promise<ProfileResponse> {
   const res = await authFetch(`${API_BASE}/auth/profile`);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error || `Failed to fetch profile: ${res.status}`);
+  const current = getAuthUser();
+  if (data?.user && current) setAuth({ user: { ...current, ...data.user } });
   return data as ProfileResponse;
 }
 
@@ -998,6 +1004,33 @@ export async function updateTwoStep(enabled: boolean): Promise<ProfileResponse> 
   const current = getAuthUser();
   if (data?.user) setAuth({ user: { ...current, ...data.user } });
   return data as ProfileResponse;
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const res = await authFetch(`${API_BASE}/auth/change-password`, {
+    method: "POST",
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Failed to change password: ${res.status}`);
+  // Clear the forced-change flag locally so guards stop redirecting.
+  const current = getAuthUser();
+  if (current) setAuth({ user: { ...current, mustChangePassword: false } });
+}
+
+export async function updateNotifications(input: {
+  briefingEnabled?: boolean;
+  watchlistAlertsEnabled?: boolean;
+}): Promise<{ briefingEnabled: boolean; watchlistAlertsEnabled: boolean }> {
+  const res = await authFetch(`${API_BASE}/auth/profile/notifications`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Failed to update notifications: ${res.status}`);
+  const current = getAuthUser();
+  if (current) setAuth({ user: { ...current, briefingEnabled: data.briefingEnabled, watchlistAlertsEnabled: data.watchlistAlertsEnabled } });
+  return data;
 }
 
 // ---------------------------------------------------------------------------
