@@ -185,6 +185,18 @@ async function migrate() {
   await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS shares_outstanding BIGINT`);
   await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS profile_source TEXT`);
 
+  // Live quote snapshots — refreshed by the company-quote scheduler for movers / screener.
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS quote_price REAL`);
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS quote_change_pct REAL`);
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS quote_change_abs REAL`);
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS quote_volume BIGINT`);
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS quote_updated_at TIMESTAMPTZ`);
+  await safeQuery(`
+    CREATE INDEX IF NOT EXISTS idx_companies_quote_movers
+      ON companies (exchange, quote_change_pct DESC NULLS LAST)
+      WHERE quote_change_pct IS NOT NULL AND quote_price IS NOT NULL
+  `);
+
   // Company managers / directors (one row per person, source = 'marketscreener' | 'website')
   await db.query(`
     CREATE TABLE IF NOT EXISTS company_people (

@@ -89,8 +89,12 @@ function setMoversCached(key, data) {
   moversCache.set(key, { ts: Date.now(), data });
 }
 
+function clearMoversCache() {
+  moversCache.clear();
+}
+
 // GET /api/market/movers?exchange=TSXV&limit=10
-// exchange=ALL  -> aggregate across TSXV/TSX/CSE/ASX (sampled by market cap)
+// exchange=ALL  -> top gainers/losers across all quoted companies in DB
 router.get('/movers', async (req, res) => {
   try {
   const exchange = (req.query.exchange || 'ALL').toUpperCase();
@@ -99,7 +103,32 @@ router.get('/movers', async (req, res) => {
   const cached = getMoversCached(cacheKey);
   if (cached) return res.json(cached);
 
-  // Pick the company sample
+  const { buildMoversPayload } = require('../lib/company-quote-refresh');
+  const fromDb = await buildMoversPayload(exchange, limit);
+
+  if (fromDb.quotedCount > 0) {
+    const result = {
+      exchange: fromDb.exchange,
+      updatedAt: fromDb.updatedAt,
+      gainers: fromDb.gainers,
+      losers: fromDb.losers,
+    };
+    setMoversCached(cacheKey, result);
+    return res.json(result);
+  }
+
+  // Fallback until the first background refresh completes.
+  const result = await fetchMoversLiveSample(exchange, limit);
+  setMoversCached(cacheKey, result);
+  res.json(result);
+  } catch (err) {
+    console.error('Movers query failed:', err?.message || err);
+    res.status(503).json({ exchange: 'ALL', updatedAt: new Date().toISOString(), gainers: [], losers: [] });
+  }
+});
+
+/** Legacy live-sample movers — used only when no stored quotes exist yet. */
+async function fetchMoversLiveSample(exchange, limit) {
   let companies;
   if (exchange === 'ALL') {
     const sampleSize = Math.max(40, limit * 6);
@@ -113,7 +142,6 @@ router.get('/movers', async (req, res) => {
       [sampleSize]
     );
     companies = r.rows;
-    // Re-order the sample to favor higher market cap names overall
     companies.sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0));
     companies = companies.slice(0, sampleSize);
   } else {
@@ -136,9 +164,6 @@ router.get('/movers', async (req, res) => {
       const data = await fetchTradingView(c.exchange, c.ticker);
       const norm = normalizePrice(data);
       if (norm.price === null || norm.change_pct === null) return;
-      // Market cap = live price × shares outstanding (mirrors the company detail
-      // page, which keeps it in the trading currency and current with the price).
-      // The scraped companies.market_cap column is a stale fallback only.
       const sharesOut = Number(c.shares_outstanding);
       const computedMcap = norm.price != null && Number.isFinite(sharesOut) && sharesOut > 0
         ? norm.price * sharesOut
@@ -161,19 +186,13 @@ router.get('/movers', async (req, res) => {
   gainers.sort((a, b) => b.change_pct - a.change_pct);
   losers.sort((a, b) => a.change_pct - b.change_pct);
 
-  const result = {
+  return {
     exchange,
     updatedAt: new Date().toISOString(),
     gainers: gainers.slice(0, limit),
     losers: losers.slice(0, limit),
   };
-  setMoversCached(cacheKey, result);
-  res.json(result);
-  } catch (err) {
-    console.error('Movers query failed:', err?.message || err);
-    res.status(503).json({ exchange: 'ALL', updatedAt: new Date().toISOString(), gainers: [], losers: [] });
-  }
-});
+}
 
 // ---------------------------------------------------------------------------
 // Commodities (TradingView spot / front-month futures)
@@ -428,3 +447,4 @@ module.exports = router;
 module.exports.getCommoditiesPayload = getCommoditiesPayload;
 module.exports.getIndexesPayload = getIndexesPayload;
 module.exports.getCurrenciesPayload = getCurrenciesPayload;
+module.exports.clearMoversCache = clearMoversCache;

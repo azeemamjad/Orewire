@@ -119,6 +119,16 @@ async function start() {
     } catch (err) {
       console.error('[watchlist-filing] Scheduler failed to start:', err?.message || err);
     }
+    try {
+      const { startCompanyQuoteScheduler } = require('./lib/company-quote-scheduler');
+      startCompanyQuoteScheduler();
+      const { maybeKickInitialRefresh } = require('./lib/company-quote-refresh');
+      maybeKickInitialRefresh().catch((err) => {
+        console.error('[quotes] Boot refresh check failed:', err?.message || err);
+      });
+    } catch (err) {
+      console.error('[quotes] Scheduler failed to start:', err?.message || err);
+    }
 
     if (process.env.RELAY_ENABLED === 'true') {
       const { initRelay } = require('./relay');
