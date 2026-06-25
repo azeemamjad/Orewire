@@ -116,7 +116,6 @@ const Nav = ({ showSiteTopBar = true }: NavProps) => {
                   : ""
               }`}
             >
-              <Star className="w-3.5 h-3.5 text-accent fill-accent" />
               <span>Watchlist</span>
             </Link>
 
