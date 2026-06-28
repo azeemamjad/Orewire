@@ -1,54 +1,33 @@
-// One-off backfill: clean news.description rows that stored raw, entity-escaped
-// HTML (e.g. "&lt;a href=...&gt;Title&lt;/a&gt;...") from Google News RSS before
-// the scraper was fixed to decode + strip them. Re-runs are safe/idempotent.
+// One-off backfill: clean news_releases.description rows that stored raw, entity-escaped HTML.
 //
-//   node scripts/backfill-news-descriptions.js          (dry run, shows samples)
-//   node scripts/backfill-news-descriptions.js --apply  (writes changes)
+//   node scripts/backfill-news-descriptions.js
 
 require('dotenv').config();
 const db = require('../db');
 const { cleanRssText } = require('../lib/news-fetch');
-
-const APPLY = process.argv.includes('--apply');
+const { TABLE_RELEASES } = require('../lib/news-db');
 
 async function main() {
-  // Rows whose description still carries escaped or literal HTML markup.
-  const { rows } = await db.query(
-    `SELECT id, description FROM news
-     WHERE description IS NOT NULL
-       AND (description LIKE '%&lt;%' OR description LIKE '%&amp;%' OR description ~ '<[a-zA-Z/]')`
+  const r = await db.query(
+    `SELECT id, description FROM ${TABLE_RELEASES}
+      WHERE description IS NOT NULL AND description <> ''
+      ORDER BY id ASC`,
   );
 
-  console.log(`Found ${rows.length} candidate rows with HTML in description.`);
-
-  let changed = 0;
-  let samplesShown = 0;
-  for (const row of rows) {
+  let updated = 0;
+  for (const row of r.rows) {
     const cleaned = cleanRssText(row.description);
-    if (cleaned === row.description) continue;
-    changed++;
-
-    if (samplesShown < 5) {
-      console.log(`\n[${row.id}]`);
-      console.log(`  before: ${row.description.slice(0, 160)}`);
-      console.log(`  after : ${cleaned.slice(0, 160)}`);
-      samplesShown++;
-    }
-
-    if (APPLY) {
-      await db.query(`UPDATE news SET description = $1 WHERE id = $2`, [cleaned.slice(0, 500), row.id]);
-    }
+    if (!cleaned || cleaned === row.description) continue;
+    await db.query(`UPDATE ${TABLE_RELEASES} SET description = $1 WHERE id = $2`, [cleaned.slice(0, 500), row.id]);
+    updated++;
   }
 
-  console.log(
-    `\n${APPLY ? 'Updated' : 'Would update'} ${changed} rows.` +
-      (APPLY ? '' : '  Re-run with --apply to write changes.')
-  );
-  await db.end?.();
-  process.exit(0);
+  console.log(`Updated ${updated} of ${r.rows.length} descriptions`);
 }
 
-main().catch((err) => {
-  console.error('Backfill failed:', err?.message || err);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });

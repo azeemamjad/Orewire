@@ -22,15 +22,11 @@ const {
   deriveCountry,
 } = require('../lib/company-enrich');
 
-// Company market data comes from Yahoo Finance, falling back to TradingView when
-// Yahoo has no price (see lib/market-quote). The returned object keeps the
-// TradingView-scanner field names this route reads (close/change/change_abs/
-// Perf.*/price_52_week_high/…). When the Yahoo path answers, the fields its
-// chart endpoint can't supply (sector/country/description/Recommend.All) are
-// null; the TradingView fallback fills them in.
+// Company detail quotes prefer TradingView (same feed/symbol as the embed chart),
+// falling back to Yahoo when TV has no price. Field names match the scanner shape
+// this route reads (close/change/change_abs/Perf.*/price_52_week_high/…).
 async function fetchTvSymbol(exchange, ticker) {
-  // history:true → also pull 52-week high/low (shown in the detail Key stats).
-  return fetchCompanyQuote(exchange, ticker, { history: true });
+  return fetchCompanyQuote(exchange, ticker, { history: true, preferTv: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -403,6 +399,7 @@ router.get('/:idOrSlug', async (req, res) => {
         currency: tv.fundamental_currency_code ?? null,
         price_52_week_high: tv.price_52_week_high ?? null,
         price_52_week_low: tv.price_52_week_low ?? null,
+        source: tv._source === 'yahoo' ? 'yahoo' : 'tradingview',
       };
     } catch (err) {
       marketData = { error: err.message };

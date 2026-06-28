@@ -55,12 +55,12 @@ const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up:
       </Link>
     </div>
     <div className="flex-1 overflow-auto min-h-0">
-    <table className="w-full text-[12.5px]">
+    <table className="w-full text-[12.5px] table-fixed">
       <thead>
         <tr className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border-b border-border">
-          <th className="text-left px-3 py-1.5 font-medium">Ticker</th>
-          <th className="text-right py-1.5 font-medium">Last</th>
-          <th className="text-right py-1.5 font-medium">Chg</th>
+          <th className="text-left px-3 py-1.5 font-medium w-[46%]">Ticker</th>
+          <th className="text-right py-1.5 font-medium w-[22%]">Last</th>
+          <th className="text-right px-3 py-1.5 font-medium w-[32%]">Chg</th>
           <th className="text-right px-3 py-1.5 font-medium hidden sm:table-cell">Mkt Cap</th>
         </tr>
       </thead>
@@ -85,12 +85,12 @@ const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up:
                     {normExLabel(r.exchange)}
                   </span>
                 </div>
-                <div className="text-[10.5px] text-muted-foreground truncate max-w-[108px]" title={titleCase(r.name)}>
+                <div className="text-[10.5px] text-muted-foreground truncate max-w-[min(100%,11rem)] sm:max-w-[14rem]" title={titleCase(r.name)}>
                   {titleCase(r.name)}
                 </div>
               </td>
-              <td className="py-2 text-right font-mono font-semibold">${fmtPrice(r.price)}</td>
-              <td className={`py-2 text-right font-mono font-bold ${up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]"}`}>
+              <td className="py-2 pr-1 text-right font-mono font-semibold whitespace-nowrap">${fmtPrice(r.price)}</td>
+              <td className={`py-2 pr-3 pl-1 text-right font-mono font-bold whitespace-nowrap ${up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]"}`}>
                 <span className="inline-flex items-center gap-0.5">
                   {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}{fmtPct(r.change_pct)}
                 </span>

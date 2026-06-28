@@ -1,4 +1,9 @@
 const db = require('../db');
+const {
+  TABLE_RELEASES,
+  TABLE_MARKET,
+  sourceForTable,
+} = require('./news-db');
 
 const RSS_FEEDS = [
   { name: 'Newsfile Mining', url: 'https://feeds.newsfilecorp.com/industry/mining-metals', source: 'TMX Newsfile' },
@@ -150,7 +155,7 @@ function parseJson(raw) {
   return JSON.parse(cleaned);
 }
 
-async function enrichNewsRows(rows) {
+async function enrichNewsRows(rows, table = TABLE_RELEASES) {
   if (!rows.length) return 0;
 
   const prompt = rows
@@ -160,18 +165,19 @@ async function enrichNewsRows(rows) {
   const aiRaw = await callOllama(prompt);
   const aiItems = parseJson(aiRaw);
   let enriched = 0;
+  const source = sourceForTable(table);
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const ai = aiItems[i] || {};
     try {
       await db.query(
-        `UPDATE news SET summary = $1, commodity = $2, sentiment = $3, ai_processed = TRUE WHERE id = $4`,
+        `UPDATE ${table} SET summary = $1, commodity = $2, sentiment = $3, ai_processed = TRUE WHERE id = $4`,
         [ai.summary || null, ai.commodity || null, ai.sentiment || 'neutral', row.id]
       );
       try {
         const { queueWatchlistNewsEmail } = require('./watchlist-news-alerts');
-        queueWatchlistNewsEmail(row.id);
+        queueWatchlistNewsEmail(row.id, source);
       } catch {
         /* non-fatal */
       }
@@ -183,32 +189,34 @@ async function enrichNewsRows(rows) {
   return enriched;
 }
 
-async function enrichNewsByIds(ids) {
+async function enrichNewsByIds(ids, table = TABLE_RELEASES) {
   if (!ids?.length) return 0;
   const result = await db.query(
-    `SELECT id, title, description FROM news WHERE id = ANY($1::int[]) AND ai_processed = FALSE`,
+    `SELECT id, title, description FROM ${table} WHERE id = ANY($1::int[]) AND ai_processed = FALSE`,
     [ids]
   );
   if (result.rows.length === 0) return 0;
-  return enrichNewsRows(result.rows);
+  return enrichNewsRows(result.rows, table);
 }
 
-async function enrichUnprocessedNews(limit = 25) {
+async function enrichUnprocessedNews(limit = 25, table = TABLE_RELEASES) {
   const unprocessed = await db.query(
-    `SELECT id, title, description FROM news WHERE ai_processed = FALSE ORDER BY pub_date DESC LIMIT $1`,
+    `SELECT id, title, description FROM ${table} WHERE ai_processed = FALSE ORDER BY pub_date DESC LIMIT $1`,
     [limit]
   );
   if (unprocessed.rows.length === 0) return 0;
-  return enrichNewsRows(unprocessed.rows);
+  return enrichNewsRows(unprocessed.rows, table);
 }
 
 /** Process all pending AI enrichment in batches (non-blocking callers should fire-and-forget). */
 async function drainUnprocessedNews(batchSize = 25) {
   let total = 0;
-  for (;;) {
-    const n = await enrichUnprocessedNews(batchSize);
-    total += n;
-    if (n < batchSize) break;
+  for (const table of [TABLE_RELEASES, TABLE_MARKET]) {
+    for (;;) {
+      const n = await enrichUnprocessedNews(batchSize, table);
+      total += n;
+      if (n < batchSize) break;
+    }
   }
   return total;
 }
@@ -275,8 +283,8 @@ async function fetchCompanyNews(companyName, ticker, companyId = null, { skipCoo
   for (const item of allItems) {
     try {
       const result = await db.query(
-        `INSERT INTO news (title, link, source, pub_date, description, category, company_id, ticker, origin)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'google')
+        `INSERT INTO ${TABLE_MARKET} (title, link, source, pub_date, description, category, company_id, ticker)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (link) DO NOTHING
          RETURNING id`,
         [
@@ -302,7 +310,7 @@ async function fetchCompanyNews(companyName, ticker, companyId = null, { skipCoo
   let enriched = 0;
   if (newIds.length > 0) {
     try {
-      enriched = await enrichNewsByIds(newIds);
+      enriched = await enrichNewsByIds(newIds, TABLE_MARKET);
       if (enriched > 0) {
         console.log(
           `[News] Company ${category}: ${inserted} new articles, AI enriched ${enriched} (saved to DB)`
@@ -352,8 +360,8 @@ async function fetchAndStoreRssFeeds() {
     const company = matchCompany(item.title, item.description);
     try {
       const result = await db.query(
-        `INSERT INTO news (title, link, source, pub_date, description, category, company_id, ticker, origin)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'rss')
+        `INSERT INTO ${TABLE_RELEASES} (title, link, source, pub_date, description, category, company_id, ticker)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (link) DO NOTHING
          RETURNING id`,
         [
@@ -381,7 +389,7 @@ async function fetchAndStoreRssFeeds() {
   const regenCompanyIds = new Set();
   if (insertedIds.length > 0) {
     try {
-      enriched = await enrichNewsByIds(insertedIds);
+      enriched = await enrichNewsByIds(insertedIds, TABLE_RELEASES);
       if (enriched > 0) {
         console.log(`[News] AI enriched ${enriched} items (saved to DB)`);
       }
@@ -391,7 +399,7 @@ async function fetchAndStoreRssFeeds() {
     // Re-query company_ids for inserted rows to refresh snapshots after enrichment
     try {
       const idRes = await db.query(
-        `SELECT DISTINCT company_id FROM news WHERE id = ANY($1::int[]) AND company_id IS NOT NULL`,
+        `SELECT DISTINCT company_id FROM ${TABLE_RELEASES} WHERE id = ANY($1::int[]) AND company_id IS NOT NULL`,
         [insertedIds],
       );
       for (const row of idRes.rows) {

@@ -94,8 +94,8 @@ const CompanyDetail = () => {
   const md = data.marketData;
   const fund = data.fundamentals;
 
-  // Trading currency (price, 52W, computed market cap) is driven by the exchange.
-  const priceCcy = exchangeCcy(data.exchange);
+  const isAsx = (data.exchange || "").toUpperCase().replace("-", "") === "ASX";
+  const priceCcy = ccySymbol(md?.currency ?? fund?.currency ?? (isAsx ? "AUD" : "CAD"));
   // Prefer live shares-outstanding from TradingView, then the scraped DB values.
   const sharesOut = fund?.shares_outstanding ?? data.shares_outstanding ?? data.total_float ?? null;
   // Market cap = price × shares (kept in the trading currency so it matches the price).
@@ -106,8 +106,7 @@ const CompanyDetail = () => {
 
   const isUp = md && md.change_pct != null && md.change_pct >= 0;
   const isDown = md && md.change_pct != null && md.change_pct < 0;
-  const now = new Date();
-  const timeStr = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")} ET`;
+  const quoteSourceLabel = md?.source === "yahoo" ? "Yahoo Finance" : "TradingView";
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -167,7 +166,9 @@ const CompanyDetail = () => {
                       {" "}({md.change_pct >= 0 ? "+" : ""}{md.change_pct.toFixed(2)}%)
                     </span>
                   )}
-                  <span className="text-xs text-muted-foreground font-mono">· Live · Last: {timeStr}</span>
+                  <span className="text-xs text-muted-foreground font-mono">
+                    · {quoteSourceLabel} · Delayed · Day change vs prior close
+                  </span>
                 </div>
               )}
             </div>
@@ -219,7 +220,7 @@ const CompanyDetail = () => {
                 )}
               </div>
               <div className="p-6 pt-0 flex-1 min-h-0">
-                <TradingViewChart symbol={tvSymbol(data.exchange, data.ticker)} />
+                <TradingViewChart symbol={tvSymbol(data.exchange, data.ticker)} interval="1" />
               </div>
             </div>
           </div>
@@ -355,11 +356,6 @@ function ccySymbol(code: string | null | undefined): string {
     case "EUR": return "€";
     default: return "C$";
   }
-}
-
-// Trading currency for an OreWire exchange (we only list TSX-V / CSE / ASX).
-function exchangeCcy(exchange: string | null | undefined): string {
-  return (exchange || "").toUpperCase().replace("-", "") === "ASX" ? "A$" : "C$";
 }
 
 function fmtExLabel(ex?: string | null): string {

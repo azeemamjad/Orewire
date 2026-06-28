@@ -129,7 +129,7 @@ const Login = () => {
       <main className="flex-1">
         <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-10 lg:py-16">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-start">
-            <div className="lg:pr-8 lg:border-r lg:border-border lg:min-h-[640px]">
+            <div className="order-2 lg:order-1 lg:pr-8 lg:border-r lg:border-border lg:min-h-[640px] hidden lg:block">
               <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-muted-foreground mb-4">
                 OreWire / Terminal
               </div>
@@ -159,7 +159,7 @@ const Login = () => {
               </p>
             </div>
 
-            <div className="w-full max-w-[480px] mx-auto lg:mx-0">
+            <div className="order-1 lg:order-2 w-full max-w-[480px] mx-auto lg:mx-0">
               <div className="grid grid-cols-2" role="tablist">
                 {(["signin", "register"] as const).map((m) => (
                   <button

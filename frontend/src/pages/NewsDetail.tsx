@@ -66,7 +66,7 @@ const NewsDetail = () => {
   // isn't a link but the title, or the item isn't yet in the DB by link).
   const { data: feedData, isLoading: feedLoading } = useQuery({
     queryKey: ["news-feed-detail-lookup"],
-    queryFn: () => fetchNewsFeed({ page: 1, limit: 50 }),
+    queryFn: () => fetchNewsFeed({ page: 1, limit: 50, origin: "rss" }),
     enabled: !directItem,
     staleTime: 30 * 60 * 1000,
   });

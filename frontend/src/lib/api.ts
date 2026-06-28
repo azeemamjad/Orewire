@@ -311,6 +311,7 @@ export interface MarketData {
   currency: string | null;
   price_52_week_high: number | null;
   price_52_week_low: number | null;
+  source?: 'tradingview' | 'yahoo';
   error?: string;
 }
 

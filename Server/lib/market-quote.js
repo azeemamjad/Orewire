@@ -17,29 +17,47 @@ function hasPrice(q) {
 }
 
 /**
- * Company lookup by OreWire exchange + ticker. Tries Yahoo, then TradingView.
+ * Company lookup by OreWire exchange + ticker.
+ *
+ * Default: Yahoo first, TradingView fallback (movers refresh, snapshots, etc.).
+ * opts.preferTv: TradingView first, Yahoo fallback (company detail — matches chart).
+ *
  * Returns the first quote that carries a price; if neither has one it returns
  * whatever object came back (so the caller can still surface currency/identity
  * fields) and only throws when both providers fail outright.
  */
-async function fetchCompanyQuote(exchange, ticker, opts) {
+async function fetchCompanyQuote(exchange, ticker, opts = {}) {
+  const { preferTv = false, ...quoteOpts } = opts;
   let yahoo = null;
   let firstErr = null;
-  try {
-    yahoo = await fetchYahooByExchange(exchange, ticker, opts);
-  } catch (err) {
-    firstErr = err;
-  }
-  if (hasPrice(yahoo)) return yahoo;
-
   const tvSym = tvSymbolForCompany(exchange, ticker);
-  if (tvSym) {
+
+  async function tryTv() {
+    if (!tvSym) return null;
     try {
       const tv = await fetchTvQuote(tvSym);
-      if (hasPrice(tv)) return tv;
+      if (hasPrice(tv)) return { ...tv, _source: 'tradingview' };
     } catch (err) {
       firstErr = firstErr || err;
     }
+    return null;
+  }
+
+  if (preferTv) {
+    const tv = await tryTv();
+    if (tv) return tv;
+  }
+
+  try {
+    yahoo = await fetchYahooByExchange(exchange, ticker, quoteOpts);
+  } catch (err) {
+    firstErr = firstErr || err;
+  }
+  if (hasPrice(yahoo)) return yahoo;
+
+  if (!preferTv) {
+    const tv = await tryTv();
+    if (tv) return tv;
   }
 
   if (yahoo) return yahoo; // valid object, just no price

@@ -75,9 +75,8 @@ async function migrate() {
   `);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_discussion_votes_disc ON discussion_votes(discussion_id)`);
 
-  // News — preserve rows across restarts; add columns if missing
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS news (
+  // News releases (RSS / Newsfile / GlobeNewsWire) and market news (Google News) — separate tables.
+  const newsItemColumns = `
       id          SERIAL PRIMARY KEY,
       title       TEXT NOT NULL,
       link        TEXT UNIQUE NOT NULL,
@@ -93,33 +92,48 @@ async function migrate() {
       ticker      TEXT,
       category    TEXT DEFAULT 'general',
       created_at  TIMESTAMPTZ DEFAULT NOW()
+  `;
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS news_releases (
+      ${newsItemColumns}
     )
   `);
-  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS summary TEXT`);
-  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS commodity TEXT`);
-  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS sentiment TEXT DEFAULT 'neutral'`);
-  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS relevant BOOLEAN DEFAULT TRUE`);
-  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS ai_processed BOOLEAN DEFAULT FALSE`);
-  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS company_id INTEGER`);
-  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS ticker TEXT`);
-  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'general'`);
-  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()`);
-  // origin marks where a row came from: 'rss' = scheduled feeds (Newsfile, GlobeNewsWire),
-  // 'google' = per-company Google News search. Drives the News Releases vs Market News split.
-  await safeQuery(`ALTER TABLE news ADD COLUMN IF NOT EXISTS origin TEXT DEFAULT 'rss'`);
-  // Backfill legacy rows: scheduled-feed rows carry a fixed source label; anything else with a
-  // real publisher name (Reuters, Bloomberg, …) came from Google News. Idempotent — only flips
-  // rows still tagged 'rss', so it matches nothing after the first run.
-  await safeQuery(`
-    UPDATE news SET origin = 'google'
-    WHERE origin = 'rss'
-      AND COALESCE(source, '') NOT IN ('TMX Newsfile', 'GlobeNewsWire', 'News', '')
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS market_news (
+      ${newsItemColumns}
+    )
   `);
-  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_news_pub_date ON news(pub_date DESC)`);
-  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_news_origin ON news(origin)`);
-  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_news_category ON news(category)`);
-  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_news_link ON news(link)`);
-  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_news_company_id ON news(company_id)`);
+
+  for (const tbl of ['news_releases', 'market_news']) {
+    await safeQuery(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS summary TEXT`);
+    await safeQuery(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS commodity TEXT`);
+    await safeQuery(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS sentiment TEXT DEFAULT 'neutral'`);
+    await safeQuery(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS relevant BOOLEAN DEFAULT TRUE`);
+    await safeQuery(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS ai_processed BOOLEAN DEFAULT FALSE`);
+    await safeQuery(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS company_id INTEGER`);
+    await safeQuery(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS ticker TEXT`);
+    await safeQuery(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'general'`);
+    await safeQuery(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()`);
+    await safeQuery(`CREATE INDEX IF NOT EXISTS idx_${tbl}_pub_date ON ${tbl}(pub_date DESC)`);
+    await safeQuery(`CREATE INDEX IF NOT EXISTS idx_${tbl}_category ON ${tbl}(category)`);
+    await safeQuery(`CREATE INDEX IF NOT EXISTS idx_${tbl}_link ON ${tbl}(link)`);
+    await safeQuery(`CREATE INDEX IF NOT EXISTS idx_${tbl}_company_id ON ${tbl}(company_id)`);
+  }
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS watchlist_news_email_sent (
+      user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      source   TEXT NOT NULL CHECK (source IN ('release', 'market')),
+      item_id  INTEGER NOT NULL,
+      sent_at  TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (user_id, source, item_id)
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_watchlist_news_sent_item ON watchlist_news_email_sent(source, item_id)`);
+
+  const { migrateLegacyNewsTable } = require('../lib/news-db');
+  await migrateLegacyNewsTable(db, safeQuery);
 
   // Jobs
   await db.query(`
@@ -282,16 +296,6 @@ async function migrate() {
   `);
 
   await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS watchlist_alerts_enabled BOOLEAN DEFAULT TRUE`);
-
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS watchlist_news_email_sent (
-      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      news_id    INTEGER NOT NULL REFERENCES news(id) ON DELETE CASCADE,
-      sent_at    TIMESTAMPTZ DEFAULT NOW(),
-      PRIMARY KEY (user_id, news_id)
-    )
-  `);
-  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_watchlist_news_sent_news ON watchlist_news_email_sent(news_id)`);
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS watchlist_filing_email_sent (

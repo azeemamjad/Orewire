@@ -249,13 +249,14 @@ async function gatherSnapshotContext(companyId) {
   const filings = filingsRes.rows;
 
   const newsRes = await db.query(
-    `SELECT id, title, summary, pub_date
-       FROM news
+    `SELECT id, title, summary, pub_date, 'release' AS news_kind
+       FROM news_releases
       WHERE relevant = TRUE
+        AND source = ANY($3::text[])
         AND (company_id = $1 OR category = $2)
-      ORDER BY pub_date DESC NULLS LAST
-      LIMIT 10`,
-    [companyId, newsCategory],
+     ORDER BY pub_date DESC NULLS LAST
+     LIMIT 10`,
+    [companyId, newsCategory, require('../official-news-releases').OFFICIAL_RELEASE_SOURCES],
   );
 
   const ownershipRes = await db.query(
@@ -304,11 +305,11 @@ async function gatherSnapshotContext(companyId) {
     ...newsRes.rows
       .filter((n) => n.summary || n.title)
       .map((n) => ({
-        type: 'News Release',
+        type: n.news_kind === 'market' ? 'Market News' : 'News Release',
         date: n.pub_date,
         summary: n.summary || n.title,
-        source: 'news',
-        id: `n-${n.id}`,
+        source: n.news_kind === 'market' ? 'market-news' : 'news',
+        id: `${n.news_kind === 'market' ? 'mn' : 'nr'}-${n.id}`,
       })),
   ]
     .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())

@@ -3,6 +3,7 @@ const router  = express.Router();
 const db      = require('../db');
 const { requireUser } = require('./auth');
 const { appendMarketMoveAlerts } = require('../lib/watchlist-market-alerts');
+const { TABLE_RELEASES, TABLE_MARKET } = require('../lib/news-db');
 const { safeParse, deriveCommodities, deriveContinents, deriveCountry } = require('../lib/company-enrich');
 
 function companyPath(exchange, ticker) {
@@ -27,22 +28,41 @@ router.get('/alerts', requireUser, async (req, res) => {
     const alerts = [];
 
     const newsRes = await db.query(
-      `SELECT n.id, n.title, n.link, n.pub_date, n.created_at,
-              c.id AS company_id, c.name AS company_name, c.ticker, c.exchange
-         FROM news n
-         INNER JOIN watchlist w
-           ON ${ALERT_JOIN} AND w.item_type = 'company' AND w.company_id IS NOT NULL
-         INNER JOIN companies c ON c.id = w.company_id
-        WHERE n.relevant = TRUE
-          AND n.ai_processed = TRUE
-          AND GREATEST(COALESCE(n.created_at, '1970-01-01'), COALESCE(n.pub_date, '1970-01-01')) > $2
-          AND (
-            n.company_id = c.id
-            OR UPPER(COALESCE(n.ticker, '')) = UPPER(COALESCE(c.ticker, ''))
-            OR n.category = 'company:' || c.ticker
-            OR n.category = 'company:' || c.name
-          )
-        ORDER BY GREATEST(COALESCE(n.created_at, '1970-01-01'), COALESCE(n.pub_date, '1970-01-01')) DESC
+      `SELECT combined.*
+         FROM (
+           SELECT n.id, n.title, n.link, n.pub_date, n.created_at, n.ticker AS news_ticker, n.category,
+                  c.id AS company_id, c.name AS company_name, c.ticker, c.exchange
+             FROM ${TABLE_RELEASES} n
+             INNER JOIN watchlist w
+               ON ${ALERT_JOIN} AND w.item_type = 'company' AND w.company_id IS NOT NULL
+             INNER JOIN companies c ON c.id = w.company_id
+            WHERE n.relevant = TRUE
+              AND n.ai_processed = TRUE
+              AND GREATEST(COALESCE(n.created_at, '1970-01-01'), COALESCE(n.pub_date, '1970-01-01')) > $2
+              AND (
+                n.company_id = c.id
+                OR UPPER(COALESCE(n.ticker, '')) = UPPER(COALESCE(c.ticker, ''))
+                OR n.category = 'company:' || c.ticker
+                OR n.category = 'company:' || c.name
+              )
+           UNION ALL
+           SELECT n.id, n.title, n.link, n.pub_date, n.created_at, n.ticker AS news_ticker, n.category,
+                  c.id AS company_id, c.name AS company_name, c.ticker, c.exchange
+             FROM ${TABLE_MARKET} n
+             INNER JOIN watchlist w
+               ON ${ALERT_JOIN} AND w.item_type = 'company' AND w.company_id IS NOT NULL
+             INNER JOIN companies c ON c.id = w.company_id
+            WHERE n.relevant = TRUE
+              AND n.ai_processed = TRUE
+              AND GREATEST(COALESCE(n.created_at, '1970-01-01'), COALESCE(n.pub_date, '1970-01-01')) > $2
+              AND (
+                n.company_id = c.id
+                OR UPPER(COALESCE(n.ticker, '')) = UPPER(COALESCE(c.ticker, ''))
+                OR n.category = 'company:' || c.ticker
+                OR n.category = 'company:' || c.name
+              )
+         ) combined
+        ORDER BY GREATEST(COALESCE(combined.created_at, '1970-01-01'), COALESCE(combined.pub_date, '1970-01-01')) DESC
         LIMIT 20`,
       [userId, since],
     );

@@ -4,9 +4,11 @@ import { useEffect, useRef } from "react";
 // (e.g. "TVC:GOLD", "FX:USDCAD", "AMEX:GDXJ"). Re-embeds when the symbol changes.
 export default function TradingViewChart({
   symbol,
+  interval = "D",
   className,
 }: {
   symbol: string | null;
+  interval?: string;
   className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -29,7 +31,7 @@ export default function TradingViewChart({
     script.innerHTML = JSON.stringify({
       autosize: true,
       symbol,
-      interval: "D",
+      interval,
       timezone: "Etc/UTC",
       theme: "light",
       style: "1",
@@ -47,7 +49,7 @@ export default function TradingViewChart({
     return () => {
       container.innerHTML = "";
     };
-  }, [symbol]);
+  }, [symbol, interval]);
 
   const box = `w-full aspect-[16/9] min-h-[340px] ${className || ""}`;
 

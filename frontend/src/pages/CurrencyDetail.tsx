@@ -8,14 +8,14 @@ import {
   Check,
   Heart,
   MessageSquare,
-  Building2,
   X,
 } from "lucide-react";
 import Nav from "@/components/site/Nav";
 import MorningBrief from "@/components/site/MorningBrief";
 import Footer from "@/components/site/Footer";
 import SetAlertButton from "@/components/site/SetAlertButton";
-import TradingViewChart from "@/components/site/TradingViewChart";
+import MarketDetailLayout from "@/components/site/MarketDetailLayout";
+import MarketNewsKeywordSection from "@/components/site/MarketNewsKeywordSection";
 import {
   fetchCurrencies,
   fetchCurrencyDiscussions,
@@ -207,83 +207,22 @@ const CurrencyDetail = () => {
           </div>
         </header>
 
-        <div className="grid lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 flex flex-col gap-6">
-            <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
-              <div className="space-y-1.5 p-6 pb-3 flex flex-row items-center justify-between gap-3 flex-wrap">
-                <h3 className="font-semibold tracking-tight font-display text-xl">Price</h3>
-                {tvSymbol && <span className="font-mono text-[11px] text-muted-foreground">{tvSymbol}</span>}
-              </div>
-              <div className="p-6 pt-0">
-                <TradingViewChart symbol={tvSymbol} />
-              </div>
-            </div>
-
-            <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
-              <div className="flex flex-col space-y-1.5 p-6 pb-2">
-                <h3 className="font-semibold font-display text-base uppercase tracking-wider flex items-center gap-2">
-                  <Building2 className="h-4 w-4" />
-                  About {key}
-                </h3>
-              </div>
-              <div className="p-6 pt-0 space-y-3 text-sm leading-relaxed">
-                <p>{meta.about}</p>
-              </div>
-            </div>
-
-            <CurrencyDiscussion currencyKey={key} />
-          </div>
-
-          <aside className="flex flex-col gap-4 lg:self-start">
-            <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
-              <div className="flex flex-col space-y-1.5 p-6 pb-2">
-                <h3 className="font-semibold font-display text-base uppercase tracking-wider">Key stats</h3>
-              </div>
-              <div className="p-6 pt-0">
-                <dl className="grid grid-cols-2 gap-y-3 text-sm">
-                  {simPrevClose !== null && (
-                    <>
-                      <dt className="text-xs uppercase tracking-wider text-muted-foreground">Prev close</dt>
-                      <dd className="font-mono text-right font-semibold">{simPrevClose.toFixed(4)}</dd>
-                    </>
-                  )}
-                  {simOpen !== null && (
-                    <>
-                      <dt className="text-xs uppercase tracking-wider text-muted-foreground">Open</dt>
-                      <dd className="font-mono text-right font-semibold">{simOpen.toFixed(4)}</dd>
-                    </>
-                  )}
-                  {simHigh !== null && (
-                    <>
-                      <dt className="text-xs uppercase tracking-wider text-muted-foreground">Day high</dt>
-                      <dd className="font-mono text-right font-semibold">{simHigh.toFixed(4)}</dd>
-                    </>
-                  )}
-                  {simLow !== null && (
-                    <>
-                      <dt className="text-xs uppercase tracking-wider text-muted-foreground">Day low</dt>
-                      <dd className="font-mono text-right font-semibold">{simLow.toFixed(4)}</dd>
-                    </>
-                  )}
-                  <dt className="text-xs uppercase tracking-wider text-muted-foreground">Quote</dt>
-                  <dd className="font-mono text-right font-semibold">{meta.quote || "-"}</dd>
-                  <dt className="text-xs uppercase tracking-wider text-muted-foreground">Type</dt>
-                  <dd className="font-mono text-right font-semibold">FX Spot</dd>
-                </dl>
-              </div>
-            </div>
-
-            <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
-              <div className="flex flex-col space-y-1.5 p-6 pb-2">
-                <h3 className="font-semibold font-display text-base uppercase tracking-wider">Context</h3>
-              </div>
-              <div className="p-6 pt-0 pb-5 text-sm text-muted-foreground leading-relaxed">
-                FX moves affect mining revenues - most miners price in USD but report in local currency. A weaker CAD or AUD
-                can boost margins for TSX/ASX-listed producers.
-              </div>
-            </div>
-          </aside>
-        </div>
+        <MarketDetailLayout
+          chartSymbol={tvSymbol}
+          chartLabel={tvSymbol || undefined}
+          aboutTitle={`About ${key}`}
+          aboutBody={<p>{meta.about}</p>}
+          stats={[
+            ...(simPrevClose !== null ? [{ label: "Prev close", value: simPrevClose.toFixed(4) }] : []),
+            ...(simOpen !== null ? [{ label: "Open", value: simOpen.toFixed(4) }] : []),
+            ...(simHigh !== null ? [{ label: "Day high", value: simHigh.toFixed(4) }] : []),
+            ...(simLow !== null ? [{ label: "Day low", value: simLow.toFixed(4) }] : []),
+            { label: "Quote", value: meta.quote || "-" },
+            { label: "Type", value: "FX Spot" },
+          ]}
+          marketNewsSection={<MarketNewsKeywordSection keyword={meta.fullName} title="Market news" />}
+          discussion={<CurrencyDiscussion currencyKey={key} />}
+        />
 
         <p className="text-xs text-muted-foreground mt-10 leading-relaxed border-t border-border pt-4">
           Orewire market data is provided for informational purposes only and may be delayed. Not investment advice.

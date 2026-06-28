@@ -12,6 +12,7 @@ import {
   type ListFilters,
 } from "@/components/site/ListFilterBar";
 import { fetchNewsFeed, type NewsItem } from "@/lib/api";
+import { googleNewsRssUrl } from "@/components/site/MarketNewsKeywordSection";
 import { newsDisplayTime } from "@/components/site/news-release-utils";
 import { apiCommodityFromFilters, matchesMultiFilters } from "@/lib/list-filter-api";
 
@@ -87,12 +88,12 @@ const MarketNewsPage = () => {
       <ListFilterHeader
         eyebrow="Market news"
         title="Global mining and commodity news"
-        description="Headlines from Reuters, Bloomberg, Mining.com, Kitco and more. Click any item to read at the source."
+        description="Headlines sourced via Google News RSS. Each item opens at the original publisher."
         totalCount={total}
         resultCount={items.length}
         query={query}
         setQuery={setQuery}
-        placeholder="Search headlines, sources or commodities"
+        placeholder="Search headlines or commodities"
         onSearch={applySearch}
       />
       <main className="flex-1">
@@ -104,6 +105,16 @@ const MarketNewsPage = () => {
             showExchange={false}
           />
           <section>
+            {appliedSearch && (
+              <a
+                href={googleNewsRssUrl(appliedSearch)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted-foreground hover:text-foreground mb-4"
+              >
+                Open Google News RSS for &ldquo;{appliedSearch}&rdquo; <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            )}
             <ActiveChips filters={filters} setFilters={setFilters} />
             {showLoading ? (
               <div className="border border-dashed border-border p-12 text-center text-muted-foreground">Loading headlines…</div>

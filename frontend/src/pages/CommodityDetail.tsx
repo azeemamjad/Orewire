@@ -8,14 +8,14 @@ import {
   Check,
   Heart,
   MessageSquare,
-  Building2,
   X,
 } from "lucide-react";
 import Nav from "@/components/site/Nav";
 import MorningBrief from "@/components/site/MorningBrief";
 import Footer from "@/components/site/Footer";
 import SetAlertButton from "@/components/site/SetAlertButton";
-import TradingViewChart from "@/components/site/TradingViewChart";
+import MarketDetailLayout from "@/components/site/MarketDetailLayout";
+import MarketNewsKeywordSection from "@/components/site/MarketNewsKeywordSection";
 import {
   fetchCommodities,
   fetchCommodityDiscussions,
@@ -262,91 +262,29 @@ const CommodityDetail = () => {
           </div>
         </header>
 
-        <div className="grid lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 flex flex-col gap-6">
-            <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
-              <div className="space-y-1.5 p-6 pb-3 flex flex-row items-center justify-between gap-3 flex-wrap">
-                <h3 className="font-semibold tracking-tight font-display text-xl">Price</h3>
-                {tvSymbol && <span className="font-mono text-[11px] text-muted-foreground">{tvSymbol}</span>}
-              </div>
-              <div className="p-6 pt-0">
-                <TradingViewChart symbol={tvSymbol} />
-              </div>
-            </div>
-
-            <div className="rounded-lg border bg-card text-card-foreground shadow-sm flex-1 flex flex-col">
-              <div className="flex flex-col space-y-1.5 p-6 pb-2">
-                <h3 className="font-semibold font-display text-base uppercase tracking-wider flex items-center gap-2">
-                  <Building2 className="h-4 w-4" />
-                  About {key}
-                </h3>
-              </div>
-              <div className="p-6 pt-0 space-y-3 text-sm leading-relaxed">
-                <p>{meta.about}</p>
-                <p className="text-muted-foreground font-mono text-xs">Quoted in {meta.currency}</p>
-              </div>
-            </div>
-
-            <CommodityDiscussion commodityKey={key} />
-          </div>
-
-          <aside className="flex flex-col gap-4 lg:self-start">
-            <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
-              <div className="flex flex-col space-y-1.5 p-6 pb-2">
-                <h3 className="font-semibold font-display text-base uppercase tracking-wider">Key stats</h3>
-              </div>
-              <div className="p-6 pt-0">
-                <dl className="grid grid-cols-2 gap-y-3 text-sm">
-                  {simPrevClose != null && (
-                    <>
-                      <dt className="text-xs uppercase tracking-wider text-muted-foreground">Prev close</dt>
-                      <dd className="font-mono text-right font-semibold">${fmtPrice(simPrevClose)}</dd>
-                    </>
-                  )}
-                  {simOpen != null && (
-                    <>
-                      <dt className="text-xs uppercase tracking-wider text-muted-foreground">Open</dt>
-                      <dd className="font-mono text-right font-semibold">${fmtPrice(simOpen)}</dd>
-                    </>
-                  )}
-                  {simHigh != null && (
-                    <>
-                      <dt className="text-xs uppercase tracking-wider text-muted-foreground">Day high</dt>
-                      <dd className="font-mono text-right font-semibold">${fmtPrice(simHigh)}</dd>
-                    </>
-                  )}
-                  {simLow != null && (
-                    <>
-                      <dt className="text-xs uppercase tracking-wider text-muted-foreground">Day low</dt>
-                      <dd className="font-mono text-right font-semibold">${fmtPrice(simLow)}</dd>
-                    </>
-                  )}
-                  <dt className="text-xs uppercase tracking-wider text-muted-foreground">Volume</dt>
-                  <dd className="font-mono text-right font-semibold">{simVolume}</dd>
-                  <dt className="text-xs uppercase tracking-wider text-muted-foreground">Unit</dt>
-                  <dd className="font-mono text-right font-semibold">{meta.unit}</dd>
-                </dl>
-              </div>
-            </div>
-
-            <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
-              <div className="flex flex-col space-y-1.5 p-6 pb-2">
-                <h3 className="font-semibold font-display text-base uppercase tracking-wider">Related</h3>
-              </div>
-              <div className="p-6 pt-0 pb-5 text-sm">
-                <p className="text-muted-foreground mb-3">
-                  TSX-V, CSE &amp; ASX companies with {meta.name.toLowerCase()} exposure
-                </p>
-                <Link
-                  to={`/companies?commodity=${encodeURIComponent(meta.name)}`}
-                  className="font-medium underline underline-offset-4 hover:text-foreground"
-                >
-                  View all {meta.name.toLowerCase()} companies →
-                </Link>
-              </div>
-            </div>
-          </aside>
-        </div>
+        <MarketDetailLayout
+          chartSymbol={tvSymbol}
+          chartLabel={tvSymbol || undefined}
+          aboutTitle={`About ${key}`}
+          aboutBody={
+            <>
+              <p>{meta.about}</p>
+              <p className="text-muted-foreground font-mono text-xs">Quoted in {meta.currency}</p>
+            </>
+          }
+          stats={[
+            ...(simPrevClose != null
+              ? [{ label: "Prev close", value: `$${fmtPrice(simPrevClose)}` }]
+              : []),
+            ...(simOpen != null ? [{ label: "Open", value: `$${fmtPrice(simOpen)}` }] : []),
+            ...(simHigh != null ? [{ label: "Day high", value: `$${fmtPrice(simHigh)}` }] : []),
+            ...(simLow != null ? [{ label: "Day low", value: `$${fmtPrice(simLow)}` }] : []),
+            { label: "Volume", value: simVolume },
+            { label: "Unit", value: meta.unit },
+          ]}
+          marketNewsSection={<MarketNewsKeywordSection keyword={meta.name} />}
+          discussion={<CommodityDiscussion commodityKey={key} />}
+        />
 
         <p className="text-xs text-muted-foreground mt-10 leading-relaxed border-t border-border pt-4">
           Orewire market data is provided for informational purposes only and may be delayed. Not investment advice.

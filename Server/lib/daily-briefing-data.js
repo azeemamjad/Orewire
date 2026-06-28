@@ -86,7 +86,7 @@ async function fetchNewsSince(since, limit = 30) {
   const r = await db.query(
     `SELECT n.id, n.title, n.summary, n.ticker, n.link, n.pub_date,
             c.name AS company_name, c.exchange, c.ticker AS company_ticker
-       FROM news n
+       FROM news_releases n
        LEFT JOIN companies c ON (
          n.company_id = c.id
          OR UPPER(COALESCE(n.ticker, '')) = UPPER(COALESCE(c.ticker, ''))
