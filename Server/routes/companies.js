@@ -21,6 +21,7 @@ const {
   deriveContinents,
   deriveCountry,
 } = require('../lib/company-enrich');
+const { parseCompanySearchQuery } = require('../lib/company-search-parse');
 
 // Company detail quotes prefer TradingView (same feed/symbol as the embed chart),
 // falling back to Yahoo when TV has no price. Field names match the scanner shape
@@ -114,26 +115,43 @@ router.get('/', async (req, res) => {
   const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
   const offset = (pageNum - 1) * limitNum;
 
+  // Plain-English search: "gold companies in Africa" → commodity + continent filters.
+  let effectiveSearch = search || null;
+  let effectiveCommodity = commodity || null;
+  let effectiveContinent = continent || null;
+  let effectiveCountry = country || null;
+  let normExchange = exchange ? normalizeExchange(exchange) : null;
+
+  if (search) {
+    const parsed = parseCompanySearchQuery(search);
+    if (parsed.parsed) {
+      if (!commodity && parsed.commodity) effectiveCommodity = parsed.commodity;
+      if (!continent && parsed.continent) effectiveContinent = parsed.continent;
+      if (!country && parsed.country) effectiveCountry = parsed.country;
+      if (!normExchange && parsed.exchange) normExchange = parsed.exchange;
+      effectiveSearch = parsed.textSearch || null;
+    }
+  }
+
   const where = [];
   const params = [];
 
-  if (search) {
-    params.push(`%${search}%`);
+  if (effectiveSearch) {
+    params.push(`%${effectiveSearch}%`);
     where.push(`(name ILIKE $${params.length} OR ticker ILIKE $${params.length} OR sedar_ticker ILIKE $${params.length})`);
   }
-  const normExchange = exchange ? normalizeExchange(exchange) : null;
   if (normExchange) {
     params.push(normExchange);
     where.push(`exchange = $${params.length}`);
   }
 
-  const commCl = commodityClause(commodity, params.length + 1);
+  const commCl = commodityClause(effectiveCommodity, params.length + 1);
   if (commCl) { where.push(commCl.sql); params.push(...commCl.params); }
 
-  const contCl = continentClause(continent, params.length + 1);
+  const contCl = continentClause(effectiveContinent, params.length + 1);
   if (contCl) { where.push(contCl.sql); params.push(...contCl.params); }
 
-  const cntryCl = countryClause(country, params.length + 1);
+  const cntryCl = countryClause(effectiveCountry, params.length + 1);
   if (cntryCl) { where.push(cntryCl.sql); params.push(...cntryCl.params); }
 
   if (missing) {

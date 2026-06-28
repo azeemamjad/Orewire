@@ -18,6 +18,7 @@ import {
   checkWatchlist,
   type Company,
 } from "@/lib/api";
+import { parseCompanySearchQuery, parsedExchangeToMarket } from "@/lib/company-search-parse";
 
 type Selected = {
   market: string | null;
@@ -98,6 +99,20 @@ const Companies = () => {
     queryFn: fetchCompanyFilters,
     staleTime: 5 * 60 * 1000,
   });
+
+  const parsedSearch = useMemo(() => parseCompanySearchQuery(debouncedSearch), [debouncedSearch]);
+
+  const parsedFilterLabels = useMemo(() => {
+    if (!parsedSearch.parsed) return [];
+    const labels: string[] = [];
+    const market = parsedExchangeToMarket(parsedSearch.exchange);
+    if (market) labels.push(market);
+    if (parsedSearch.commodity) labels.push(parsedSearch.commodity);
+    if (parsedSearch.continent) labels.push(parsedSearch.continent);
+    if (parsedSearch.country) labels.push(parsedSearch.country);
+    if (parsedSearch.textSearch) labels.push(`"${parsedSearch.textSearch}"`);
+    return labels;
+  }, [parsedSearch]);
 
   const apiExchange = useMemo(() => {
     if (!sel.market) return undefined;
@@ -208,6 +223,12 @@ const Companies = () => {
               <Search className="w-4 h-4 mr-2" /> Search
             </Button>
           </form>
+          {parsedFilterLabels.length > 0 && (
+            <p className="mt-3 text-sm text-muted-foreground">
+              Filtering by{" "}
+              <span className="font-mono text-foreground">{parsedFilterLabels.join(" · ")}</span>
+            </p>
+          )}
         </div>
       </section>
 
