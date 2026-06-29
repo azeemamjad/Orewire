@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 // (e.g. "TVC:GOLD", "FX:USDCAD", "AMEX:GDXJ"). Re-embeds when the symbol changes.
 export default function TradingViewChart({
   symbol,
-  interval = "D",
+  interval = "1",
   className,
 }: {
   symbol: string | null;

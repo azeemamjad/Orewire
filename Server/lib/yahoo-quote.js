@@ -216,8 +216,74 @@ async function fetchYahooByExchange(exchange, ticker, opts) {
   return fetchYahooQuote(sym, opts);
 }
 
+const HISTORY_RANGES = {
+  '1D': { range: '1d', interval: '5m' },
+  '1W': { range: '5d', interval: '15m' },
+  '1M': { range: '1mo', interval: '1d' },
+  '3M': { range: '3mo', interval: '1d' },
+  '1Y': { range: '1y', interval: '1d' },
+  All: { range: 'max', interval: '1wk' },
+};
+
+async function fetchYahooHistory(symbol, rangeKey = '3M') {
+  if (!symbol) throw new Error('No symbol');
+  const cfg = HISTORY_RANGES[rangeKey] || HISTORY_RANGES['3M'];
+  const cacheKey = `hist|${symbol}|${rangeKey}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return cached;
+
+  const path = `/v8/finance/chart/${encodeURIComponent(symbol)}?range=${cfg.range}&interval=${cfg.interval}&includePrePost=false`;
+  let lastErr;
+  for (const base of YH_BASES) {
+    try {
+      const res = await fetch(base + path, {
+        headers: { 'User-Agent': UA, Accept: 'application/json' },
+      });
+      if (!res.ok) {
+        lastErr = new Error(`Yahoo ${res.status} for ${symbol}`);
+        continue;
+      }
+      const json = await res.json();
+      const result = json?.chart?.result?.[0];
+      if (!result) {
+        lastErr = new Error(`Yahoo returned no history for ${symbol}`);
+        continue;
+      }
+      const ts = result.timestamp || [];
+      const q = (result.indicators?.quote?.[0]) || {};
+      const closes = q.close || [];
+      const opens = q.open || [];
+      const highs = q.high || [];
+      const lows = q.low || [];
+      const volumes = q.volume || [];
+      const points = [];
+      for (let i = 0; i < ts.length; i++) {
+        const close = closes[i];
+        if (close == null) continue;
+        const d = new Date(ts[i] * 1000);
+        points.push({
+          t: ts[i],
+          date: d.toISOString().slice(0, 10),
+          label: `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+          close,
+          open: opens[i] ?? null,
+          high: highs[i] ?? null,
+          low: lows[i] ?? null,
+          volume: volumes[i] ?? null,
+        });
+      }
+      cacheSet(cacheKey, points);
+      return points;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr || new Error(`Yahoo history failed for ${symbol}`);
+}
+
 module.exports = {
   yahooSymbolForCompany,
   fetchYahooQuote,
   fetchYahooByExchange,
+  fetchYahooHistory,
 };

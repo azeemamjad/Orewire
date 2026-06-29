@@ -79,7 +79,6 @@ const Nav = ({ showSiteTopBar = true }: NavProps) => {
           <Link to="/" className="flex items-center gap-2.5 group shrink-0">
             <div className="relative w-8 h-8 bg-foreground grid place-items-center">
               <span className="font-display text-background text-base font-extrabold leading-none">O</span>
-              <span className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 bg-[hsl(var(--up))] animate-pulse-dot" />
             </div>
             <div className="hidden sm:flex items-baseline gap-1.5">
               <span className="font-display text-lg font-extrabold tracking-tight">OreWire</span>

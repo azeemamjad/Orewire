@@ -7,6 +7,7 @@ const {
   yahooSymbolForCompany,
   tvSymbolForCompany,
 } = require('../lib/market-quote');
+const { fetchYahooHistory } = require('../lib/yahoo-quote');
 
 // Market data is sourced from Yahoo Finance with a TradingView fallback (see
 // lib/market-quote). The function keeps its historical name and (exchange,
@@ -223,6 +224,50 @@ const COMMODITY_SYMBOLS = [
   { key: 'palladium', label: 'Palladium',       unit: 'oz',  y: ['PA=F', 'PALL'],       tv: ['NYMEX:PA1!', 'TVC:PALLADIUM', 'OANDA:XPDUSD'] },
 ];
 
+function commodityConfig(key) {
+  const k = String(key || '').toLowerCase();
+  return COMMODITY_SYMBOLS.find((c) => c.key === k) || null;
+}
+
+async function buildCommodityItem(c, { preferTv = false } = {}) {
+  const r = await fetchListQuote(c.y, c.tv, { preferTv });
+  if (!r) {
+    return {
+      key: c.key,
+      label: c.label,
+      unit: c.unit,
+      price: null,
+      change_pct: null,
+      change_abs: null,
+      open: null,
+      high: null,
+      low: null,
+      volume: null,
+      currency: null,
+      source: null,
+      provider: null,
+      history_symbol: c.y[0] || null,
+    };
+  }
+  const norm = normalizePrice(r.quote);
+  return {
+    key: c.key,
+    label: c.label,
+    unit: c.unit,
+    price: norm.price,
+    change_pct: norm.change_pct,
+    change_abs: norm.change_abs,
+    open: norm.open,
+    high: norm.high,
+    low: norm.low,
+    volume: norm.volume,
+    currency: norm.currency,
+    source: r.symbol,
+    provider: r.provider,
+    history_symbol: c.y[0] || r.symbol,
+  };
+}
+
 const COMMODITY_CACHE_TTL_MS = 30 * 60 * 1000;
 let commoditiesCache = null;
 let commoditiesCacheTs = 0;
@@ -231,19 +276,7 @@ async function getCommoditiesPayload() {
   if (commoditiesCache && Date.now() - commoditiesCacheTs < COMMODITY_CACHE_TTL_MS) {
     return commoditiesCache;
   }
-  const items = await Promise.all(COMMODITY_SYMBOLS.map(async (c) => {
-    const r = await fetchListQuote(c.y, c.tv);
-    if (!r) return { key: c.key, label: c.label, unit: c.unit, price: null, change_pct: null, source: null };
-    const norm = normalizePrice(r.quote);
-    return {
-      key: c.key,
-      label: c.label,
-      unit: c.unit,
-      price: norm.price,
-      change_pct: norm.change_pct,
-      source: r.symbol,
-    };
-  }));
+  const items = await Promise.all(COMMODITY_SYMBOLS.map((c) => buildCommodityItem(c)));
   const payload = { updatedAt: new Date().toISOString(), items };
   commoditiesCache = payload;
   commoditiesCacheTs = Date.now();
@@ -256,6 +289,34 @@ router.get('/commodities', async (_req, res) => {
   } catch (err) {
     console.error('Commodities query failed:', err?.message || err);
     res.status(503).json({ updatedAt: new Date().toISOString(), items: [] });
+  }
+});
+
+// GET /api/market/commodities/:key — full quote (TradingView-first for detail pages)
+router.get('/commodities/:key/history', async (req, res) => {
+  try {
+    const c = commodityConfig(req.params.key);
+    if (!c) return res.status(404).json({ error: 'Not found' });
+    const range = String(req.query.range || '3M').toUpperCase();
+    const sym = c.y[0];
+    if (!sym) return res.json({ range, symbol: null, points: [] });
+    const points = await fetchYahooHistory(sym, range);
+    res.json({ range, symbol: sym, points });
+  } catch (err) {
+    console.error('Commodity history failed:', err?.message || err);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+router.get('/commodities/:key', async (req, res) => {
+  try {
+    const c = commodityConfig(req.params.key);
+    if (!c) return res.status(404).json({ error: 'Not found' });
+    const item = await buildCommodityItem(c, { preferTv: true });
+    res.json({ updatedAt: new Date().toISOString(), ...item });
+  } catch (err) {
+    console.error('Commodity detail failed:', err?.message || err);
+    res.status(502).json({ error: err.message });
   }
 });
 

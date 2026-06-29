@@ -220,7 +220,7 @@ const CompanyDetail = () => {
                 )}
               </div>
               <div className="p-6 pt-0 flex-1 min-h-0">
-                <TradingViewChart symbol={tvSymbol(data.exchange, data.ticker)} interval="1" />
+                <TradingViewChart symbol={tvSymbol(data.exchange, data.ticker)} />
               </div>
             </div>
           </div>

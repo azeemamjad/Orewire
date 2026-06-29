@@ -69,20 +69,38 @@ async function fetchCompanyQuote(exchange, ticker, opts = {}) {
  * then each TradingView symbol. Returns { quote, symbol } for the first with a
  * price, or null if none resolved.
  */
-async function fetchListQuote(yahooSymbols = [], tvSymbols = []) {
-  for (const s of yahooSymbols) {
-    try {
-      const q = await fetchYahooQuote(s);
-      if (hasPrice(q)) return { quote: q, symbol: s };
-    } catch { /* try next */ }
+async function fetchListQuote(yahooSymbols = [], tvSymbols = [], opts = {}) {
+  const { preferTv = false } = opts;
+
+  async function tryYahoo() {
+    for (const s of yahooSymbols) {
+      try {
+        const q = await fetchYahooQuote(s);
+        if (hasPrice(q)) return { quote: q, symbol: s, provider: 'yahoo' };
+      } catch { /* try next */ }
+    }
+    return null;
   }
-  for (const s of tvSymbols) {
-    try {
-      const q = await fetchTvQuote(s);
-      if (hasPrice(q)) return { quote: q, symbol: s };
-    } catch { /* try next */ }
+
+  async function tryTv() {
+    for (const s of tvSymbols) {
+      try {
+        const q = await fetchTvQuote(s);
+        if (hasPrice(q)) return { quote: q, symbol: s, provider: 'tradingview' };
+      } catch { /* try next */ }
+    }
+    return null;
   }
-  return null;
+
+  if (preferTv) {
+    const tv = await tryTv();
+    if (tv) return tv;
+    return tryYahoo();
+  }
+
+  const yh = await tryYahoo();
+  if (yh) return yh;
+  return tryTv();
 }
 
 module.exports = {

@@ -14,10 +14,10 @@ import Nav from "@/components/site/Nav";
 import MorningBrief from "@/components/site/MorningBrief";
 import Footer from "@/components/site/Footer";
 import SetAlertButton from "@/components/site/SetAlertButton";
-import MarketDetailLayout from "@/components/site/MarketDetailLayout";
-import MarketNewsKeywordSection from "@/components/site/MarketNewsKeywordSection";
+import TradingViewChart from "@/components/site/TradingViewChart";
+import MarketNewsFeedSection from "@/components/site/MarketNewsFeedSection";
 import {
-  fetchCommodities,
+  fetchCommodity,
   fetchCommodityDiscussions,
   postCommodityDiscussion,
   voteDiscussion,
@@ -26,7 +26,6 @@ import {
   removeFromWatchlist,
   login as apiLogin,
   register as apiRegister,
-  type CommoditySpot,
   type Discussion,
 } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
@@ -37,6 +36,7 @@ const COMMODITY_TV: Record<string, string> = {
   COPR: "COMEX:HG1!",
   LITH: "AMEX:LIT",
   URAN: "AMEX:URA",
+  NICK: "TVC:NICKEL",
   WTI: "TVC:USOIL",
   BRENT: "TVC:UKOIL",
   NATGAS: "TVC:NATURALGAS",
@@ -135,6 +135,21 @@ function avatarColor(email: string): string {
   return AVATAR_COLORS[h];
 }
 
+function fmtVol(n: number | null | undefined): string {
+  if (n == null) return "-";
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+  return `${Math.round(n)}`;
+}
+
+function ccyPrefix(currency: string | null | undefined): string {
+  if (!currency || currency === "USD") return "$";
+  if (currency === "AUD") return "A$";
+  if (currency === "CAD") return "C$";
+  return "$";
+}
+
 const CommodityDetail = () => {
   const { slug } = useParams();
   const key = (slug || "GOLD").toUpperCase();
@@ -166,29 +181,26 @@ const CommodityDetail = () => {
     }
   };
 
-  const { data } = useQuery({
-    queryKey: ["commodities"],
-    queryFn: fetchCommodities,
-    staleTime: 30 * 60 * 1000,
+  const { data: commodity, isLoading } = useQuery({
+    queryKey: ["commodity", apiKey],
+    queryFn: () => fetchCommodity(apiKey),
+    staleTime: 5 * 60 * 1000,
   });
-  const commodity = data?.items?.find((c: CommoditySpot) => c.key === apiKey);
+
   const price = commodity?.price ?? null;
   const changePct = commodity?.change_pct ?? null;
+  const changeAbs = commodity?.change_abs ?? null;
   const isUp = (changePct ?? 0) >= 0;
-  const changeAbs = price && changePct ? +(price * changePct / 100).toFixed(2) : null;
-  const now = new Date();
-  const timeStr = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")} ET`;
-
+  const isDown = changePct != null && changePct < 0;
+  const priceCcy = ccyPrefix(commodity?.currency);
+  const providerLabel = commodity?.provider === "yahoo" ? "Yahoo Finance" : "TradingView";
   const tvSymbol = COMMODITY_TV[key] || null;
-
-  const simOpen = price ? +(price * (1 - (changePct || 0) / 100 * 0.3)).toFixed(2) : null;
-  const simHigh = price ? +(price * 1.003).toFixed(2) : null;
-  const simLow = price ? +(price * 0.992).toFixed(2) : null;
-  const simPrevClose = price && changeAbs != null ? +(price - changeAbs).toFixed(2) : null;
-  const simVolume = price ? `${(Math.random() * 300 + 50).toFixed(1)}K` : "-";
+  const prevClose =
+    price != null && changeAbs != null ? +(price - changeAbs).toFixed(key === "GOLD" || key === "SLVR" ? 2 : 4) : null;
 
   const fmtPrice = (n: number) =>
-    n.toLocaleString(undefined, { maximumFractionDigits: key === "GOLD" || key === "SLVR" ? 2 : 0 });
+    n.toLocaleString(undefined, { maximumFractionDigits: key === "GOLD" || key === "SLVR" ? 1 : 2 });
+  const px = (n: number | null | undefined) => (n != null ? `${priceCcy}${fmtPrice(n)}` : "-");
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -221,23 +233,28 @@ const CommodityDetail = () => {
                 </span>
               </div>
               <h1 className="font-display text-4xl md:text-5xl tracking-tight">{meta.fullName}</h1>
-              {price !== null && (
+              {isLoading ? (
+                <p className="mt-3 text-sm text-muted-foreground">Loading quote…</p>
+              ) : price !== null ? (
                 <div className="mt-3 flex items-baseline gap-3 flex-wrap">
-                  <span className="font-mono text-3xl font-semibold">${fmtPrice(price)}</span>
-                  {changePct !== null && (
+                  <span className="font-mono text-3xl font-semibold">{px(price)}</span>
+                  {changePct != null && (
                     <span
                       className={`font-mono text-sm flex items-center gap-1 ${
-                        isUp ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]"
+                        isUp ? "text-[hsl(var(--up))]" : isDown ? "text-[hsl(var(--down))]" : "text-muted-foreground"
                       }`}
                     >
                       {isUp ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownRight className="h-4 w-4" />}
-                      {changeAbs !== null && `${isUp ? "+" : ""}${changeAbs}`} ({isUp ? "+" : ""}
-                      {changePct.toFixed(2)}%)
+                      {changeAbs != null &&
+                        `${changeAbs >= 0 ? "+" : "-"}${fmtPrice(Math.abs(changeAbs))}`}
+                      {" "}({changePct >= 0 ? "+" : ""}{changePct.toFixed(2)}%)
                     </span>
                   )}
-                  <span className="text-xs text-muted-foreground font-mono">· Live · Last: {timeStr}</span>
+                  <span className="text-xs text-muted-foreground font-mono">
+                    · {providerLabel} · Delayed · Day change vs prior close
+                  </span>
                 </div>
-              )}
+              ) : null}
             </div>
             <div className="flex gap-2">
               <button
@@ -262,29 +279,63 @@ const CommodityDetail = () => {
           </div>
         </header>
 
-        <MarketDetailLayout
-          chartSymbol={tvSymbol}
-          chartLabel={tvSymbol || undefined}
-          aboutTitle={`About ${key}`}
-          aboutBody={
-            <>
-              <p>{meta.about}</p>
-              <p className="text-muted-foreground font-mono text-xs">Quoted in {meta.currency}</p>
-            </>
-          }
-          stats={[
-            ...(simPrevClose != null
-              ? [{ label: "Prev close", value: `$${fmtPrice(simPrevClose)}` }]
-              : []),
-            ...(simOpen != null ? [{ label: "Open", value: `$${fmtPrice(simOpen)}` }] : []),
-            ...(simHigh != null ? [{ label: "Day high", value: `$${fmtPrice(simHigh)}` }] : []),
-            ...(simLow != null ? [{ label: "Day low", value: `$${fmtPrice(simLow)}` }] : []),
-            { label: "Volume", value: simVolume },
-            { label: "Unit", value: meta.unit },
-          ]}
-          marketNewsSection={<MarketNewsKeywordSection keyword={meta.name} />}
-          discussion={<CommodityDiscussion commodityKey={key} />}
-        />
+        <div className="grid lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm h-full flex flex-col">
+              <div className="space-y-1.5 p-6 pb-3 flex flex-row items-center justify-between gap-3 flex-wrap shrink-0">
+                <h3 className="font-semibold tracking-tight font-display text-xl">Price</h3>
+                {tvSymbol && (
+                  <span className="font-mono text-[11px] text-muted-foreground">{tvSymbol}</span>
+                )}
+              </div>
+              <div className="p-6 pt-0 flex-1 min-h-0">
+                <TradingViewChart symbol={tvSymbol} />
+              </div>
+            </div>
+          </div>
+
+          <aside className="lg:col-span-1 flex flex-col gap-6">
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
+              <div className="flex flex-col space-y-1.5 p-6 pb-2">
+                <h3 className="font-semibold font-display text-base uppercase tracking-wider">Key stats</h3>
+              </div>
+              <div className="p-6 pt-0">
+                <dl className="grid grid-cols-2 gap-y-3 text-sm">
+                  <dt className="text-xs uppercase tracking-wider text-muted-foreground">Prev close</dt>
+                  <dd className="font-mono text-right font-semibold">{px(prevClose)}</dd>
+                  <dt className="text-xs uppercase tracking-wider text-muted-foreground">Open</dt>
+                  <dd className="font-mono text-right font-semibold">{px(commodity?.open ?? null)}</dd>
+                  <dt className="text-xs uppercase tracking-wider text-muted-foreground">Day high</dt>
+                  <dd className="font-mono text-right font-semibold">{px(commodity?.high ?? null)}</dd>
+                  <dt className="text-xs uppercase tracking-wider text-muted-foreground">Day low</dt>
+                  <dd className="font-mono text-right font-semibold">{px(commodity?.low ?? null)}</dd>
+                  <dt className="text-xs uppercase tracking-wider text-muted-foreground">Volume</dt>
+                  <dd className="font-mono text-right font-semibold">{fmtVol(commodity?.volume ?? null)}</dd>
+                  <dt className="text-xs uppercase tracking-wider text-muted-foreground">Unit</dt>
+                  <dd className="font-mono text-right font-semibold">{meta.unit}</dd>
+                </dl>
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
+              <div className="flex flex-col space-y-1.5 p-6 pb-3">
+                <h3 className="font-semibold tracking-tight font-display text-lg">About {meta.fullName}</h3>
+                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground pt-1">
+                  Quoted in {meta.currency}
+                </p>
+              </div>
+              <div className="p-6 pt-0">
+                <p className="text-sm leading-relaxed text-foreground/90">{meta.about}</p>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        <MarketNewsFeedSection keyword={meta.name} title={`${meta.fullName} in the news`} />
+
+        <div className="mt-4">
+          <CommodityDiscussion commodityKey={key} />
+        </div>
 
         <p className="text-xs text-muted-foreground mt-10 leading-relaxed border-t border-border pt-4">
           Orewire market data is provided for informational purposes only and may be delayed. Not investment advice.
@@ -363,7 +414,7 @@ const CommodityDiscussion = ({ commodityKey }: { commodityKey: string }) => {
 
   return (
     <>
-      <section className="mt-10">
+      <section>
         <div className="flex items-end justify-between mb-6 border-b border-border pb-4">
           <div>
             <h2 className="font-display text-2xl tracking-tight leading-none flex items-center gap-2">

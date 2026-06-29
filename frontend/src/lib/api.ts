@@ -525,6 +525,30 @@ export interface CommoditySpot {
   unit: string;
   price: number | null;
   change_pct: number | null;
+  change_abs?: number | null;
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
+  volume?: number | null;
+  currency?: string | null;
+  source?: string | null;
+  provider?: string | null;
+}
+
+export interface CommodityDetailSpot extends CommoditySpot {
+  updatedAt: string;
+  history_symbol: string | null;
+}
+
+export interface CommodityHistoryPoint {
+  t: number;
+  date: string;
+  label: string;
+  close: number;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  volume: number | null;
 }
 
 export interface CommoditiesResponse {
@@ -535,6 +559,22 @@ export interface CommoditiesResponse {
 export async function fetchCommodities(): Promise<CommoditiesResponse> {
   const res = await fetch(`${API_BASE}/market/commodities`);
   if (!res.ok) throw new Error(`Failed to fetch commodities: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchCommodity(key: string): Promise<CommodityDetailSpot> {
+  const res = await fetch(`${API_BASE}/market/commodities/${encodeURIComponent(key)}`);
+  if (!res.ok) throw new Error(`Failed to fetch commodity: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchCommodityHistory(
+  key: string,
+  range: string,
+): Promise<{ range: string; symbol: string | null; points: CommodityHistoryPoint[] }> {
+  const qs = new URLSearchParams({ range });
+  const res = await fetch(`${API_BASE}/market/commodities/${encodeURIComponent(key)}/history?${qs}`);
+  if (!res.ok) throw new Error(`Failed to fetch commodity history: ${res.status}`);
   return res.json();
 }
 
