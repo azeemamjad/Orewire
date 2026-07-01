@@ -58,26 +58,42 @@ function walkPdfs(dir, out = []) {
   return out;
 }
 
+function normalizeNameHint(dirName) {
+  return dirName
+    .replace(/_+$/g, '')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function tickerFromFilename(filename) {
+  const m = filename.match(/_-_{1,2}([A-Z][A-Z0-9]{1,5})_/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
 function parseFolderName(dirName) {
   const paren = dirName.match(/\(([A-Z0-9.-]{1,12})\)\s*$/i);
   if (paren) {
     return {
       ticker: paren[1].toUpperCase(),
-      nameHint: dirName.replace(/\s*\([^)]+\)\s*$/, '').replace(/_/g, ' ').trim(),
+      nameHint: normalizeNameHint(dirName.replace(/\s*\([^)]+\)\s*$/, '')),
     };
   }
   if (/^[A-Z0-9.-]{1,12}$/i.test(dirName)) {
     return { ticker: dirName.toUpperCase(), nameHint: null };
   }
-  return { ticker: null, nameHint: dirName.replace(/_/g, ' ').trim() };
+  return { ticker: null, nameHint: normalizeNameHint(dirName) };
 }
 
-async function resolveCompany(client, folderName) {
+async function resolveCompany(client, folderName, pdfFilename = null) {
   const { ticker, nameHint } = parseFolderName(folderName);
-  if (ticker) {
+  const tickers = [ticker, tickerFromFilename(pdfFilename)].filter(Boolean);
+  for (const t of [...new Set(tickers)]) {
     const byTicker = await client.query(
-      `SELECT id, name, exchange FROM companies WHERE UPPER(ticker) = $1 LIMIT 1`,
-      [ticker],
+      `SELECT id, name, exchange FROM companies
+       WHERE UPPER(ticker) = $1 OR UPPER(sedar_ticker) = $1
+       LIMIT 1`,
+      [t],
     );
     if (byTicker.rows[0]) return byTicker.rows[0];
   }
@@ -123,6 +139,7 @@ async function indexExistingFilings(client, knownPaths, knownHashes) {
   );
 
   let backfilled = 0;
+  let backfillSkipped = 0;
   for (const row of rows) {
     addKnownPath(knownPaths, row.pdf_path);
     if (row.content_sha256) {
@@ -142,15 +159,22 @@ async function indexExistingFilings(client, knownPaths, knownHashes) {
     const hash = await sha256File(localPath);
     knownHashes.add(hash);
     if (!DRY_RUN) {
-      await client.query(
-        `UPDATE filings SET content_sha256 = $1 WHERE id = $2 AND content_sha256 IS NULL`,
+      const upd = await client.query(
+        `UPDATE filings SET content_sha256 = $1
+         WHERE id = $2 AND content_sha256 IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM filings f2
+             WHERE f2.content_sha256 = $1 AND f2.id <> $2
+           )
+         RETURNING id`,
         [hash, row.id],
       );
-      backfilled++;
+      if (upd.rows.length > 0) backfilled++;
+      else backfillSkipped++;
     }
   }
 
-  return { indexed: rows.length, backfilled };
+  return { indexed: rows.length, backfilled, backfillSkipped };
 }
 
 function objectKeyForHash(hash) {
@@ -193,6 +217,9 @@ async function main() {
     if (index.backfilled > 0) {
       console.log(`[import] backfilled content_sha256 on ${index.backfilled} row(s)`);
     }
+    if (index.backfillSkipped > 0) {
+      console.log(`[import] skipped backfill on ${index.backfillSkipped} duplicate-content row(s)`);
+    }
 
     if (!DRY_RUN) await ensureBucket();
 
@@ -215,7 +242,7 @@ async function main() {
 
         let companyRow = companyCache.get(folderName);
         if (companyRow === undefined) {
-          companyRow = await resolveCompany(client, folderName);
+          companyRow = await resolveCompany(client, folderName, pdfFilename);
           companyCache.set(folderName, companyRow);
         }
         if (!companyRow) {
