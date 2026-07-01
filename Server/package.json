@@ -13,7 +13,9 @@
     "relay:test-proxies": "node scripts/test-relay-proxies.js",
     "relay:test-security": "node scripts/test-relay-security.js",
     "relay:test-wire": "node scripts/test-relay-wire.js",
-    "migrate:filings-minio": "node scripts/migrate-filings-to-minio.js"
+    "migrate:filings-minio": "node scripts/migrate-filings-to-minio.js",
+    "import:orphan-pdfs": "node scripts/import-orphan-pdfs.js",
+    "audit:filing-storage": "node scripts/audit-filing-storage.js"
   },
   "dependencies": {
     "cheerio": "^1.2.0",

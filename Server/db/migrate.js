@@ -245,6 +245,8 @@ async function migrate() {
 
   // Filing source URL (link back to the original document on SEDAR+/ASX)
   await safeQuery(`ALTER TABLE filings ADD COLUMN IF NOT EXISTS source_url TEXT`);
+  await safeQuery(`ALTER TABLE filings ADD COLUMN IF NOT EXISTS content_sha256 TEXT`);
+  await safeQuery(`CREATE UNIQUE INDEX IF NOT EXISTS idx_filings_content_sha256 ON filings(content_sha256) WHERE content_sha256 IS NOT NULL`);
 
   // Insider ownership — current snapshot, one row per (company, insider).
   // Populated from filings (SEDI / proxy / director interest / substantial holder).
