@@ -452,3 +452,13 @@ async function migrate() {
 }
 
 module.exports = migrate;
+
+if (require.main === module) {
+  migrate()
+    .then(() => db.end())
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error('[DB] Migration failed:', err);
+      process.exit(1);
+    });
+}

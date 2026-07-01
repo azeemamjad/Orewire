@@ -12,6 +12,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const db = require('../db');
+const migrate = require('../db/migrate');
 const {
   isMinioEnabled,
   isMinioPath,
@@ -186,6 +187,7 @@ async function main() {
   };
 
   try {
+    await migrate();
     const index = await indexExistingFilings(client, knownPaths, knownHashes);
     console.log(`[import] indexed ${index.indexed} existing filing(s); hashes known: ${knownHashes.size}`);
     if (index.backfilled > 0) {
