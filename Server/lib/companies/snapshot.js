@@ -8,6 +8,7 @@ const {
   deriveCommodities,
   deriveCountry,
 } = require('./enrich');
+const { chatWithSystem } = require('../ai/client');
 
 /** In-flight generation jobs per company_id */
 const activeGenerations = new Map();
@@ -28,25 +29,6 @@ function recordFailure(companyId, inputHash) {
 
 function clearFailure(companyId) {
   recentFailures.delete(companyId);
-}
-
-async function readHttpBody(res) {
-  try {
-    const text = await res.text();
-    return typeof text === 'string' ? text : String(text);
-  } catch (err) {
-    return `[response body unreadable: ${err?.message || err}]`;
-  }
-}
-
-function formatOllamaHttpError(res, body) {
-  const snippet = body.slice(0, 500);
-  const status = res.status;
-  if (status === 429) return `HTTP 429 Too Many Requests (rate limited): ${snippet}`;
-  if (status === 401) return `HTTP 401 Unauthorized (check OLLAMA_API_KEY): ${snippet}`;
-  if (status === 403) return `HTTP 403 Forbidden: ${snippet}`;
-  if (status >= 500) return `HTTP ${status} Server Error: ${snippet}`;
-  return `HTTP ${status}: ${snippet}`;
 }
 
 const SNAPSHOT_SYSTEM = `You are a senior mining analyst writing a "what's happening now" snapshot for retail investors on TSX-V, CSE, TSX, and ASX junior miners.
@@ -134,51 +116,7 @@ function formatMarketBlock(quote, exchange) {
   return parts.join(', ');
 }
 
-async function callOllama(prompt) {
-  const base = process.env.OLLAMA_HOST || 'https://ollama.com';
-  const model = process.env.OLLAMA_MODEL || 'kimi';
-  const apiKey = process.env.OLLAMA_API_KEY;
-  const headers = { 'Content-Type': 'application/json' };
-  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-
-  const url = `${base}/api/chat`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model,
-      stream: false,
-      messages: [
-        { role: 'system', content: SNAPSHOT_SYSTEM },
-        { role: 'user', content: prompt },
-      ],
-    }),
-  });
-
-  const body = await readHttpBody(res);
-  if (!res.ok) {
-    const errMsg = formatOllamaHttpError(res, body);
-    console.error(`[Snapshot] Ollama request failed (${url}, model=${model}): ${errMsg}`);
-    throw new Error(errMsg);
-  }
-
-  let data;
-  try {
-    data = JSON.parse(body);
-  } catch {
-    const errMsg = `Ollama response not JSON (HTTP ${res.status}): ${body.slice(0, 300)}`;
-    console.error(`[Snapshot] ${errMsg}`);
-    throw new Error(errMsg);
-  }
-
-  const content = (data.message?.content || '').trim();
-  if (!content) {
-    throw new Error('Ollama returned empty message content');
-  }
-  return content;
-}
-
-// Strip AI-tell punctuation from generated prose: em/en dashes, smart quotes,
+// Strip AI-tell punctuation from generated prose
 // ellipsis characters and stray markdown emphasis. Em dashes used as a
 // parenthetical separator become commas; numeric ranges become hyphens.
 // Whitespace around dashes is limited to spaces/tabs so paragraph breaks survive.
@@ -538,11 +476,16 @@ async function regenerateCompanySnapshot(companyId) {
   if (!ctx) return null;
 
   let parsed;
-  let model = process.env.OLLAMA_MODEL || 'kimi';
+  let model;
   try {
     const prompt = buildSnapshotPrompt(ctx);
-    const raw = await callOllama(prompt);
-    parsed = parseSnapshotText(raw);
+    const result = await chatWithSystem({
+      feature: 'company_snapshot',
+      system: SNAPSHOT_SYSTEM,
+      user: prompt,
+    });
+    model = result.model;
+    parsed = parseSnapshotText(result.content);
     if (!parsed.paragraphs.length) throw new Error('Empty snapshot from model');
   } catch (err) {
     recordFailure(companyId, ctx.inputHash);

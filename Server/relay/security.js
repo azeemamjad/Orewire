@@ -1,7 +1,7 @@
 const { URL } = require('url');
 const net = require('net');
 
-const WORKER_ID_RE = /^relay-(dc|res|local)-\d+$/;
+const WORKER_ID_RE = /^relay-(proxy-\d+|direct-1)$/;
 const TOKEN_RE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 const MAX_TOKEN_LEN = 512;
 

@@ -42,6 +42,8 @@ const adminApiRouter = express.Router();
 adminApiRouter.use(auth.requireAdminApi);
 adminApiRouter.use('/users', require('./routes/admin/admin-users'));
 adminApiRouter.use('/va-tasks', require('./routes/admin/admin-va-tasks'));
+adminApiRouter.use('/proxies', require('./routes/admin/admin-proxies'));
+adminApiRouter.use('/ai', require('./routes/admin/admin-ai'));
 adminApiRouter.use('/contact-messages', require('./routes/api/contact').adminRouter);
 app.use('/api', apiRouter);
 app.use('/api/admin', adminApiRouter);
@@ -87,6 +89,13 @@ async function start() {
     }
   } catch (err) {
     console.error('[DB] Migration failed (non-fatal):', err?.message || err);
+  }
+
+  try {
+    const { pruneUsageLogs } = require('./lib/usage-log-retention');
+    await pruneUsageLogs();
+  } catch (err) {
+    console.error('[usage-log] Startup prune failed (non-fatal):', err?.message || err);
   }
 
   const server = app.listen(PORT, () => {

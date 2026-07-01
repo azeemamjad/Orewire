@@ -6,6 +6,7 @@ const path    = require('path');
 const fs      = require('fs');
 const db      = require('../../db');
 const { upsertInsiderData } = require('../../db/insiders');
+const { chatWithSystem } = require('../../lib/ai/client');
 
 const upload = multer({ dest: './uploads/' });
 
@@ -66,30 +67,13 @@ function parseSheet(sheet, headerRow) {
 // ---------------------------------------------------------------------------
 
 async function callOllama(prompt) {
-  const base   = process.env.OLLAMA_HOST  || 'https://ollama.com';
-  const model  = process.env.OLLAMA_MODEL || 'qwen3.5:cloud';
-  const apiKey = process.env.OLLAMA_API_KEY;
-  const headers = { 'Content-Type': 'application/json' };
-  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
-
-  const ctrl  = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 45_000);
-  try {
-    const res = await fetch(`${base}/api/chat`, {
-      method: 'POST', headers, signal: ctrl.signal,
-      body: JSON.stringify({
-        model, stream: false,
-        messages: [
-          { role: 'system', content: 'You are a data validation assistant. Respond ONLY with valid JSON — no markdown, no extra text.' },
-          { role: 'user',   content: prompt },
-        ],
-      }),
-    });
-    if (!res.ok) throw new Error(`Ollama ${res.status}: ${await res.text()}`);
-    return (await res.json()).message?.content || '{}';
-  } finally {
-    clearTimeout(timer);
-  }
+  const { content } = await chatWithSystem({
+    feature: 'upload_validation',
+    system: 'You are a data validation assistant. Respond ONLY with valid JSON — no markdown, no extra text.',
+    user: prompt,
+    timeoutMs: 45_000,
+  });
+  return content || '{}';
 }
 
 function buildValidationPrompt(columns, sample30) {
@@ -317,9 +301,7 @@ function inferCommodity(summary, tickerSummary) {
 
 // POST /api/upload/sync-analyses
 router.post('/sync-analyses', express.json(), async (req, res) => {
-  const downloadsDir = path.resolve(
-    process.env.DOWNLOADS_DIR || path.join(__dirname, '../../Scraper/downloads')
-  );
+  const downloadsDir = require('../../lib/scraper/paths').DOWNLOADS_DIR;
   if (!fs.existsSync(downloadsDir))
     return res.status(404).json({ error: `Downloads dir not found: ${downloadsDir}` });
 

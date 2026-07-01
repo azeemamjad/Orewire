@@ -1,34 +1,21 @@
 // Transfer-agent pipeline for TSX / TSX-V companies.
 // TMX Money doesn't publish transfer agents, so we scrape SEDAR+ issuer profiles
-// with Playwright (in the Scraper project) and write the result back here.
+// in-process via lib/scraper and write results back here.
 
 require('dotenv').config();
-const { spawn } = require('child_process');
-const fs   = require('fs');
-const os   = require('os');
-const path = require('path');
 const db = require('../db');
 const { addLog } = require('../pipeline/state');
 const {
   isJobRunning,
   syncJob,
   startJob,
-  updateJobPid,
   endJob,
   isPidAlive,
 } = require('../lib/job-tracker');
-
-const SCRAPER_DIR = path.resolve(process.env.SCRAPER_PATH || path.join(__dirname, '../Scraper'));
-const TA_SCRIPT   = path.join(SCRAPER_DIR, 'transfer-agents.js');
 const JOB_ID = 'transfer-agents';
-const TA_CANCEL_KEY = 'pipeline_transfer_agents';
-
-let _childProc = null;
-let _runActive = false;
 
 function isRunning() {
   if (_runActive) return true;
-  if (_childProc && _childProc.exitCode == null) return true;
   syncJob(JOB_ID);
   const job = require('../lib/job-tracker').getJob(JOB_ID);
   if (job?.status === 'running') {
@@ -46,13 +33,6 @@ function stopTransferAgentScrape() {
   } catch {
     /* relay module may be unavailable */
   }
-  if (_childProc && _childProc.exitCode == null) {
-    try {
-      _childProc.kill('SIGTERM');
-    } catch {
-      /* ignore */
-    }
-  }
   const job = require('../lib/job-tracker').getJob(JOB_ID);
   if (job?.pid && job.pid !== process.pid && isPidAlive(job.pid)) {
     try {
@@ -62,7 +42,6 @@ function stopTransferAgentScrape() {
     }
   }
   endJob(JOB_ID, 'stopped');
-  _childProc = null;
 }
 
 async function fetchCompanies({ limit, ticker, all }) {
@@ -92,11 +71,10 @@ async function fetchCompanies({ limit, ticker, all }) {
   return r.rows;
 }
 
-function workerEnv() {
-  return { ...process.env, HEADLESS: 'true', TA_DEBUG: '1' };
-}
-
 const TA_RESULT_MARKER = '__OREWIRE_TA_RESULT__';
+const TA_CANCEL_KEY = 'pipeline_transfer_agents';
+
+let _runActive = false;
 
 async function persistTaResult(row, dryRun, stats) {
   if (row.error) {
@@ -153,39 +131,6 @@ function handleScraperLine(line, dryRun, stats, pending) {
     return;
   }
   addLog('out', `[TA] ${line}`);
-}
-
-function attachScraperStreams(proc, dryRun) {
-  const stats = { ok: 0, miss: 0, fail: 0 };
-  const pending = [];
-  let bufOut = '';
-  let bufErr = '';
-
-  const feed = (prev, chunk) => {
-    const combined = prev + chunk;
-    const lines = combined.split('\n');
-    const rest = lines.pop() ?? '';
-    for (const line of lines) {
-      if (line.trim()) handleScraperLine(line, dryRun, stats, pending);
-    }
-    return rest;
-  };
-
-  proc.stdout.on('data', (d) => { bufOut = feed(bufOut, String(d)); });
-  proc.stderr.on('data', (d) => { bufErr = feed(bufErr, String(d)); });
-
-  return {
-    stats,
-    pending,
-    flush() {
-      if (bufOut.trim()) handleScraperLine(bufOut.trim(), dryRun, stats, pending);
-      if (bufErr.trim()) handleScraperLine(bufErr.trim(), dryRun, stats, pending);
-    },
-  };
-}
-
-function useRelayScrapers() {
-  return process.env.RELAY_ENABLED === 'true' && process.env.RELAY_WIRE_SCRAPERS !== 'false';
 }
 
 // Proxy/connectivity failure on the worker → worth retrying on the next tier.
@@ -269,39 +214,6 @@ async function runScraperViaRelay(companies, dryRun) {
   return { results, stats };
 }
 
-function runScraper(inputPath, outputPath, dryRun = false) {
-  if (useRelayScrapers()) {
-    const companies = JSON.parse(fs.readFileSync(inputPath, 'utf8'));
-    return runScraperViaRelay(companies, dryRun);
-  }
-
-  return new Promise((resolve, reject) => {
-    const proc = spawn(process.execPath, [TA_SCRIPT, '--input', inputPath, '--output', outputPath], {
-      cwd: SCRAPER_DIR,
-      env: workerEnv(),
-    });
-    _childProc = proc;
-    updateJobPid(JOB_ID, proc.pid);
-
-    const streams = attachScraperStreams(proc, dryRun);
-
-    proc.on('error', reject);
-    proc.on('close', (code) => {
-      _childProc = null;
-      streams.flush();
-      Promise.allSettled(streams.pending).then(() => {
-        if (code !== 0) return reject(new Error(`Scraper exited with code ${code}`));
-        try {
-          const results = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
-          resolve({ results, stats: streams.stats });
-        } catch (e) {
-          reject(new Error(`Could not read scraper output: ${e.message}`));
-        }
-      });
-    });
-  });
-}
-
 async function runTransferAgentScrape(opts = {}) {
   syncJob(JOB_ID);
   if (isJobRunning(JOB_ID)) {
@@ -327,10 +239,6 @@ async function runTransferAgentScrape(opts = {}) {
 
   addLog('out', `[TA] Starting SEDAR+ transfer-agent scrape (TSX/TSX-V): ${JSON.stringify(args)}`);
 
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orewire-ta-'));
-  const inputPath  = path.join(tmpDir, 'companies.json');
-  const outputPath = path.join(tmpDir, 'results.json');
-
   try {
     const companies = await fetchCompanies(args);
     addLog('out', `[TA] ${companies.length} companies queued`);
@@ -339,8 +247,7 @@ async function runTransferAgentScrape(opts = {}) {
       return { total: 0, ok: 0, miss: 0, fail: 0 };
     }
 
-    fs.writeFileSync(inputPath, JSON.stringify(companies));
-    const scrapeOut = await runScraper(inputPath, outputPath, args.dryRun);
+    const scrapeOut = await runScraperViaRelay(companies, args.dryRun);
     const { results, stats, stopped } = scrapeOut;
 
     if (stopped) {
@@ -362,8 +269,6 @@ async function runTransferAgentScrape(opts = {}) {
     throw err;
   } finally {
     _runActive = false;
-    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
-    _childProc = null;
   }
 }
 

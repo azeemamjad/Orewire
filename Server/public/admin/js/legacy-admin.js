@@ -29,6 +29,8 @@ function initAdminPage() {
   if (page === 'pipeline') pipelineInit();
   if (page === 'processes') processesInit();
   if (page === 'users') loadUsers();
+  if (page === 'proxies') loadProxies();
+  if (page === 'ai') loadAi();
   if (page === 'va-tasks') initVaTasks();
   if (page === 'contact-messages') initContactMessages();
 }
@@ -1955,6 +1957,319 @@ async function loadUsers() {
   } catch (err) {
     tbody.innerHTML = `<tr class="empty-row"><td colspan="7">${esc(err.message)}</td></tr>`;
   }
+}
+
+// ── Proxies (admin) ──
+let _proxyEditId = null;
+
+function tierTag(tier) {
+  if (tier === 'datacenter') return '<span class="tier-tag dc">DC</span>';
+  if (tier === 'residential') return '<span class="tier-tag res">RES</span>';
+  return '<span class="tier-tag direct">DIRECT</span>';
+}
+
+function openProxyModal(id) {
+  _proxyEditId = id || null;
+  const form = document.getElementById('proxy-form');
+  form?.reset();
+  document.getElementById('px-id').value = id ? String(id) : '';
+  document.getElementById('proxy-modal-title').textContent = id ? 'Edit proxy' : 'Add proxy';
+  document.getElementById('px-enabled').checked = true;
+  if (id) {
+    const row = (_proxiesCache || []).find((p) => p.id === id);
+    if (row) {
+      document.getElementById('px-name').value = row.name || '';
+      document.getElementById('px-tier').value = row.tier || 'datacenter';
+      document.getElementById('px-host').value = row.host || '';
+      document.getElementById('px-port').value = row.port || '';
+      document.getElementById('px-username').value = row.username || '';
+      document.getElementById('px-sessid').value = row.sessid || '';
+      document.getElementById('px-sort').value = row.sortOrder ?? 0;
+      document.getElementById('px-enabled').checked = !!row.enabled;
+    }
+  }
+  document.getElementById('proxy-modal')?.classList.add('open');
+}
+
+function closeProxyModal() {
+  _proxyEditId = null;
+  document.getElementById('proxy-modal')?.classList.remove('open');
+}
+
+let _proxiesCache = [];
+
+function usageErrorCell(message, status) {
+  if ((status === 'error' || status === 'captcha') && message) {
+    return `<td class="usage-error">${esc(message)}</td>`;
+  }
+  return '<td>—</td>';
+}
+
+async function loadProxyUsageLog() {
+  const usageBody = document.getElementById('proxy-usage-body');
+  if (!usageBody) return;
+  usageBody.innerHTML = '<tr class="empty-row"><td colspan="6">Loading…</td></tr>';
+  try {
+    const data = await fetch(`${API}/api/admin/proxies/usage-events`).then((r) => r.json());
+    if (data.error) throw new Error(data.error);
+    const retentionEl = document.getElementById('proxy-retention-days');
+    if (retentionEl && data.retentionDays != null) retentionEl.textContent = String(data.retentionDays);
+    const items = data.items || [];
+    if (!items.length) {
+      usageBody.innerHTML = '<tr class="empty-row"><td colspan="6">No usage in retention window.</td></tr>';
+      return;
+    }
+    usageBody.innerHTML = items.map((e) => {
+      const when = e.startedAt ? new Date(e.startedAt).toLocaleString() : '—';
+      const statusCls = e.status === 'success' ? 'proxy-enabled' : 'proxy-disabled';
+      return `<tr>
+        <td>${esc(e.proxyName || '—')}</td>
+        <td><code>${esc(e.workerId || '—')}</code></td>
+        <td>${esc(e.taskSlug || '—')}</td>
+        <td class="${statusCls}">${esc(e.status || '—')}</td>
+        ${usageErrorCell(e.errorMessage, e.status)}
+        <td style="font-size:12px;color:var(--muted);">${esc(when)}</td>
+      </tr>`;
+    }).join('');
+  } catch (err) {
+    usageBody.innerHTML = `<tr class="empty-row"><td colspan="6">${esc(err.message)}</td></tr>`;
+  }
+}
+
+async function loadProxies() {
+  const tbody = document.getElementById('proxies-body');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr class="empty-row"><td colspan="9">Loading…</td></tr>';
+  try {
+    const data = await fetch(`${API}/api/admin/proxies`).then((r) => r.json());
+    if (data.error) throw new Error(data.error);
+    const items = data.items || [];
+    _proxiesCache = items;
+    const totalEl = document.getElementById('proxies-total');
+    if (totalEl) totalEl.textContent = String(data.total ?? items.length);
+    const direct = data.directWorker;
+    const directRow = direct ? `<tr class="proxy-direct-row">
+      <td>${esc(direct.name)} <span style="font-size:11px;color:var(--muted);">(${esc(direct.id)})</span></td>
+      <td>${tierTag('direct')}</td>
+      <td>—</td>
+      <td>—</td>
+      <td class="proxy-enabled">Always on</td>
+      <td>—</td>
+      <td>—</td>
+      <td>—</td>
+      <td><em>Not editable</em></td>
+    </tr>` : '';
+    if (!items.length && !direct) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No proxies configured. Add one or run the seed script on the server.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = directRow + items.map((p) => {
+      const lastUsed = p.lastUsedAt ? new Date(p.lastUsedAt).toLocaleString() : '—';
+      const enabledCls = p.enabled ? 'proxy-enabled' : 'proxy-disabled';
+      const enabledTxt = p.enabled ? 'Yes' : 'No';
+      return `<tr>
+        <td>${esc(p.name)}</td>
+        <td>${tierTag(p.tier)}</td>
+        <td><code>${esc(p.host)}:${p.port}</code></td>
+        <td>${esc(p.username || (p.passwordSet ? '••••' : '—'))}</td>
+        <td class="${enabledCls}">${enabledTxt}</td>
+        <td>${p.sessionCount ?? 0}</td>
+        <td>${p.errorCount ?? 0}</td>
+        <td style="font-size:12px;color:var(--muted);">${esc(lastUsed)}</td>
+        <td class="proxy-actions">
+          <button class="btn btn-ghost btn-sm" type="button" onclick="openProxyModal(${p.id})">Edit</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="testProxy(${p.id})">Test</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="deleteProxy(${p.id})">Delete</button>
+        </td>
+      </tr>`;
+    }).join('');
+    loadProxyUsageLog();
+  } catch (err) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="9">${esc(err.message)}</td></tr>`;
+    loadProxyUsageLog();
+  }
+}
+
+async function submitProxy(e) {
+  e.preventDefault();
+  const id = document.getElementById('px-id')?.value.trim();
+  const body = {
+    name: document.getElementById('px-name')?.value.trim(),
+    tier: document.getElementById('px-tier')?.value,
+    host: document.getElementById('px-host')?.value.trim(),
+    port: parseInt(document.getElementById('px-port')?.value, 10),
+    username: document.getElementById('px-username')?.value.trim(),
+    sessid: document.getElementById('px-sessid')?.value.trim() || null,
+    sortOrder: parseInt(document.getElementById('px-sort')?.value, 10) || 0,
+    enabled: document.getElementById('px-enabled')?.checked,
+  };
+  const pw = document.getElementById('px-password')?.value;
+  if (pw) body.password = pw;
+  try {
+    const url = id ? `${API}/api/admin/proxies/${id}` : `${API}/api/admin/proxies`;
+    const r = await fetch(url, {
+      method: id ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    closeProxyModal();
+    toast(id ? 'Proxy updated' : 'Proxy created');
+    loadProxies();
+  } catch (err) { toast(err.message, 'err'); }
+}
+
+async function deleteProxy(id) {
+  const row = (_proxiesCache || []).find((p) => p.id === id);
+  const name = row?.name || `proxy ${id}`;
+  if (!confirm(`Delete proxy "${name}"? Rebuild the pool after deleting.`)) return;
+  try {
+    const r = await fetch(`${API}/api/admin/proxies/${id}`, { method: 'DELETE' }).then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    toast('Proxy deleted');
+    loadProxies();
+  } catch (err) { toast(err.message, 'err'); }
+}
+
+async function testProxy(id) {
+  toast('Testing proxy…');
+  try {
+    const r = await fetch(`${API}/api/admin/proxies/${id}/test`, { method: 'POST' }).then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    const t = r.test;
+    if (t?.ok) toast(`OK — HTTP ${t.status} in ${t.ms}ms`);
+    else toast(`Failed: ${t?.error || 'unknown error'}`, 'err');
+  } catch (err) { toast(err.message, 'err'); }
+}
+
+async function rebuildProxyPool() {
+  if (!confirm('Rebuild the Relay browser pool? Running tasks may be interrupted.')) return;
+  toast('Rebuilding pool…');
+  try {
+    const r = await fetch(`${API}/api/admin/proxies/rebuild-pool`, { method: 'POST' }).then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    toast(`Pool rebuilt (${(r.workers || []).length} workers)`);
+  } catch (err) { toast(err.message, 'err'); }
+}
+
+// ── AI / Ollama (admin) ──
+let _aiProvider = null;
+
+function openAiModal() {
+  const p = _aiProvider;
+  document.getElementById('ai-id').value = p?.id ? String(p.id) : '';
+  document.getElementById('ai-name').value = p?.name || 'Ollama Cloud';
+  document.getElementById('ai-host').value = p?.host || 'https://ollama.com';
+  document.getElementById('ai-model').value = p?.defaultModel || '';
+  document.getElementById('ai-key').value = '';
+  document.getElementById('ai-enabled').checked = p ? !!p.enabled : true;
+  document.getElementById('ai-modal')?.classList.add('open');
+}
+
+function closeAiModal() {
+  document.getElementById('ai-modal')?.classList.remove('open');
+}
+
+async function loadAi() {
+  const usageBody = document.getElementById('ai-usage-body');
+  const banner = document.getElementById('ai-env-banner');
+  const statsEl = document.getElementById('ai-stats');
+  if (!usageBody) return;
+
+  usageBody.innerHTML = '<tr class="empty-row"><td colspan="7">Loading…</td></tr>';
+  try {
+    const data = await fetch(`${API}/api/admin/ai`).then((r) => r.json());
+    if (data.error) throw new Error(data.error);
+
+    _aiProvider = data.active || data.items?.[0] || null;
+
+    if (banner) {
+      if (data.envFallback && !_aiProvider?.id) {
+        banner.style.display = 'block';
+        banner.innerHTML = '<strong>Using .env fallback</strong> — run <code>node scripts/seed-ollama-from-env.js</code> then remove OLLAMA_* from .env.';
+      } else {
+        banner.style.display = 'none';
+      }
+    }
+
+    if (_aiProvider && statsEl) {
+      statsEl.hidden = false;
+      document.getElementById('ai-stat-requests').textContent = String(_aiProvider.requestCount ?? 0);
+      document.getElementById('ai-stat-errors').textContent = String(_aiProvider.errorCount ?? 0);
+      document.getElementById('ai-stat-prompt').textContent = String(_aiProvider.promptTokens ?? 0);
+      document.getElementById('ai-stat-completion').textContent = String(_aiProvider.completionTokens ?? 0);
+    }
+
+    if (!_aiProvider?.id) {
+      usageBody.innerHTML = '<tr class="empty-row"><td colspan="7">No DB provider yet — click Edit config or run the seed script.</td></tr>';
+      return;
+    }
+
+    const detail = await fetch(`${API}/api/admin/ai/${_aiProvider.id}`).then((r) => r.json());
+    const retentionEl = document.getElementById('ai-retention-days');
+    if (retentionEl && detail.retentionDays != null) retentionEl.textContent = String(detail.retentionDays);
+    const events = detail.recentUsage || [];
+    if (!events.length) {
+      usageBody.innerHTML = '<tr class="empty-row"><td colspan="7">No usage recorded yet.</td></tr>';
+      return;
+    }
+
+    usageBody.innerHTML = events.map((e) => {
+      const when = e.startedAt ? new Date(e.startedAt).toLocaleString() : '—';
+      const tokens = [e.promptTokens, e.completionTokens].filter((x) => x != null).join(' + ') || '—';
+      const dur = e.durationMs != null ? `${e.durationMs}ms` : '—';
+      const statusCls = e.status === 'success' ? 'proxy-enabled' : 'proxy-disabled';
+      return `<tr>
+        <td><code>${esc(e.feature)}</code></td>
+        <td>${esc(e.model || '—')}</td>
+        <td class="${statusCls}">${esc(e.status || '—')}</td>
+        <td>${esc(dur)}</td>
+        <td>${esc(tokens)}</td>
+        ${usageErrorCell(e.errorMessage, e.status)}
+        <td style="font-size:12px;color:var(--muted);">${esc(when)}</td>
+      </tr>`;
+    }).join('');
+  } catch (err) {
+    usageBody.innerHTML = `<tr class="empty-row"><td colspan="7">${esc(err.message)}</td></tr>`;
+  }
+}
+
+async function submitAi(e) {
+  e.preventDefault();
+  const id = document.getElementById('ai-id')?.value.trim();
+  const body = {
+    name: document.getElementById('ai-name')?.value.trim(),
+    host: document.getElementById('ai-host')?.value.trim(),
+    defaultModel: document.getElementById('ai-model')?.value.trim(),
+    enabled: document.getElementById('ai-enabled')?.checked,
+  };
+  const key = document.getElementById('ai-key')?.value;
+  if (key) body.apiKey = key;
+
+  try {
+    const url = id ? `${API}/api/admin/ai/${id}` : `${API}/api/admin/ai`;
+    const r = await fetch(url, {
+      method: id ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    closeAiModal();
+    toast('AI config saved');
+    loadAi();
+  } catch (err) { toast(err.message, 'err'); }
+}
+
+async function testAiProvider() {
+  if (!_aiProvider?.id) { toast('Save a DB provider first', 'err'); return; }
+  toast('Testing Ollama…');
+  try {
+    const r = await fetch(`${API}/api/admin/ai/${_aiProvider.id}/test`, { method: 'POST' }).then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    const t = r.test;
+    toast(`OK — ${t.content} (${t.durationMs}ms, model ${t.model})`);
+    loadAi();
+  } catch (err) { toast(err.message, 'err'); }
 }
 
 // ── VA tasks (admin) ──

@@ -24,9 +24,7 @@ const {
   uploadFile,
 } = require('../lib/infra/object-storage');
 
-const DOWNLOADS_DIR = path.resolve(
-  process.env.DOWNLOADS_DIR || path.join(__dirname, '../Scraper/downloads'),
-);
+const { DOWNLOADS_DIR } = require('../lib/scraper/paths');
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const MINIO_OBJECT_PREFIX = (process.env.MINIO_FILING_PREFIX || 'filings').replace(/\/+$/, '');

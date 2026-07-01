@@ -22,9 +22,9 @@ function test(name, fn) {
 }
 
 test('valid worker ids', () => {
-  assertValidWorkerId('relay-dc-1');
-  assertValidWorkerId('relay-res-3');
-  assertValidWorkerId('relay-local-2');
+  assertValidWorkerId('relay-proxy-1');
+  assertValidWorkerId('relay-proxy-42');
+  assertValidWorkerId('relay-direct-1');
 });
 
 test('reject invalid worker ids', () => {

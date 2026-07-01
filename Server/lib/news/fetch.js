@@ -4,6 +4,7 @@ const {
   TABLE_MARKET,
   sourceForTable,
 } = require('./db');
+const { chatWithSystem } = require('../ai/client');
 
 const RSS_FEEDS = [
   { name: 'Newsfile Mining', url: 'https://feeds.newsfilecorp.com/industry/mining-metals', source: 'TMX Newsfile' },
@@ -121,33 +122,14 @@ function matchCompany(title, description) {
 }
 
 async function callOllama(prompt) {
-  const base = process.env.OLLAMA_HOST || 'https://ollama.com';
-  const model = process.env.OLLAMA_MODEL || 'kimi';
-  const apiKey = process.env.OLLAMA_API_KEY;
-
-  const headers = { 'Content-Type': 'application/json' };
-  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-
-  const res = await fetch(`${base}/api/chat`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model,
-      stream: false,
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are a mining investment news analyst for a platform tracking junior mining stocks on TSX-V, CSE, and ASX. Given news headlines and descriptions, produce a JSON array. Each item: "title" (clean headline — remove source suffix), "summary" (1-2 sentence summary for mining investors), "commodity" (Gold, Silver, Copper, Lithium, Uranium, Nickel, Zinc, or null), "sentiment" ("bullish", "bearish", or "neutral"). Return ONLY a valid JSON array.',
-        },
-        { role: 'user', content: prompt },
-      ],
-    }),
+  const NEWS_SYSTEM =
+    'You are a mining investment news analyst for a platform tracking junior mining stocks on TSX-V, CSE, and ASX. Given news headlines and descriptions, produce a JSON array. Each item: "title" (clean headline — remove source suffix), "summary" (1-2 sentence summary for mining investors), "commodity" (Gold, Silver, Copper, Lithium, Uranium, Nickel, Zinc, or null), "sentiment" ("bullish", "bearish", or "neutral"). Return ONLY a valid JSON array.';
+  const { content } = await chatWithSystem({
+    feature: 'news_enrichment',
+    system: NEWS_SYSTEM,
+    user: prompt,
   });
-
-  if (!res.ok) throw new Error(`Ollama ${res.status}: ${await res.text()}`);
-  const data = await res.json();
-  return data.message?.content || '[]';
+  return content;
 }
 
 function parseJson(raw) {

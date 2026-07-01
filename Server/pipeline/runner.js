@@ -1,4 +1,3 @@
-const { spawn }  = require('child_process');
 const http       = require('http');
 const path       = require('path');
 const fs         = require('fs');
@@ -6,104 +5,52 @@ const db         = require('../db');
 const { state, addLog } = require('./state');
 const { load: loadConfig } = require('./config');
 const { upsertInsiderData } = require('../db/insiders');
-
-const SCRAPER_DIR = path.resolve(
-  process.env.SCRAPER_PATH || path.join(__dirname, '../Scraper')
-);
-const ANALYZE_SCRIPT = path.join(SCRAPER_DIR, 'analyze-one.js');
-const DOWNLOADS_DIR  = path.resolve(
-  process.env.DOWNLOADS_DIR || path.join(__dirname, '../Scraper/downloads')
-);
-
-// ---------------------------------------------------------------------------
-// Browser — OreWire Relay pool when enabled, else spawn Playwright per job
-// ---------------------------------------------------------------------------
-
-const PROXY_PORTS = [8001, 8002, 8003, 8004, 8005];
-
-function useRelayScrapers() {
-  return process.env.RELAY_ENABLED === 'true' && process.env.RELAY_WIRE_SCRAPERS !== 'false';
-}
-
-function workerEnv(workerId) {
-  const env = { ...process.env, HEADLESS: 'true' };
-  if (useRelayScrapers()) return env;
-  if (env.USE_PROXY === 'true' && env.PROXY_SERVER) {
-    const server = env.PROXY_SERVER || 'dc.oxylabs.io';
-    const host = server.replace(/^https?:\/\//, '').replace(/:\d+$/, '');
-    const port = PROXY_PORTS[(workerId - 1) % PROXY_PORTS.length];
-    env.PROXY_SERVER = `http://${host}:${port}`;
-    addLog('out', `[Pipeline] Worker ${workerId} → datacenter proxy ${env.PROXY_SERVER}`);
-  }
-  return env;
-}
-
-// ---------------------------------------------------------------------------
-// Spawn one company scrape job (download only — no in-process analysis)
-// ---------------------------------------------------------------------------
+const { DOWNLOADS_DIR } = require('../lib/scraper/paths');
+const { applyScraperEnv, restoreScraperEnv, relayWiringEnabled } = require('../lib/scraper/env');
+const { runSedarDownload } = require('../lib/scraper/runners/sedar');
+const { runAsxDownload } = require('../lib/scraper/runners/asx');
+const { runAnalyzeOne } = require('../lib/scraper/runners/analyze-one');
 
 // company = { name, ticker, exchange }
-function spawnWorker(company, workerId, cfg) {
+async function spawnWorker(company, workerId, cfg) {
   const isASX = company.exchange === 'ASX';
   const arg = isASX ? (company.ticker || company.name) : company.name;
   const tag = `[W${workerId}|${arg.substring(0, 22)}]`;
+  const relaySlot = isASX
+    ? ((workerId - 1) % 5) + 1
+    : ((workerId - 1) % 3) + 1;
 
-  if (useRelayScrapers()) {
-    const { runPipelineScrape } = require('../relay/scrape');
-    const relaySlot = isASX
-      ? ((workerId - 1) % 5) + 1
-      : ((workerId - 1) % 3) + 1;
+  if (relayWiringEnabled()) {
     addLog('out', `${tag} → Relay ${isASX ? 'DC' : 'RES'}-${relaySlot}`);
-    return runPipelineScrape(company, relaySlot, cfg).then((code) => {
-      if (code === 0) {
-        state.progress.done++;
-        addLog('out', `${tag} ✓ download done (relay)`);
-      } else {
-        state.progress.errors++;
-        addLog('err', `${tag} ✗ relay scrape failed`);
-      }
-      return code;
-    });
   }
 
-  return new Promise((resolve) => {
-    const script = isASX ? 'asx-filings.js' : 'index.js';
-    const args = [arg, '--no-analyze'];
-    if (isASX && cfg.daysBack) args.push('--days', String(cfg.daysBack));
-
-    const proc = spawn('node', [script, ...args], {
-      cwd: SCRAPER_DIR,
-      env: workerEnv(workerId),
-      shell: false,
-    });
-
-    proc.stdout.on('data', (d) => {
-      for (const l of d.toString().split('\n')) if (l.trim()) addLog('out', `${tag} ${l}`);
-    });
-    proc.stderr.on('data', (d) => {
-      for (const l of d.toString().split('\n')) if (l.trim()) addLog('log', `${tag} ${l}`);
-    });
-    proc.on('close', (code) => {
-      if (code === 0) {
-        state.progress.done++;
-        addLog('out', `${tag} ✓ download done`);
-      } else {
-        state.progress.errors++;
-        addLog('err', `${tag} ✗ exit ${code}`);
-      }
-      resolve(code);
-    });
-    proc.on('error', (err) => {
-      state.progress.errors++;
-      addLog('err', `${tag} ✗ spawn error: ${err.message}`);
-      resolve(1);
-    });
-  });
+  const saved = applyScraperEnv({ relay: relayWiringEnabled() });
+  try {
+    if (isASX) {
+      await runAsxDownload(arg, {
+        noAnalyze: true,
+        daysBack: cfg.daysBack,
+        relaySlot,
+        taskSlug: 'pipeline_asx_batch',
+      });
+    } else {
+      await runSedarDownload(arg, {
+        noAnalyze: true,
+        relaySlot,
+        taskSlug: 'pipeline_sedar_batch',
+      });
+    }
+    state.progress.done++;
+    addLog('out', `${tag} ✓ download done`);
+    return 0;
+  } catch (err) {
+    state.progress.errors++;
+    addLog('err', `${tag} ✗ ${err.message}`);
+    return 1;
+  } finally {
+    restoreScraperEnv(saved);
+  }
 }
-
-// ---------------------------------------------------------------------------
-// Concurrent download queue — N workers pulling from a shared array
-// ---------------------------------------------------------------------------
 
 async function runDownloadQueue(companies, cfg) {
   const queue = [...companies];
@@ -185,72 +132,32 @@ function drainAnalysisQueue(cfg) {
   }
 }
 
-function spawnAnalysisWorker(item, cfg) {
+async function spawnAnalysisWorker(item, cfg) {
   const { pdfPath, companyDir, company, ticker, exchange } = item;
-  const meta = JSON.stringify({ company_name: company, ticker, exchange });
+  const meta = { company_name: company, ticker, exchange };
   const tag = `[AI|${path.basename(pdfPath).substring(0, 30)}]`;
 
   addLog('out', `${tag} Starting analysis…`);
 
-  const proc = spawn('node', [ANALYZE_SCRIPT, pdfPath, meta], {
-    cwd: SCRAPER_DIR,
-    env: { ...process.env },
-    shell: false,
-  });
-
-  let stdout = '';
-  proc.stdout.on('data', d => { stdout += d.toString(); });
-  proc.stderr.on('data', d => {
-    for (const l of d.toString().split('\n')) if (l.trim()) addLog('log', `${tag} ${l}`);
-  });
-
-  proc.on('close', async (code) => {
-    activeAnalysis--;
-
-    if (code === 0 && stdout.trim()) {
-      try {
-        // Filter out dotenvx injection messages and other non-JSON lines
-        const jsonLine = stdout.trim().split('\n').find(line => {
-          const trimmed = line.trim();
-          return trimmed.startsWith('{') && trimmed.endsWith('}');
-        });
-        if (!jsonLine) {
-          throw new Error('No JSON found in output');
-        }
-        const result = JSON.parse(jsonLine);
-        if (result.ok) {
-          addLog('out', `${tag} ✓ verdict: ${result.verdict}`);
-          // Save to DB immediately
-          try {
-            await saveOneFiling(pdfPath, companyDir, company, ticker, exchange);
-            addLog('out', `${tag} ✓ saved to DB`);
-          } catch (dbErr) {
-            addLog('err', `${tag} DB save failed: ${dbErr.message}`);
-          }
-          state.analysisProgress.done++;
-        } else {
-          addLog('err', `${tag} ✗ analysis error: ${result.error}`);
-          state.analysisProgress.errors++;
-        }
-      } catch (parseErr) {
-        addLog('err', `${tag} ✗ parse error: ${parseErr.message}`);
-        state.analysisProgress.errors++;
-      }
-    } else {
-      addLog('err', `${tag} ✗ exit ${code}`);
-      state.analysisProgress.errors++;
+  const saved = applyScraperEnv({ relay: false });
+  try {
+    const result = await runAnalyzeOne(pdfPath, meta);
+    addLog('out', `${tag} ✓ verdict: ${result.verdict}`);
+    try {
+      await saveOneFiling(pdfPath, companyDir, company, ticker, exchange);
+      addLog('out', `${tag} ✓ saved to DB`);
+    } catch (dbErr) {
+      addLog('err', `${tag} DB save failed: ${dbErr.message}`);
     }
-
-    // Continue draining the queue
-    drainAnalysisQueue(cfg);
-  });
-
-  proc.on('error', err => {
-    activeAnalysis--;
-    addLog('err', `${tag} ✗ spawn error: ${err.message}`);
+    state.analysisProgress.done++;
+  } catch (err) {
+    addLog('err', `${tag} ✗ ${err.message}`);
     state.analysisProgress.errors++;
+  } finally {
+    restoreScraperEnv(saved);
+    activeAnalysis--;
     drainAnalysisQueue(cfg);
-  });
+  }
 }
 
 // ---------------------------------------------------------------------------

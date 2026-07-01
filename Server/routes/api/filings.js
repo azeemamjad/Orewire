@@ -10,9 +10,7 @@ const {
 } = require('../../lib/infra/object-storage');
 
 // SEDAR+/ASX hand out temporary links, so we serve our own downloaded copy.
-const DOWNLOADS_DIR = path.resolve(
-  process.env.DOWNLOADS_DIR || path.join(__dirname, '../../Scraper/downloads')
-);
+const { DOWNLOADS_DIR } = require('../../lib/scraper/paths');
 
 function inferCommodity(summary, tickerSummary) {
   const text = `${summary || ''} ${tickerSummary || ''}`.toLowerCase();

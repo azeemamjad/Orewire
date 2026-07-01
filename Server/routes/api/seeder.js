@@ -1,4 +1,7 @@
 const express = require('express');
+const { runCseSeed } = require('../../lib/scraper/runners/cse-seed');
+const { runAsxSeed } = require('../../lib/scraper/runners/asx-seed');
+const { applyScraperEnv, restoreScraperEnv } = require('../../lib/scraper/env');
 const router  = express.Router();
 const XLSX    = require('xlsx');
 const path    = require('path');
@@ -351,104 +354,75 @@ router.post('/cse', async (req, res) => {
     });
   }
 
-  // Record start time so we don't re-run even if the scraper crashes
   const state = loadSeedState();
   state.cse = new Date().toISOString();
   saveSeedState(state);
 
-  const scraperPath = path.resolve(process.env.SCRAPER_PATH || path.join(__dirname, '../../Scraper'));
-  const { spawn }   = require('child_process');
-
   const logs = [];
-  const proc = spawn('node', ['cse-seed.js'], {
-    cwd: scraperPath,
-    env: { ...process.env },
-    shell: false,
-  });
+  let xlsxPath = null;
+  const saved = applyScraperEnv({ relay: false });
+  try {
+    const result = await runCseSeed();
+    if (!result.ok) return res.status(500).json({ error: result.error, logs });
+    xlsxPath = result.path;
 
-  let stdoutBuf = '';
-  proc.stdout.on('data', d => { stdoutBuf += d.toString(); });
-  proc.stderr.on('data', d => {
-    const msg = d.toString();
-    logs.push(msg);
-    process.stdout.write(msg);
-  });
+    const wb      = XLSX.readFile(xlsxPath);
+    const sheet   = wb.Sheets[wb.SheetNames[0]];
+    const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    const hRow    = detectHeaderRow(rawRows);
+    const rows    = parseSheet(sheet, hRow);
 
-  proc.on('close', async code => {
-    let xlsxPath = null;
+    const stats = { inserted: 0, skipped: 0, errors: [], logs };
+
+    const client = await db.connect();
     try {
-      const jsonLine = stdoutBuf.split('\n')
-        .map(l => l.trim())
-        .filter(l => l.startsWith('{'))
-        .pop();
-      if (!jsonLine) throw new Error('No JSON line in scraper output');
-      const result = JSON.parse(jsonLine);
-      if (!result.ok) return res.status(500).json({ error: result.error, logs });
-      xlsxPath = result.path;
-    } catch (e) {
-      return res.status(500).json({ error: `Scraper output parse failed: ${e.message}`, raw: stdoutBuf.slice(0, 300), logs });
-    }
+      await client.query('BEGIN');
 
-    try {
-      const wb      = XLSX.readFile(xlsxPath);
-      const sheet   = wb.Sheets[wb.SheetNames[0]];
-      const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-      const hRow    = detectHeaderRow(rawRows);
-      const rows    = parseSheet(sheet, hRow);
+      const ins = `
+        INSERT INTO companies
+          (exchange, name, ticker, sedar_ticker, market_cap, total_float,
+           has_gold, has_silver, sector, listing_date, raw_data)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `;
 
-      const stats = { inserted: 0, skipped: 0, errors: [], logs };
+      for (const row of rows) {
+        try {
+          const m = mapCseRow(row);
+          if (!m.name) { stats.skipped++; continue; }
 
-      const client = await db.connect();
-      try {
-        await client.query('BEGIN');
+          const exists = await client.query(
+            'SELECT id FROM companies WHERE name = $1 AND exchange = $2',
+            [m.name, 'CSE']
+          );
 
-        const ins = `
-          INSERT INTO companies
-            (exchange, name, ticker, sedar_ticker, market_cap, total_float,
-             has_gold, has_silver, sector, listing_date, raw_data)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-        `;
-
-        for (const row of rows) {
-          try {
-            const m = mapCseRow(row);
-            if (!m.name) { stats.skipped++; continue; }
-
-            const exists = await client.query(
-              'SELECT id FROM companies WHERE name = $1 AND exchange = $2',
-              [m.name, 'CSE']
-            );
-
-            if (exists.rows.length > 0) { stats.skipped++; continue; }
-            await client.query(ins, [
-              m.exchange, m.name, m.ticker, m.sedar_ticker, m.market_cap, m.total_float,
-              m.has_gold, m.has_silver, m.sector, m.listing_date, m.raw_data,
-            ]);
-            stats.inserted++;
-          } catch (err) {
-            stats.errors.push({ row: row['Company'] ?? row['Name'] ?? '?', error: err.message });
-          }
+          if (exists.rows.length > 0) { stats.skipped++; continue; }
+          await client.query(ins, [
+            m.exchange, m.name, m.ticker, m.sedar_ticker, m.market_cap, m.total_float,
+            m.has_gold, m.has_silver, m.sector, m.listing_date, m.raw_data,
+          ]);
+          stats.inserted++;
+        } catch (err) {
+          stats.errors.push({ row: row['Company'] ?? row['Name'] ?? '?', error: err.message });
         }
-
-        await client.query('COMMIT');
-      } catch (err) {
-        await client.query('ROLLBACK');
-        throw err;
-      } finally {
-        client.release();
       }
 
-      res.json(stats);
+      await client.query('COMMIT');
     } catch (err) {
-      res.status(500).json({ error: err.message, logs });
+      await client.query('ROLLBACK');
+      throw err;
     } finally {
-      if (xlsxPath && fs.existsSync(xlsxPath)) {
-        try { fs.unlinkSync(xlsxPath); } catch { /* ignore */ }
-      }
+      client.release();
     }
-  });
 
-  proc.on('error', err => res.status(500).json({ error: err.message }));
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ error: err.message, logs });
+  } finally {
+    restoreScraperEnv(saved);
+    if (xlsxPath && fs.existsSync(xlsxPath)) {
+      try { fs.unlinkSync(xlsxPath); } catch { /* ignore */ }
+    }
+  }
 });
 
 // GET /api/seeder/cse/status — when was CSE last seeded?
@@ -465,57 +439,36 @@ router.get('/cse/status', (req, res) => {
 });
 
 // GET /api/seeder/cse/preview — download + return columns/sample without inserting
-router.get('/cse/preview', (req, res) => {
-  const scraperPath = path.resolve(process.env.SCRAPER_PATH || path.join(__dirname, '../../Scraper'));
-  const { spawn }   = require('child_process');
-
+router.get('/cse/preview', async (req, res) => {
   const logs = [];
-  const proc = spawn('node', ['cse-seed.js'], {
-    cwd: scraperPath,
-    env: { ...process.env },
-    shell: false,
-  });
+  let xlsxPath = null;
+  const saved = applyScraperEnv({ relay: false });
+  try {
+    const result = await runCseSeed();
+    if (!result.ok) return res.status(500).json({ error: result.error, logs });
+    xlsxPath = result.path;
 
-  let stdoutBuf = '';
-  proc.stdout.on('data', d => { stdoutBuf += d.toString(); });
-  proc.stderr.on('data', d => { logs.push(d.toString()); });
-
-  proc.on('close', () => {
-    let xlsxPath = null;
-    try {
-      const jsonLine = stdoutBuf.split('\n').map(l => l.trim()).filter(l => l.startsWith('{')).pop();
-      if (!jsonLine) throw new Error('No JSON in scraper output');
-      const result = JSON.parse(jsonLine);
-      if (!result.ok) return res.status(500).json({ error: result.error, logs });
-      xlsxPath = result.path;
-    } catch (e) {
-      return res.status(500).json({ error: e.message, logs });
+    const wb      = XLSX.readFile(xlsxPath);
+    const sheet   = wb.Sheets[wb.SheetNames[0]];
+    const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    const hRow    = detectHeaderRow(rawRows);
+    const rows    = parseSheet(sheet, hRow);
+    res.json({
+      sheetNames: wb.SheetNames,
+      headerRow:  hRow,
+      columns:    rows.length ? Object.keys(rows[0]) : [],
+      rowCount:   rows.length,
+      sample:     rows.slice(0, 3),
+      logs,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message, logs });
+  } finally {
+    restoreScraperEnv(saved);
+    if (xlsxPath && fs.existsSync(xlsxPath)) {
+      try { fs.unlinkSync(xlsxPath); } catch { /* ignore */ }
     }
-
-    try {
-      const wb      = XLSX.readFile(xlsxPath);
-      const sheet   = wb.Sheets[wb.SheetNames[0]];
-      const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-      const hRow    = detectHeaderRow(rawRows);
-      const rows    = parseSheet(sheet, hRow);
-      res.json({
-        sheetNames: wb.SheetNames,
-        headerRow:  hRow,
-        columns:    rows.length ? Object.keys(rows[0]) : [],
-        rowCount:   rows.length,
-        sample:     rows.slice(0, 3),
-        logs,
-      });
-    } catch (err) {
-      res.status(500).json({ error: err.message, logs });
-    } finally {
-      if (xlsxPath && fs.existsSync(xlsxPath)) {
-        try { fs.unlinkSync(xlsxPath); } catch { /* ignore */ }
-      }
-    }
-  });
-
-  proc.on('error', err => res.status(500).json({ error: err.message }));
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -556,35 +509,14 @@ function mapAsxRow(row) {
   };
 }
 
-function spawnAsxScraper() {
-  const scraperPath = path.resolve(process.env.SCRAPER_PATH || path.join(__dirname, '../../Scraper'));
-  const { spawn }   = require('child_process');
-  return new Promise((resolve, reject) => {
-    let stdoutBuf = '';
-    const logs    = [];
-    const proc    = spawn('node', ['asx-seed.js'], {
-      cwd: scraperPath,
-      env: { ...process.env },
-      shell: false,
-    });
-    proc.stdout.on('data', d => { stdoutBuf += d.toString(); });
-    proc.stderr.on('data', d => {
-      const msg = d.toString();
-      logs.push(msg);
-      process.stdout.write(msg);
-    });
-    proc.on('close', () => {
-      const jsonLine = stdoutBuf.split('\n').map(l => l.trim()).filter(l => l.startsWith('{')).pop();
-      if (!jsonLine) return reject(Object.assign(new Error('No JSON in scraper output'), { logs }));
-      try {
-        const result = JSON.parse(jsonLine);
-        resolve({ result, logs });
-      } catch (e) {
-        reject(Object.assign(new Error(`JSON parse failed: ${e.message}`), { logs }));
-      }
-    });
-    proc.on('error', reject);
-  });
+async function fetchAsxSeed() {
+  const saved = applyScraperEnv({ relay: false });
+  try {
+    const result = await runAsxSeed();
+    return { result, logs: [] };
+  } finally {
+    restoreScraperEnv(saved);
+  }
 }
 
 function parseAsxCsv(csvPath) {
@@ -615,7 +547,7 @@ router.post('/asx', async (req, res) => {
 
   let csvPath = null;
   try {
-    const { result, logs } = await spawnAsxScraper();
+    const { result, logs } = await fetchAsxSeed();
     if (!result.ok) return res.status(500).json({ error: result.error, logs });
     csvPath = result.path;
 
@@ -693,7 +625,7 @@ router.get('/asx/status', (req, res) => {
 router.get('/asx/preview', async (req, res) => {
   let csvPath = null;
   try {
-    const { result, logs } = await spawnAsxScraper();
+    const { result, logs } = await fetchAsxSeed();
     if (!result.ok) return res.status(500).json({ error: result.error, logs });
     csvPath = result.path;
 

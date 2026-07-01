@@ -1,7 +1,14 @@
 const { pool } = require('./pool');
 const { STATUS } = require('./constants');
 const { runQueued, yieldQueue, waitForQueueIdle } = require('./worker-queue');
-const { getPoolCounts } = require('./proxies');
+const {
+  getPoolCounts,
+  getProxyWorkersForTier,
+  DIRECT_WORKER_ID,
+  startUsageEvent,
+  finishUsageEvent,
+  refreshProxyCache,
+} = require('./proxy-store');
 const { getBrowserTask, logTaskEvent, TASK_DEFINITIONS } = require('./task-registry');
 const {
   CaptchaRequiredError,
@@ -22,16 +29,16 @@ function relayWiringEnabled() {
 }
 
 function tierPrefix(tier) {
-  if (tier === 'res') return 'relay-res-';
-  if (tier === 'dc') return 'relay-dc-';
-  if (tier === 'direct') return 'relay-local-';
-  return 'relay-dc-';
+  if (tier === 'direct') return 'relay-direct-';
+  return 'relay-proxy-';
 }
 
 function workerIdForTask(task, slotIndex = 1, tierOverride = null) {
-  const prefix = tierPrefix(tierOverride || task?.preferred_relay_tier || 'dc');
+  const tier = tierOverride || task?.preferred_relay_tier || 'dc';
+  if (tier === 'direct') return DIRECT_WORKER_ID;
+  const ids = getProxyWorkersForTier(tier);
   const idx = Math.max(1, parseInt(slotIndex, 10) || 1);
-  return `${prefix}${idx}`;
+  return ids[(idx - 1) % ids.length] || DIRECT_WORKER_ID;
 }
 
 async function ensurePoolReady() {
@@ -39,6 +46,7 @@ async function ensurePoolReady() {
   if (process.env.RELAY_ENABLED !== 'true') {
     throw new Error('Relay is disabled (RELAY_ENABLED)');
   }
+  await refreshProxyCache();
   await pool.startPool();
 }
 
@@ -52,12 +60,14 @@ function tierWorkerCount(tier) {
 // All worker ids in a tier, ordered to start at the requested slot then wrap —
 // so a task prefers its assigned slot but can spill onto siblings when busy.
 function candidateWorkerIds(tier, slotIndex) {
-  const n = Math.max(1, tierWorkerCount(tier));
-  const prefix = tierPrefix(tier);
+  if (tier === 'direct') return [DIRECT_WORKER_ID];
+  const ids = getProxyWorkersForTier(tier);
+  if (!ids.length) return [DIRECT_WORKER_ID];
+  const n = ids.length;
   const start = Math.max(1, Math.min(parseInt(slotIndex, 10) || 1, n));
-  const ids = [];
-  for (let k = 0; k < n; k++) ids.push(`${prefix}${((start - 1 + k) % n) + 1}`);
-  return ids;
+  const out = [];
+  for (let k = 0; k < n; k++) out.push(ids[((start - 1 + k) % n)]);
+  return out;
 }
 
 // The "manager": hand back a healthy, idle worker in the tier. Dead/missing
@@ -142,6 +152,17 @@ async function withRelaySession(taskSlug, slotIndex, fn, opts = {}) {
     shouldStop,
   });
 
+  const proxyId = w.proxy?.proxy_id ?? null;
+  let usageEventId = null;
+  let usageStatus = 'success';
+  let usageError = null;
+
+  try {
+    usageEventId = await startUsageEvent(proxyId, workerId, taskSlug);
+  } catch {
+    /* non-fatal */
+  }
+
   registerSession(cancelKey, { workerId, taskSlug });
 
   // Mid-task captcha guard: scrapers call this after each navigation. Parks the
@@ -213,6 +234,8 @@ async function withRelaySession(taskSlug, slotIndex, fn, opts = {}) {
     return result;
   } catch (err) {
     if (err instanceof TaskStoppedError) {
+      usageStatus = 'stopped';
+      usageError = err.message;
       await logTaskEvent({
         taskSlug,
         workerId,
@@ -222,6 +245,8 @@ async function withRelaySession(taskSlug, slotIndex, fn, opts = {}) {
       throw err;
     }
     if (err instanceof CaptchaRequiredError || isCaptchaLikeError(err)) {
+      usageStatus = 'captcha';
+      usageError = err.message;
       pool.setStatus(workerId, STATUS.NEEDS_HUMAN);
       await logTaskEvent({
         taskSlug,
@@ -230,10 +255,15 @@ async function withRelaySession(taskSlug, slotIndex, fn, opts = {}) {
         message: err.message,
       }).catch(() => {});
     }
+    usageStatus = 'error';
+    usageError = err?.message || String(err);
     throw err;
   } finally {
     unregisterSession(cancelKey);
     releaseWorker(workerId);
+    if (usageEventId) {
+      finishUsageEvent(usageEventId, usageStatus, usageError).catch(() => {});
+    }
   }
 }
 

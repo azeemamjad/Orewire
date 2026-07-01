@@ -116,6 +116,8 @@
       <li><a href="scraper.html"><span class="icon">🤖</span>Run Scraper</a></li>
       <li><a href="pipeline.html"><span class="icon">⚙️</span>Pipeline</a></li>
       <li class="active"><a href="relay.html"><span class="icon">🌐</span>Relay</a></li>
+      <li><a href="proxies.html"><span class="icon">🔌</span>Proxies</a></li>
+      <li><a href="ai.html"><span class="icon">🧠</span>AI</a></li>
       <li><a href="va-tasks.html"><span class="icon">📋</span>VA Tasks<span class="nav-badge" data-va-tasks-badge hidden></span></a></li>
       <li><a href="users.html"><span class="icon">👤</span>Users</a></li>
       <li><a href="contact-messages.html"><span class="icon">📧</span>Contact<span class="nav-badge" data-contact-unread-badge hidden></span></a></li>
@@ -128,14 +130,14 @@
 <main class="main">
   <div class="page-header">
     <h1>OreWire Relay</h1>
-    <p>10 browsers - 5 datacenter, 3 residential, 2 local IP (no proxy).</p>
+    <p>One browser per enabled proxy plus one fixed direct (local IP) browser — managed in <a href="proxies.html">Proxies</a>.</p>
   </div>
 
   <div class="relay-proxy-banner" id="proxy-banner">Connecting to API…</div>
   <p id="relay-api-hint" style="font-size:12px;color:var(--muted);margin-top:8px;"></p>
 
   <div class="relay-toolbar">
-    <button type="button" class="btn btn-primary" id="btn-start-demo">Start pool (10 browsers)</button>
+    <button type="button" class="btn btn-primary" id="btn-start-demo">Start pool</button>
     <button type="button" class="btn btn-secondary" id="btn-stop-demo">Stop all</button>
     <button type="button" class="btn btn-secondary" id="btn-refresh">Refresh list</button>
   </div>
@@ -415,16 +417,16 @@ async function loadProxyBanner() {
     }
     const dc = inv.datacenter;
     const residential = inv.residential;
+    const total = inv.totalWorkers ?? ((dc?.workers || 0) + (residential?.workers || 0) + (inv.direct?.workers || 0));
     el.innerHTML = `
-      <strong>Proxy layout</strong><br>
-      <span class="relay-proxy-tag dc">DC</span> <strong>${dc.workers}</strong> browsers → Oxylabs datacenter ports
-      <strong>${(dc.ports || []).join(', ')}</strong> on ${escapeHtml(dc.host || 'dc.oxylabs.io')}
-      ${dc.enabled ? '' : ' <em>(USE_PROXY is off)</em>'}<br>
-      <span class="relay-proxy-tag res">RES</span> <strong>${residential.workers}</strong> browsers →
-      ${residential.credentialsSet ? escapeHtml(residential.host || 'pr.oxylabs.io') + ' port(s) ' + (residential.ports || []).join(', ') : '<em>credentials missing</em>'}.
-      ${escapeHtml(residential.note || '')}<br>
-      <span class="relay-proxy-tag local">LOCAL</span> <strong>${inv.direct?.workers ?? 0}</strong> browsers →
-      ${escapeHtml(inv.direct?.note || 'No proxy')}`;
+      <strong>Proxy layout</strong> — <a href="proxies.html">Manage proxies</a><br>
+      <span class="relay-proxy-tag dc">DC</span> <strong>${dc?.workers ?? 0}</strong> enabled
+      (${dc?.configured ?? 0} configured in DB)<br>
+      <span class="relay-proxy-tag res">RES</span> <strong>${residential?.workers ?? 0}</strong> enabled
+      (${residential?.configured ?? 0} configured in DB)<br>
+      <span class="relay-proxy-tag local">DIRECT</span> <strong>${inv.direct?.workers ?? 1}</strong> browser →
+      ${escapeHtml(inv.direct?.note || 'relay-direct-1 — server public IP')}<br>
+      <strong>${total}</strong> total pool workers`;
   } catch {
     el.textContent = 'Could not load proxy info.';
   }

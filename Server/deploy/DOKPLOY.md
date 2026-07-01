@@ -1,11 +1,69 @@
 # Dokploy deployment (OreWire)
 
-## Services
+## Docker images
+
+Each app has its own `Dockerfile`:
+
+| Service | Context | Image base | Container port |
+|---------|---------|------------|----------------|
+| **server** | `Server/` | `mcr.microsoft.com/playwright:v1.59.1-jammy` | `8070` |
+| **frontend** | `frontend/` | `nginx:alpine` (Vite build in stage 1) | `8080` |
+
+### Local (docker compose)
+
+From the repo root:
+
+```bash
+cp Server/.env.example Server/.env   # set DATABASE_URL and secrets
+docker compose up --build
+```
+
+- Frontend: http://localhost:8080  
+- Backend / admin: http://localhost:8070/admin/dashboard.html  
+
+Optional root `.env` (see `.env.docker.example`) to override `VITE_API_URL` and host ports.
+
+The server container mounts a volume at `/app/data` for scraper downloads and cookies.
+
+### Dokploy — backend (`server`)
+
+1. **New application** → Build type: **Dockerfile**
+2. **Build context / root:** `Server` (or monorepo path ending in `Server/`)
+3. **Dockerfile path:** `Dockerfile`
+4. **Container port:** `8070` (set **Port** in Dokploy to `8070`; `PORT=8070` is the image default)
+5. **Domain:** `backend.orewire.com` (enable HTTPS in Dokploy / Traefik)
+6. **Env:** paste from `Server/.env.example` (production values); ensure `PORT=8070` if Dokploy does not inject it
+7. **Volume:** mount persistent storage → `/app/data` (downloads + cookies)
+8. **Resources:** allocate ≥ 1 GB shared memory if Relay / Playwright pool is enabled (`shm_size` in compose)
+
+Important for MinIO: from inside the backend container, use the MinIO **service hostname** on the Dokploy Docker network (e.g. `MINIO_ENDPOINT=minio`, `MINIO_PORT=9000`, `MINIO_USE_SSL=false`).
+
+### Dokploy — frontend
+
+1. **New application** → Build type: **Dockerfile**
+2. **Build context:** `frontend`
+3. **Dockerfile path:** `Dockerfile`
+4. **Build args** (required at build time):
+
+   ```env
+   VITE_API_URL=https://backend.orewire.com/api
+   VITE_FRONTEND_DOMAIN=orewire.com
+   VITE_BACKEND_DOMAIN=backend.orewire.com
+   ```
+
+5. **Container port:** `8080` (nginx listens on `8080` inside the image)
+6. **Domain:** `orewire.com`
+
+Rebuild the frontend image whenever `VITE_*` URLs change.
+
+---
+
+## Services (overview)
 
 | Service | Source | Notes |
 |---------|--------|-------|
-| **Backend** | `Server/` | Node app, `node index.js`, port from `PORT` |
-| **Frontend** | `frontend/` | Static build (`npm run build` → serve `dist/`) |
+| **Backend** | `Server/` | Node app, Playwright image, listens on port `8070` |
+| **Frontend** | `frontend/` | Static build (`npm run build` → nginx on port `8080`) |
 | **MinIO** | Dokploy MinIO template | Filing PDF storage (~25 GB+) |
 | **Postgres** | Supabase (external) or Dokploy Postgres | `DATABASE_URL` |
 
@@ -15,9 +73,9 @@ Required:
 
 ```env
 DATABASE_URL=...
-PORT=3000
-SCRAPER_PATH=./Scraper
-DOWNLOADS_DIR=./Scraper/downloads
+PORT=8070
+DOWNLOADS_DIR=./data/downloads
+COOKIE_FILE=./data/cookies.json
 ADMIN_PASSWORD=...
 ```
 
@@ -35,9 +93,25 @@ MINIO_BUCKET=orewire-filings
 
 ## Filing storage migration (one-time on server)
 
-**Important:** The hostname `minio` only resolves **inside** the same Docker network as the MinIO container. Your backend runs on the **host** (`node index` via SSH), not in Docker — so use one of the options below.
+**Important:** With Dockerized backend, use the MinIO **service name** on the Dokploy network (`MINIO_ENDPOINT=minio`, port `9000`, SSL off). For one-off migration from the host, see options below.
 
-### Option A — Host → MinIO container IP (recommended for SSH migration)
+### Option A — Backend container → MinIO service name (recommended in Dokploy)
+
+```env
+MINIO_ENDPOINT=minio
+MINIO_PORT=9000
+MINIO_USE_SSL=false
+MINIO_PATH_STYLE=true
+```
+
+Run migration inside the running backend container:
+
+```bash
+docker exec -it <server-container> node scripts/migrate-filings-to-minio.js --dry-run
+docker exec -it <server-container> node scripts/migrate-filings-to-minio.js
+```
+
+### Option B — Host → MinIO container IP (legacy SSH / host Node)
 
 ```bash
 # Get MinIO container IP on the Docker bridge
@@ -123,15 +197,15 @@ docker run --rm -v "$PWD:/app" -w /app --env-file .env --network "$NET" \
 
 | Before | After migration |
 |--------|-----------------|
-| `/app/Scraper/downloads/Co (T)/file.pdf` | `minio:Co (T)/file.pdf` |
+| `/app/data/downloads/Co (T)/file.pdf` | `minio:filings/<sha256>.pdf` |
 
 The API serves both formats; new migrations use MinIO when `MINIO_ENABLED=true`.
 
 ## Volumes
 
-- **Before migration:** mount a volume at `Server/Scraper/downloads` (or set `DOWNLOADS_DIR`).
-- **After migration:** PDFs live in MinIO; downloads volume can shrink or be used only as a scraper staging area.
+- Mount a small volume at `Server/data/downloads` for scraper staging (PDFs move to MinIO via import/migration scripts).
+- MinIO bucket holds production filing PDFs.
 
 ## Scraper note
 
-Scrapers still write PDFs locally first. Pipeline analysis reads local files. After migration, run the migration script periodically for new downloads, or keep a small local staging volume until auto-upload is added.
+Browser scrapers run in-process under `Server/lib/scraper/`. Downloads land in `data/downloads` first; use MinIO import scripts to persist unique filings.

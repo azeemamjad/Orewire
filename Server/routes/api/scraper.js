@@ -1,31 +1,18 @@
 const express = require('express');
 const router  = express.Router();
-const { spawn } = require('child_process');
 const path    = require('path');
 const fs      = require('fs');
 const db      = require('../../db');
 const { upsertInsiderData } = require('../../db/insiders');
+const { DOWNLOADS_DIR } = require('../../lib/scraper/paths');
+const { applyScraperEnv, restoreScraperEnv, relayWiringEnabled } = require('../../lib/scraper/env');
+const { runSedarDownload } = require('../../lib/scraper/runners/sedar');
+const { runAsxDownload } = require('../../lib/scraper/runners/asx');
 
-const scraperPath   = path.resolve(process.env.SCRAPER_PATH  || path.join(__dirname, '../../Scraper'));
-const downloadsDir  = path.resolve(process.env.DOWNLOADS_DIR || path.join(__dirname, '../../Scraper/downloads'));
+const downloadsDir = DOWNLOADS_DIR;
 const activeScrapes = new Map();
 
-// Proxy rotation for ad-hoc scraper runs — sets datacenter PROXY_SERVER with port rotation
-// Residential proxy vars are inherited from process.env; scrapers handle fallback internally
-const PROXY_PORTS = [8001, 8002, 8003, 8004, 8005];
 let proxyRotor = 0;
-
-function rotateProxyEnv() {
-  const env = { ...process.env };
-  if (env.USE_PROXY === 'true' && env.PROXY_SERVER) {
-    const server = env.PROXY_SERVER || 'dc.oxylabs.io';
-    const host = server.replace(/^https?:\/\//, '').replace(/:\d+$/, '');
-    const port = PROXY_PORTS[proxyRotor % PROXY_PORTS.length];
-    env.PROXY_SERVER = `http://${host}:${port}`;
-    proxyRotor++;
-  }
-  return env;
-}
 
 function inferCommodity(summary, tickerSummary) {
   const text = `${summary || ''} ${tickerSummary || ''}`.toLowerCase();
@@ -153,10 +140,6 @@ async function syncAnalyses() {
   return stats;
 }
 
-function useRelayScrapers() {
-  return process.env.RELAY_ENABLED === 'true' && process.env.RELAY_WIRE_SCRAPERS !== 'false';
-}
-
 async function finishScrapeEntry(entry, code, mode) {
   entry.status = code === 0 ? 'done' : 'error';
   entry.exitCode = code;
@@ -192,66 +175,41 @@ router.post('/run', express.json(), (req, res) => {
   };
   activeScrapes.set(id, entry);
 
-  if (mode !== 'analyze-only' && useRelayScrapers()) {
-    const slot = isASX ? (proxyRotor++ % 5) + 1 : (proxyRotor++ % 3) + 1;
-    const { runSedarManual, runAsxManual } = require('../../relay/scrape');
+  const slot = isASX ? (proxyRotor++ % 5) + 1 : (proxyRotor++ % 3) + 1;
+  if (relayWiringEnabled()) {
     entry.logs.push({ t: 'out', msg: `[Relay] ${isASX ? 'DC' : 'RES'}-${slot} → ${label}\n` });
+  }
 
-    (async () => {
-      try {
-        if (isASX) {
-          await runAsxManual(company, {
-            daysBack: daysBack || 30,
-            relaySlot: slot,
-            downloadDir: downloadsDir,
-          });
-        } else {
-          await runSedarManual(company, slot);
-        }
-        if (mode !== 'scrape-only') {
-          const { analyzeDirectory } = require(path.join(scraperPath, 'src/modules/analyzer'));
-          const dirName = isASX
-            ? company.toUpperCase()
-            : company.replace(/[^\w\s-]/g, '_').trim();
-          const companyDir = path.join(downloadsDir, dirName);
-          const meta = isASX
-            ? { exchange: 'ASX', ticker: company.toUpperCase(), company_name: company }
-            : { company_name: company, exchange: 'SEDAR+ (Canada)' };
-          await analyzeDirectory(companyDir, meta);
-        }
-        await finishScrapeEntry(entry, 0, mode);
-      } catch (err) {
-        entry.logs.push({ t: 'err', msg: `${err.message}\n` });
-        await finishScrapeEntry(entry, 1, mode);
+  (async () => {
+    const saved = applyScraperEnv({ relay: relayWiringEnabled() });
+    try {
+      const scrapeOnly = mode === 'scrape-only';
+      const analyzeOnly = mode === 'analyze-only';
+
+      if (isASX) {
+        await runAsxDownload(company, {
+          noAnalyze: scrapeOnly,
+          analyzeOnly,
+          daysBack: daysBack || 30,
+          relaySlot: slot,
+          taskSlug: 'asx_manual',
+        });
+      } else {
+        await runSedarDownload(company, {
+          noAnalyze: scrapeOnly,
+          analyzeOnly,
+          relaySlot: slot,
+          taskSlug: 'sedar_manual',
+        });
       }
-    })();
-
-    return res.json({ id, message: `Relay scraper started for "${label}"` });
-  }
-
-  let script, args;
-  if (isASX) {
-    script = 'asx-filings.js';
-    args = [company];
-    if (daysBack) args.push('--days', String(daysBack));
-    if (mode === 'scrape-only') args.push('--no-analyze');
-    if (mode === 'analyze-only') args.push('--analyze-only');
-  } else {
-    script = 'index.js';
-    args = [company];
-    if (mode === 'scrape-only') args.push('--no-analyze');
-    if (mode === 'analyze-only') args.push('--analyze-only');
-  }
-
-  const proc = spawn('node', [script, ...args], {
-    cwd: scraperPath,
-    env: rotateProxyEnv(),
-    shell: false,
-  });
-
-  proc.stdout.on('data', (d) => entry.logs.push({ t: 'out', msg: d.toString() }));
-  proc.stderr.on('data', (d) => entry.logs.push({ t: 'err', msg: d.toString() }));
-  proc.on('close', async (code) => finishScrapeEntry(entry, code, mode));
+      await finishScrapeEntry(entry, 0, mode);
+    } catch (err) {
+      entry.logs.push({ t: 'err', msg: `${err.message}\n` });
+      await finishScrapeEntry(entry, 1, mode);
+    } finally {
+      restoreScraperEnv(saved);
+    }
+  })();
 
   res.json({ id, message: `Scraper started for "${label}"` });
 });

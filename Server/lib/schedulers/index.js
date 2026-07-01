@@ -7,6 +7,7 @@ const { startCompanyQuoteScheduler } = require('../market/company-quote-schedule
 const { maybeKickInitialRefresh } = require('../market/company-quote-refresh');
 const { startNewsRssScheduler } = require('./news-rss');
 const { startVaTasksScheduler } = require('./va-tasks');
+const { startUsageLogPruneScheduler } = require('./usage-log-prune');
 
 async function startPipelineSchedulers() {
   const cfg = await initPipelineConfig();
@@ -52,6 +53,12 @@ function startBackgroundSchedulers({ server, app } = {}) {
     startVaTasksScheduler();
   } catch (err) {
     console.error('[VA tasks] Scheduler failed to start:', err?.message || err);
+  }
+
+  try {
+    startUsageLogPruneScheduler();
+  } catch (err) {
+    console.error('[usage-log] Scheduler failed to start:', err?.message || err);
   }
 
   if (process.env.RELAY_ENABLED === 'true' && server && app) {

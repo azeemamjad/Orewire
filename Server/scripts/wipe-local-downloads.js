@@ -1,13 +1,9 @@
 #!/usr/bin/env node
 /**
  * Delete all files under DOWNLOADS_DIR after verifying every DB filing exists in MinIO.
- * Use after migrate + import-orphan-pdfs. Does NOT remove Server/Scraper code.
  *
  *   node scripts/wipe-local-downloads.js --dry-run
  *   node scripts/wipe-local-downloads.js --confirm
- *
- * Legacy root folder (e.g. ~/www/Orewire/Scraper) can be removed manually once
- * DOWNLOADS_DIR in .env points at Server/Scraper/downloads.
  */
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 
@@ -21,9 +17,7 @@ const {
   objectExists,
 } = require('../lib/infra/object-storage');
 
-const DOWNLOADS_DIR = path.resolve(
-  process.env.DOWNLOADS_DIR || path.join(__dirname, '../Scraper/downloads'),
-);
+const { DOWNLOADS_DIR } = require('../lib/scraper/paths');
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const CONFIRM = process.argv.includes('--confirm');
@@ -142,9 +136,6 @@ async function main() {
   console.log('\n[wipe] Summary');
   console.log(`  Files removed: ${deleted} (${fmtBytes(freed)})`);
   console.log(`  Empty downloads dir recreated at: ${DOWNLOADS_DIR}`);
-  console.log('\n  If you still have a legacy ~/www/Orewire/Scraper folder (old path),');
-  console.log('  update .env DOWNLOADS_DIR=./Scraper/downloads then:');
-  console.log('    rm -rf ~/www/Orewire/Scraper');
 
   await db.end();
 }

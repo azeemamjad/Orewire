@@ -8,10 +8,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 const path = require('path');
 const { getDatacenterProxy, getResidentialProxy, getDirectProxy, DC_PORTS } = require('../relay/proxies');
 
-function getChromium() {
-  const scraperRoot = path.resolve(process.env.SCRAPER_PATH || path.join(__dirname, '../Scraper'));
-  return require(path.join(scraperRoot, 'node_modules', 'playwright')).chromium;
-}
+const { getChromium } = require('../relay/playwright');
 
 const TEST_URL = process.env.RELAY_PROXY_TEST_URL || 'https://example.com/';
 const TIMEOUT_MS = parseInt(process.env.RELAY_PROXY_TEST_TIMEOUT_MS || '25000', 10);

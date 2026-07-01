@@ -29,9 +29,7 @@ const {
   uploadFile,
 } = require('../lib/infra/object-storage');
 
-const DOWNLOADS_DIR = path.resolve(
-  process.env.DOWNLOADS_DIR || path.join(__dirname, '../Scraper/downloads'),
-);
+const { DOWNLOADS_DIR } = require('../lib/scraper/paths');
 
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');

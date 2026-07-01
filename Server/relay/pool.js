@@ -1,6 +1,6 @@
 const { getChromium } = require('./playwright');
 const { STATUS } = require('./constants');
-const { buildWorkerPlans, getPoolCounts, maskProxyForApi } = require('./proxies');
+const { buildWorkerPlans, getPoolCounts, maskProxyForApi, refreshProxyCache } = require('./proxies');
 const { clearQueue } = require('./worker-queue');
 const { STEALTH_INIT, applyStealthIdentity, randomViewport } = require('./stealth');
 const { forceKillBrowser } = require('./browser-kill');
@@ -74,6 +74,7 @@ class RelayPool {
 
   /** Tear a worker down and start it again from its deterministic plan. */
   async respawnWorker(id) {
+    await refreshProxyCache();
     const plan = buildWorkerPlans().find((p) => p.id === id);
     if (!plan) throw new Error(`No worker plan for ${id}`);
     const prev = this.workers.get(id);
@@ -243,14 +244,22 @@ class RelayPool {
     }
   }
 
-  /** Start full pool: 5 datacenter + 3 residential (configurable via env) */
+  /** Start full pool: one browser per enabled DB proxy + direct worker */
   async startPool() {
     if (this._starting) return this.listWorkers();
     this._starting = true;
     try {
+      await refreshProxyCache();
       const plans = buildWorkerPlans();
       if (!plans.length) {
-        throw new Error('Relay pool size is 0 — check RELAY_DATACENTER_COUNT / RELAY_RESIDENTIAL_COUNT');
+        throw new Error('Relay pool size is 0 — add enabled proxies in Admin → Proxies');
+      }
+
+      const planIds = new Set(plans.map((p) => p.id));
+      for (const id of [...this.workers.keys()]) {
+        if (!planIds.has(id)) {
+          await this.closeWorker(id);
+        }
       }
 
       const tasks = [];
@@ -280,6 +289,12 @@ class RelayPool {
     } finally {
       this._starting = false;
     }
+  }
+
+  async rebuildPool() {
+    await this.shutdown();
+    await refreshProxyCache();
+    return this.startPool();
   }
 
   /** @deprecated use startPool */

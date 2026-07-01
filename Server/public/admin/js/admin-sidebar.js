@@ -6,6 +6,8 @@ const ADMIN_NAV = [
   { page: 'scraper', href: 'scraper.html', icon: '🤖', label: 'Run Scraper' },
   { page: 'pipeline', href: 'pipeline.html', icon: '⚙️', label: 'Pipeline' },
   { page: 'relay', href: 'relay.html', icon: '🌐', label: 'Relay' },
+  { page: 'proxies', href: 'proxies.html', icon: '🔌', label: 'Proxies' },
+  { page: 'ai', href: 'ai.html', icon: '🧠', label: 'AI' },
   { page: 'va-tasks', href: 'va-tasks.html', icon: '📋', label: 'VA Tasks', badge: 'va' },
   { page: 'users', href: 'users.html', icon: '👤', label: 'Users' },
   { page: 'contact-messages', href: 'contact-messages.html', icon: '📧', label: 'Contact', badge: 'contact' },

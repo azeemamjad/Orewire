@@ -1,0 +1,45 @@
+# Local / Dokploy-aligned Docker stack (Postgres & MinIO are external — set in Server/.env)
+#
+#   cp Server/.env.example Server/.env
+#   docker compose up --build
+#
+#   Frontend → http://localhost:8080
+#   Backend  → http://localhost:8070  (admin at /admin/dashboard.html)
+
+services:
+  server:
+    build:
+      context: ./Server
+      dockerfile: Dockerfile
+    container_name: orewire-server
+    ports:
+      - "${SERVER_PORT:-8070}:8070"
+    env_file:
+      - ./Server/.env
+    environment:
+      PORT: "8070"
+      DOWNLOADS_DIR: ./data/downloads
+      COOKIE_FILE: ./data/cookies.json
+    volumes:
+      - server-data:/app/data
+    shm_size: "1gb"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8070/api}
+        VITE_FRONTEND_DOMAIN: ${VITE_FRONTEND_DOMAIN:-localhost:8080}
+        VITE_BACKEND_DOMAIN: ${VITE_BACKEND_DOMAIN:-localhost:8070}
+    container_name: orewire-frontend
+    ports:
+      - "${FRONTEND_PORT:-8080}:8080"
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  server-data:

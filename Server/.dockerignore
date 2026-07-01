@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log*
+.env
+.env.*
+!.env.example
+data/downloads/*
+data/cookies/*
+.git
+.gitignore
+*.md
+deploy/

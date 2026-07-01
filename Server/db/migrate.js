@@ -419,6 +419,85 @@ async function migrate() {
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_va_tasks_status ON va_tasks(status, last_seen_at DESC)`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_va_tasks_module ON va_tasks(module, error_type)`);
 
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS browser_proxies (
+      id                 SERIAL PRIMARY KEY,
+      name               TEXT NOT NULL,
+      tier               TEXT NOT NULL CHECK (tier IN ('datacenter', 'residential')),
+      host               TEXT NOT NULL,
+      port               INTEGER NOT NULL CHECK (port > 0 AND port <= 65535),
+      username           TEXT,
+      password           TEXT,
+      sessid             TEXT,
+      enabled            BOOLEAN NOT NULL DEFAULT TRUE,
+      sort_order         INTEGER NOT NULL DEFAULT 0,
+      session_count      INTEGER NOT NULL DEFAULT 0,
+      error_count        INTEGER NOT NULL DEFAULT 0,
+      last_used_at       TIMESTAMPTZ,
+      last_error_at      TIMESTAMPTZ,
+      last_error_message TEXT,
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_browser_proxies_tier_enabled ON browser_proxies(tier, enabled, sort_order)`);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_browser_proxies_sort ON browser_proxies(sort_order, id)`);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS proxy_usage_events (
+      id            SERIAL PRIMARY KEY,
+      proxy_id      INTEGER REFERENCES browser_proxies(id) ON DELETE SET NULL,
+      worker_id     TEXT NOT NULL,
+      task_slug     TEXT,
+      started_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      ended_at      TIMESTAMPTZ,
+      status        TEXT CHECK (status IN ('success', 'error', 'captcha', 'stopped')),
+      error_message TEXT
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_proxy_usage_proxy_started ON proxy_usage_events(proxy_id, started_at DESC)`);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS ai_providers (
+      id                 SERIAL PRIMARY KEY,
+      name               TEXT NOT NULL,
+      provider           TEXT NOT NULL DEFAULT 'ollama' CHECK (provider IN ('ollama')),
+      host               TEXT NOT NULL,
+      api_key            TEXT,
+      default_model      TEXT NOT NULL,
+      enabled            BOOLEAN NOT NULL DEFAULT TRUE,
+      request_count      INTEGER NOT NULL DEFAULT 0,
+      error_count        INTEGER NOT NULL DEFAULT 0,
+      prompt_tokens      BIGINT NOT NULL DEFAULT 0,
+      completion_tokens  BIGINT NOT NULL DEFAULT 0,
+      last_used_at       TIMESTAMPTZ,
+      last_error_at      TIMESTAMPTZ,
+      last_error_message TEXT,
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_ai_providers_enabled ON ai_providers(provider, enabled)`);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS ai_usage_events (
+      id                SERIAL PRIMARY KEY,
+      provider_id       INTEGER REFERENCES ai_providers(id) ON DELETE SET NULL,
+      feature           TEXT NOT NULL,
+      model             TEXT,
+      started_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      ended_at          TIMESTAMPTZ,
+      duration_ms       INTEGER,
+      status            TEXT CHECK (status IN ('success', 'error')),
+      prompt_tokens     INTEGER,
+      completion_tokens INTEGER,
+      total_tokens      INTEGER,
+      error_message     TEXT
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_ai_usage_provider_started ON ai_usage_events(provider_id, started_at DESC)`);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_ai_usage_feature ON ai_usage_events(feature, started_at DESC)`);
+
   const contactCount = await db.query(`SELECT COUNT(*)::int AS n FROM contact_messages`);
   if ((contactCount.rows[0]?.n || 0) === 0) {
     await db.query(
