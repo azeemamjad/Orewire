@@ -437,13 +437,16 @@ document.getElementById('btn-start-demo').addEventListener('click', async () => 
   btn.disabled = true;
   btn.textContent = 'Starting…';
   try {
-    await api('/pool/start', { method: 'POST' });
+    const data = await api('/pool/start', { method: 'POST' });
+    if (data.errors && data.errors.length) {
+      alert('Pool started with warnings:\n\n' + data.errors.join('\n\n'));
+    }
     await loadWorkers();
   } catch (e) {
-    alert(e.message);
+    alert(e.message || String(e));
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Start pool (10 browsers)';
+    btn.textContent = 'Start pool';
   }
 });
 

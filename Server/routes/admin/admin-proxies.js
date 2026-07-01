@@ -137,8 +137,8 @@ router.post('/rebuild-pool', async (_req, res) => {
     if (process.env.RELAY_ENABLED !== 'true') {
       return res.status(400).json({ error: 'RELAY_ENABLED must be true to rebuild pool' });
     }
-    const workers = await pool.rebuildPool();
-    res.json({ ok: true, workers });
+    const result = await pool.rebuildPool();
+    res.json({ ok: true, workers: result.workers, errors: result.errors || [] });
   } catch (err) {
     console.error('Rebuild pool failed:', err?.message || err);
     res.status(500).json({ error: err.message || 'Failed to rebuild pool' });
