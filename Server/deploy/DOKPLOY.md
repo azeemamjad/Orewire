@@ -1,13 +1,26 @@
 # Dokploy deployment (OreWire)
 
+## Monorepo layout
+
+The git repo root is **not** the app root. In Dokploy, set **Root Directory** (build context) per app:
+
+| Dokploy service | Root directory | Dockerfile path | Container port |
+|-----------------|----------------|-----------------|----------------|
+| **backend** | `Server` | `Dockerfile` | `8070` |
+| **frontend** | `frontend` | `Dockerfile` | `8080` |
+
+Do **not** point Dokploy at the repo root (`/`) — builds will fail or use the wrong context.
+
 ## Docker images
 
-Each app has its own `Dockerfile`:
+| Service | Image base |
+|---------|------------|
+| **backend** | `mcr.microsoft.com/playwright:v1.61.1-jammy` (must match `playwright` in `Server/package.json`) |
+| **frontend** | `nginx:alpine` (Vite build in stage 1) |
 
-| Service | Context | Image base | Container port |
-|---------|---------|------------|----------------|
-| **server** | `Server/` | `mcr.microsoft.com/playwright:v1.59.1-jammy` | `8070` |
-| **frontend** | `frontend/` | `nginx:alpine` (Vite build in stage 1) | `8080` |
+**Playwright / Relay:** If you see `Executable doesn't exist at /ms-playwright/chromium-…`, the Docker image tag and `playwright` npm version are out of sync — rebuild after pulling the latest `Server/Dockerfile`.
+
+For Relay, allocate **≥ 1 GB shared memory** (`/dev/shm`) on the backend container if Dokploy exposes that setting.
 
 ### Local (docker compose)
 
@@ -25,23 +38,24 @@ Optional root `.env` (see `.env.docker.example`) to override `VITE_API_URL` and 
 
 The server container mounts a volume at `/app/data` for scraper downloads and cookies.
 
-### Dokploy — backend (`server`)
+### Dokploy — backend
 
-1. **New application** → Build type: **Dockerfile**
-2. **Build context / root:** `Server` (or monorepo path ending in `Server/`)
+1. **New application** → name e.g. `backend` → Build type: **Dockerfile**
+2. **Root directory:** `Server` (not `/` and not the whole repo)
 3. **Dockerfile path:** `Dockerfile`
-4. **Container port:** `8070` (set **Port** in Dokploy to `8070`; `PORT=8070` is the image default)
-5. **Domain:** `backend.orewire.com` (enable HTTPS in Dokploy / Traefik)
-6. **Env:** paste from `Server/.env.example` (production values); ensure `PORT=8070` if Dokploy does not inject it
-7. **Volume:** mount persistent storage → `/app/data` (downloads + cookies)
-8. **Resources:** allocate ≥ 1 GB shared memory if Relay / Playwright pool is enabled (`shm_size` in compose)
+4. **Container port:** `8070`
+5. **Domain:** `backend.orewire.com` (HTTPS via Dokploy / Traefik)
+6. **Env:** paste from `Server/.env.example` (production values); set `PORT=8070`
+7. **Volume:** persistent storage → `/app/data` (downloads + cookies)
+8. **Shared memory:** ≥ 1 GB if Relay is enabled
+9. **Redeploy** after git pull when `Server/Dockerfile` or `playwright` version changes
 
 Important for MinIO: from inside the backend container, use the MinIO **service hostname** on the Dokploy Docker network (e.g. `MINIO_ENDPOINT=minio`, `MINIO_PORT=9000`, `MINIO_USE_SSL=false`).
 
 ### Dokploy — frontend
 
-1. **New application** → Build type: **Dockerfile**
-2. **Build context:** `frontend`
+1. **New application** → name e.g. `frontend` → Build type: **Dockerfile**
+2. **Root directory:** `frontend`
 3. **Dockerfile path:** `Dockerfile`
 4. **Build args** (required at build time):
 
