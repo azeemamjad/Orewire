@@ -48,13 +48,33 @@ function parseEndpoint(raw) {
 function usePathStyle() {
   if (process.env.MINIO_PATH_STYLE === 'false') return false;
   if (process.env.MINIO_PATH_STYLE === 'true') return true;
-  // Default on for public hostnames — virtual-hosted style needs bucket DNS records.
   const host = parseEndpoint(process.env.MINIO_ENDPOINT || '').host;
   return host !== 'localhost' && host !== '127.0.0.1' && !host.endsWith('.internal');
 }
 
+function isPrivateOrDockerHost(host) {
+  if (!host) return false;
+  if (host === 'minio' || host === 'localhost' || host === '127.0.0.1') return true;
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+    const [a, b] = host.split('.').map(Number);
+    if (a === 10) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 127) return true;
+  }
+  return false;
+}
+
+function useSslForEndpoint(host, port) {
+  if (process.env.MINIO_USE_SSL === 'false') return false;
+  // MinIO S3 API on 9000 is plain HTTP (docker IP, service name, localhost).
+  if (port === 9000 || isPrivateOrDockerHost(host)) return false;
+  return process.env.MINIO_USE_SSL === 'true';
+}
+
 function buildClientOptions() {
-  const { host, port, useSSL } = parseEndpoint(process.env.MINIO_ENDPOINT || 'localhost');
+  const { host, port } = parseEndpoint(process.env.MINIO_ENDPOINT || 'localhost');
+  const useSSL = useSslForEndpoint(host, port);
   const region = (process.env.MINIO_REGION || '').trim();
   return {
     endPoint: host,

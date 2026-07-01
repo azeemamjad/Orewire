@@ -71,6 +71,18 @@ function printHints(err) {
     console.error('  • If backend runs inside Dokploy, try internal endpoint:');
     console.error('      MINIO_ENDPOINT=minio  MINIO_PORT=9000  MINIO_USE_SSL=false');
   }
+  if (msg.includes('wrong version number') || msg.includes('eproto')) {
+    console.error('  • SSL mismatch — MinIO on port 9000 uses HTTP, not HTTPS.');
+    console.error('  • Set MINIO_USE_SSL=false when using docker IP or port 9000.');
+  }
+  if (msg.includes('enotfound') || msg.includes('eai_again') || msg.includes('getaddrinfo')) {
+    console.error('  • Hostname does not resolve from this shell (common when backend runs on host, not in Docker).');
+    console.error('  • Do NOT docker exec into the MinIO container — it has no Node.');
+    console.error('  • Use MinIO container IP instead:');
+    console.error('      docker inspect -f \'{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}\' <minio-container>');
+    console.error('      MINIO_ENDPOINT=<ip>  MINIO_PORT=9000  MINIO_USE_SSL=false');
+    console.error('  • Or use public URL: MINIO_ENDPOINT=storage.orewire.com  MINIO_PORT=443  MINIO_USE_SSL=true');
+  }
   if (msg.includes('enotfound') || msg.includes('econnrefused') || msg.includes('certificate')) {
     console.error('  • Check MINIO_ENDPOINT / MINIO_PORT / MINIO_USE_SSL match Dokploy routing');
     console.error('  • storage.orewire.com:443 must proxy to MinIO S3 API (port 9000), not console only');

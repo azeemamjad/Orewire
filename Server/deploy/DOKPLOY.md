@@ -35,9 +35,69 @@ MINIO_BUCKET=orewire-filings
 
 ## Filing storage migration (one-time on server)
 
-1. Deploy backend with MinIO env vars set (`MINIO_ENABLED=true`).
-2. Ensure `DOWNLOADS_DIR` still points at existing PDFs on disk.
-3. Dry run:
+**Important:** The hostname `minio` only resolves **inside** the same Docker network as the MinIO container. Your backend runs on the **host** (`node index` via SSH), not in Docker — so use one of the options below.
+
+### Option A — Host → MinIO container IP (recommended for SSH migration)
+
+```bash
+# Get MinIO container IP on the Docker bridge
+MINIO_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' orewire-minio-0jtrko-minio-1)
+echo $MINIO_IP
+```
+
+Temporarily in `.env` (or export for one run):
+
+```env
+MINIO_ENDPOINT=<that-ip>    # e.g. 172.18.0.5
+MINIO_PORT=9000
+MINIO_USE_SSL=false
+MINIO_PATH_STYLE=true
+```
+
+Then from `~/www/Orewire/Server` on the host:
+
+```bash
+node scripts/test-minio-connection.js
+node scripts/migrate-filings-to-minio.js
+```
+
+Do **not** `docker exec` into the MinIO container — it has no Node.js.
+
+### Option B — Host → published port (if 9000 is mapped)
+
+```bash
+docker port orewire-minio-0jtrko-minio-1
+```
+
+If `9000/tcp -> 0.0.0.0:9000`:
+
+```env
+MINIO_ENDPOINT=127.0.0.1
+MINIO_PORT=9000
+MINIO_USE_SSL=false
+```
+
+### Option C — Public URL from host (slower; proxy may rate-limit)
+
+```env
+MINIO_ENDPOINT=storage.orewire.com
+MINIO_PORT=443
+MINIO_USE_SSL=true
+MINIO_UPLOAD_DELAY_MS=150
+```
+
+### Option D — One-off Node container on MinIO’s Docker network
+
+```bash
+NET=$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' orewire-minio-0jtrko-minio-1)
+docker run --rm -v "$PWD:/app" -w /app --env-file .env --network "$NET" \
+  -e MINIO_ENDPOINT=orewire-minio-0jtrko-minio-1 -e MINIO_PORT=9000 -e MINIO_USE_SSL=false \
+  node:22-alpine node scripts/migrate-filings-to-minio.js
+```
+
+(Service name `orewire-minio-0jtrko-minio-1` resolves inside that network.)
+
+### Steps
 
    ```bash
    cd Server
