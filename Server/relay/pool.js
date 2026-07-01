@@ -4,6 +4,7 @@ const { buildWorkerPlans, getPoolCounts, maskProxyForApi, refreshProxyCache } = 
 const { clearQueue } = require('./worker-queue');
 const { STEALTH_INIT, applyStealthIdentity, randomViewport } = require('./stealth');
 const { forceKillBrowser } = require('./browser-kill');
+const { resolveRelayHeadless } = require('./env');
 
 const CLOSE_TIMEOUT_MS = 4000;
 
@@ -142,7 +143,7 @@ class RelayPool {
 
     try {
       const launchOpts = {
-        headless: process.env.RELAY_HEADLESS !== 'false',
+        headless: resolveRelayHeadless(),
         args: [
           '--no-sandbox',
           '--disable-blink-features=AutomationControlled',
@@ -246,7 +247,7 @@ class RelayPool {
 
   /** Start full pool: one browser per enabled DB proxy + direct worker */
   async startPool() {
-    if (this._starting) return this.listWorkers();
+    if (this._starting) return { workers: this.listWorkers(), errors: [] };
     this._starting = true;
     try {
       await refreshProxyCache();
@@ -263,6 +264,7 @@ class RelayPool {
       }
 
       const tasks = [];
+      const spawnErrors = [];
       for (const plan of plans) {
         const existing = this.workers.get(plan.id);
         if (existing && this.isWorkerHealthy(plan.id)) continue;
@@ -280,12 +282,23 @@ class RelayPool {
           );
         }
       }
-      await Promise.all(tasks);
+      const results = await Promise.allSettled(tasks);
+      for (const r of results) {
+        if (r.status === 'rejected') {
+          const msg = r.reason?.message || String(r.reason);
+          spawnErrors.push(msg);
+          console.error('[Relay] Worker spawn failed:', msg);
+        }
+      }
       await this.sweepZombieWorkers();
       this.startZombieSweep();
       const { total } = getPoolCounts();
-      console.log(`[Relay] Pool started — ${this.workers.size}/${total} workers`);
-      return this.listWorkers();
+      const healthy = [...this.workers.keys()].filter((id) => this.isWorkerHealthy(id)).length;
+      console.log(`[Relay] Pool started — ${healthy}/${total} workers healthy (${this.workers.size} slots)`);
+      if (healthy === 0 && spawnErrors.length > 0) {
+        throw new Error(spawnErrors.join(' | '));
+      }
+      return { workers: this.listWorkers(), errors: spawnErrors };
     } finally {
       this._starting = false;
     }

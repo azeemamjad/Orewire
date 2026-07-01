@@ -45,7 +45,7 @@ The server container mounts a volume at `/app/data` for scraper downloads and co
 3. **Dockerfile path:** `Dockerfile`
 4. **Container port:** `8070`
 5. **Domain:** `backend.orewire.com` (HTTPS via Dokploy / Traefik)
-6. **Env:** paste from `Server/.env.example` (production values); set `PORT=8070`
+6. **Env:** paste from `Server/.env.example` (production values); set `PORT=8070`, `RELAY_ENABLED=true`, `RELAY_HEADLESS=true` (or omit — Docker auto-forces headless)
 7. **Volume:** persistent storage → `/app/data` (downloads + cookies)
 8. **Shared memory:** ≥ 1 GB if Relay is enabled
 9. **Redeploy** after git pull when `Server/Dockerfile` or `playwright` version changes

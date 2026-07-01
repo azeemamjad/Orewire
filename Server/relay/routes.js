@@ -118,17 +118,30 @@ router.post('/tasks/:slug/event', async (req, res) => {
 // POST /api/relay/pool/start
 router.post('/pool/start', requireRelayEnabled, async (_req, res) => {
   try {
-    const workers = await pool.startPool();
-    res.json({ ok: true, workers, pool: getPoolCounts(), inventory: getProxyInventory() });
+    const { workers, errors } = await pool.startPool();
+    res.json({
+      ok: true,
+      workers,
+      errors: errors || [],
+      pool: getPoolCounts(),
+      inventory: getProxyInventory(),
+    });
   } catch (err) {
+    console.error('[Relay] pool/start failed:', err?.message || err);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
 
 router.post('/demo/start', requireRelayEnabled, async (_req, res) => {
   try {
-    const workers = await pool.startPool();
-    res.json({ ok: true, workers, pool: getPoolCounts(), inventory: getProxyInventory() });
+    const { workers, errors } = await pool.startPool();
+    res.json({
+      ok: true,
+      workers,
+      errors: errors || [],
+      pool: getPoolCounts(),
+      inventory: getProxyInventory(),
+    });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
