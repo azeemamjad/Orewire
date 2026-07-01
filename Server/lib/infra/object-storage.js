@@ -69,6 +69,52 @@ function buildClientOptions() {
 
 let client;
 
+function resetClient() {
+  client = null;
+}
+
+function isRetryableMinioError(err) {
+  const msg = `${err?.code || ''} ${err?.message || ''}`.toLowerCase();
+  return (
+    msg.includes('credentials')
+    || msg.includes('access denied')
+    || msg.includes('signature')
+    || msg.includes('timeout')
+    || msg.includes('econnreset')
+    || msg.includes('socket')
+    || msg.includes('503')
+    || msg.includes('429')
+    || msg.includes('502')
+    || msg.includes('bad gateway')
+  );
+}
+
+async function withRetry(fn, { label = 'minio', retries = 4 } = {}) {
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (attempt >= retries || !isRetryableMinioError(err)) throw err;
+      resetClient();
+      const wait = Math.min(30_000, 500 * (2 ** attempt));
+      console.warn(`[${label}] retry ${attempt + 1}/${retries} in ${wait}ms: ${err.message}`);
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+  throw lastErr;
+}
+
+function uploadDelayMs() {
+  return Math.max(0, parseInt(process.env.MINIO_UPLOAD_DELAY_MS || '75', 10));
+}
+
+async function pauseBetweenUploads() {
+  const ms = uploadDelayMs();
+  if (ms > 0) await new Promise((r) => setTimeout(r, ms));
+}
+
 function getClient() {
   if (!isMinioEnabled()) {
     throw new Error('MinIO is not configured (set MINIO_ENABLED=true and credentials)');
@@ -123,7 +169,7 @@ function localPathToObjectKey(localPath, downloadsDir) {
 
 async function objectExists(objectKey) {
   try {
-    await getClient().statObject(getBucket(), objectKey);
+    await withRetry(() => getClient().statObject(getBucket(), objectKey), { label: 'stat' });
     return true;
   } catch (err) {
     if (err?.code === 'NotFound' || err?.code === 'NoSuchKey') return false;
@@ -132,14 +178,17 @@ async function objectExists(objectKey) {
 }
 
 async function statObject(objectKey) {
-  return getClient().statObject(getBucket(), objectKey);
+  return withRetry(() => getClient().statObject(getBucket(), objectKey), { label: 'stat' });
 }
 
 async function uploadFile(localPath, objectKey, { contentType = 'application/pdf' } = {}) {
-  const minio = getClient();
   const bucket = getBucket();
   const meta = { 'Content-Type': contentType };
-  await minio.fPutObject(bucket, objectKey, localPath, meta);
+  await withRetry(
+    () => getClient().fPutObject(bucket, objectKey, localPath, meta),
+    { label: 'upload', retries: 5 },
+  );
+  await pauseBetweenUploads();
   return { bucket, key: objectKey };
 }
 
@@ -167,6 +216,7 @@ module.exports = {
   toMinioPath,
   parseMinioPath,
   getClient,
+  resetClient,
   getBucket,
   ensureBucket,
   describeClientConfig,

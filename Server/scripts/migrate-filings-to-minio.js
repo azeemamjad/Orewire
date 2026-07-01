@@ -110,7 +110,9 @@ async function migrateDbRows(stats) {
       stats.updatedDb++;
     } catch (err) {
       stats.errors++;
-      console.error(`[migrate] failed id=${row.id} ${objectKey}:`, err.message);
+      if (stats.errors <= 15 || stats.errors % 100 === 0) {
+        console.error(`[migrate] failed id=${row.id} ${objectKey}:`, err.code || err.name, err.message);
+      }
     }
 
     if (stats.updatedDb % 250 === 0 && stats.updatedDb > 0) {
@@ -169,7 +171,9 @@ async function main() {
   console.log(`  downloads: ${DOWNLOADS_DIR}`);
   console.log(`  bucket:    ${process.env.MINIO_BUCKET}`);
   console.log(`  endpoint:  ${process.env.MINIO_ENDPOINT}`);
+  console.log(`  delay:     ${process.env.MINIO_UPLOAD_DELAY_MS || '75'}ms between uploads`);
   console.log(`  mode:      ${DRY_RUN ? 'DRY RUN' : DELETE_LOCAL ? 'LIVE + delete local' : 'LIVE'}`);
+  console.log('  tip:       use internal MINIO_ENDPOINT=minio:9000 if public URL rate-limits');
 
   if (!DRY_RUN) {
     try {
@@ -211,6 +215,11 @@ async function main() {
 
   if (DRY_RUN) {
     console.log('\n[migrate] Dry run complete — re-run without --dry-run to upload.');
+  } else if (stats.errors > 0) {
+    console.log('\n[migrate] Partial run — safe to re-run; already-migrated rows (minio:…) are skipped.');
+    console.log('  If errors persist, switch backend .env to internal MinIO:');
+    console.log('    MINIO_ENDPOINT=minio  MINIO_PORT=9000  MINIO_USE_SSL=false');
+    console.log('  Or slow public uploads: MINIO_UPLOAD_DELAY_MS=200');
   } else if (!DELETE_LOCAL) {
     console.log('\n[migrate] Verify PDFs in MinIO and /api/filings/:id/document, then optionally:');
     console.log('  node scripts/migrate-filings-to-minio.js --delete-local');
