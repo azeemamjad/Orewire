@@ -1,0 +1,19 @@
+{
+  "company-quotes": {
+    "id": "company-quotes",
+    "label": "Company quote refresh",
+    "type": "in-process",
+    "pid": 3748584,
+    "status": "running",
+    "startedAt": 1782851400014,
+    "endedAt": null,
+    "meta": {
+      "limit": null,
+      "exchange": null,
+      "ticker": null,
+      "concurrency": 3,
+      "delayMs": 300,
+      "reason": "cron"
+    }
+  }
+}

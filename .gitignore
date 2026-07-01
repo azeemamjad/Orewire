@@ -40,7 +40,7 @@ downloads/
 
 # Data
 data/cookies.json
-Scraper/data/cookies.json
+Server/Scraper/data/cookies.json
 **/cookies.json
 
 # Server runtime state (logs, jobs, local DB, saved pipeline config)

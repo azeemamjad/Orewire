@@ -22,27 +22,27 @@ app.use('/api/auth', auth.router);
 
 // JSON API routes — open (admin password only protects /admin/* pages)
 const apiRouter = express.Router();
-apiRouter.use('/companies', require('./routes/companies'));
-apiRouter.use('/filings',   require('./routes/filings'));
-apiRouter.use('/upload',    require('./routes/upload'));
-apiRouter.use('/scraper',   require('./routes/scraper'));
-apiRouter.use('/seeder',    require('./routes/seeder'));
-apiRouter.use('/pipeline',  require('./routes/pipeline'));
-apiRouter.use('/market',    require('./routes/market'));
-apiRouter.use('/discussions', require('./routes/discussions'));
-apiRouter.use('/news',        require('./routes/news'));
-apiRouter.use('/jobs',        require('./routes/jobs'));
-apiRouter.use('/applications', require('./routes/applications'));
-apiRouter.use('/watchlist',    require('./routes/watchlist'));
-apiRouter.use('/briefing',     require('./routes/briefing'));
-apiRouter.use('/system',       require('./routes/system'));
-apiRouter.use('/contact',      require('./routes/contact').publicRouter);
+apiRouter.use('/companies', require('./routes/api/companies'));
+apiRouter.use('/filings',   require('./routes/api/filings'));
+apiRouter.use('/upload',    require('./routes/api/upload'));
+apiRouter.use('/scraper',   require('./routes/api/scraper'));
+apiRouter.use('/seeder',    require('./routes/api/seeder'));
+apiRouter.use('/pipeline',  require('./routes/api/pipeline'));
+apiRouter.use('/market',    require('./routes/api/market'));
+apiRouter.use('/discussions', require('./routes/api/discussions'));
+apiRouter.use('/news',        require('./routes/api/news'));
+apiRouter.use('/jobs',        require('./routes/api/jobs'));
+apiRouter.use('/applications', require('./routes/api/applications'));
+apiRouter.use('/watchlist',    require('./routes/api/watchlist'));
+apiRouter.use('/briefing',     require('./routes/api/briefing'));
+apiRouter.use('/system',       require('./routes/api/system'));
+apiRouter.use('/contact',      require('./routes/api/contact').publicRouter);
 
 const adminApiRouter = express.Router();
 adminApiRouter.use(auth.requireAdminApi);
-adminApiRouter.use('/users', require('./routes/admin-users'));
-adminApiRouter.use('/va-tasks', require('./routes/admin-va-tasks'));
-adminApiRouter.use('/contact-messages', require('./routes/contact').adminRouter);
+adminApiRouter.use('/users', require('./routes/admin/admin-users'));
+adminApiRouter.use('/va-tasks', require('./routes/admin/admin-va-tasks'));
+adminApiRouter.use('/contact-messages', require('./routes/api/contact').adminRouter);
 app.use('/api', apiRouter);
 app.use('/api/admin', adminApiRouter);
 app.use('/api/relay', auth.requireAdminApi, require('./relay/routes'));
@@ -89,63 +89,13 @@ async function start() {
     console.error('[DB] Migration failed (non-fatal):', err?.message || err);
   }
 
-  try {
-    const { initPipelineConfig } = require('./pipeline/config');
-    const { bootstrapSchedulers } = require('./lib/pipeline-schedulers');
-    const cfg = await initPipelineConfig();
-    bootstrapSchedulers(cfg);
-  } catch (err) {
-    console.error('[pipeline] Config/schedulers failed to start:', err?.message || err);
-  }
-
   const server = app.listen(PORT, () => {
     console.log(`Mining Intel server running → http://localhost:${PORT}`);
     console.log(`Admin Relay → http://localhost:${PORT}/admin/relay.html`);
-    try {
-      const { startDailyBriefingScheduler } = require('./lib/daily-briefing-scheduler');
-      startDailyBriefingScheduler();
-    } catch (err) {
-      console.error('[briefing] Scheduler failed to start:', err?.message || err);
-    }
-    try {
-      const { startWatchlistNewsAlertsScheduler } = require('./lib/watchlist-news-alerts-scheduler');
-      startWatchlistNewsAlertsScheduler();
-    } catch (err) {
-      console.error('[watchlist-news] Scheduler failed to start:', err?.message || err);
-    }
-    try {
-      const { startWatchlistFilingAlertsScheduler } = require('./lib/watchlist-filing-alerts-scheduler');
-      startWatchlistFilingAlertsScheduler();
-    } catch (err) {
-      console.error('[watchlist-filing] Scheduler failed to start:', err?.message || err);
-    }
-    try {
-      const { startCompanyQuoteScheduler } = require('./lib/company-quote-scheduler');
-      startCompanyQuoteScheduler();
-      const { maybeKickInitialRefresh } = require('./lib/company-quote-refresh');
-      maybeKickInitialRefresh().catch((err) => {
-        console.error('[quotes] Boot refresh check failed:', err?.message || err);
-      });
-    } catch (err) {
-      console.error('[quotes] Scheduler failed to start:', err?.message || err);
-    }
-
-    if (process.env.RELAY_ENABLED === 'true') {
-      const { initRelay } = require('./relay');
-      initRelay(app, server).catch((err) => {
-        console.error('[Relay] Failed to start:', err?.message || err);
-      });
-    }
-
-    try {
-      const { syncVaTasks } = require('./lib/va-tasks-sync');
-      syncVaTasks().catch((err) => console.error('[VA tasks] Initial sync failed:', err?.message || err));
-      setInterval(() => {
-        syncVaTasks().catch((err) => console.error('[VA tasks] Sync failed:', err?.message || err));
-      }, 60 * 1000);
-    } catch (err) {
-      console.error('[VA tasks] Scheduler failed to start:', err?.message || err);
-    }
+    const { startAll } = require('./lib/schedulers');
+    startAll({ server, app }).catch((err) => {
+      console.error('[schedulers] Failed to start:', err?.message || err);
+    });
   });
 }
 

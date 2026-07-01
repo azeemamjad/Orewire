@@ -7,12 +7,13 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "scrape:profiles": "node scripts/scrape-profiles.js",
+    "scrape:profiles": "node jobs/scrape-profiles.js",
     "briefing:send": "node scripts/send-daily-briefing.js",
     "watchlist-filings:send": "node scripts/send-watchlist-filing-alerts.js",
     "relay:test-proxies": "node scripts/test-relay-proxies.js",
     "relay:test-security": "node scripts/test-relay-security.js",
-    "relay:test-wire": "node scripts/test-relay-wire.js"
+    "relay:test-wire": "node scripts/test-relay-wire.js",
+    "migrate:filings-minio": "node scripts/migrate-filings-to-minio.js"
   },
   "dependencies": {
     "cheerio": "^1.2.0",
@@ -20,6 +21,7 @@
     "dotenv": "^17.0.0",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.3",
+    "minio": "^8.0.7",
     "multer": "^1.4.5-lts.1",
     "node-cron": "^4.2.1",
     "pg": "^8.21.0",

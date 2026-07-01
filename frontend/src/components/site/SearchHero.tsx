@@ -9,7 +9,7 @@ import {
   type NavSearchHit,
   type SearchCategory,
 } from "@/lib/nav-search";
-import { useSearchSuggestions } from "@/lib/use-search-suggestions";
+import { useSearchSuggestions } from "@/hooks/use-search-suggestions";
 import { addRecentSearch, getRecentSearches, type RecentSearchItem } from "@/lib/recent-searches";
 
 const CATEGORY_ICONS: Record<SearchCategory, typeof Building2> = {

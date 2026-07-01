@@ -4,7 +4,7 @@ let _chromium;
 
 function resolvePlaywrightRoot() {
   const scraperRoot = path.resolve(
-    process.env.SCRAPER_PATH || path.join(__dirname, '../../Scraper')
+    process.env.SCRAPER_PATH || path.join(__dirname, '../Scraper')
   );
   return path.join(scraperRoot, 'node_modules', 'playwright');
 }

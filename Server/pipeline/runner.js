@@ -8,11 +8,11 @@ const { load: loadConfig } = require('./config');
 const { upsertInsiderData } = require('../db/insiders');
 
 const SCRAPER_DIR = path.resolve(
-  process.env.SCRAPER_PATH || path.join(__dirname, '../../Scraper')
+  process.env.SCRAPER_PATH || path.join(__dirname, '../Scraper')
 );
 const ANALYZE_SCRIPT = path.join(SCRAPER_DIR, 'analyze-one.js');
 const DOWNLOADS_DIR  = path.resolve(
-  process.env.DOWNLOADS_DIR || path.join(__dirname, '../../Scraper/downloads')
+  process.env.DOWNLOADS_DIR || path.join(__dirname, '../Scraper/downloads')
 );
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 const path = require('path');
 const { withRelaySession, relayWiringEnabled } = require('./session');
 
-const SCRAPER_ROOT = path.resolve(process.env.SCRAPER_PATH || path.join(__dirname, '../../Scraper'));
+const SCRAPER_ROOT = path.resolve(process.env.SCRAPER_PATH || path.join(__dirname, '../Scraper'));
 
 const RELAY_ENV_KEYS = ['OREWIRE_RELAY', 'OREWIRE_SERVER_PATH', 'HEADLESS', 'DOWNLOAD_DIR', 'DOWNLOADS_DIR'];
 

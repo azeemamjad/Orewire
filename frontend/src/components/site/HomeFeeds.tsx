@@ -1,11 +1,2 @@
-import NewsReleases from "@/components/site/NewsReleases";
-import LiveFeed from "@/components/site/LiveFeed";
-
-const HomeFeeds = () => (
-  <>
-    <NewsReleases />
-    <LiveFeed />
-  </>
-);
-
-export default HomeFeeds;
+/** @deprecated import from @/features/home/components/HomeFeeds */
+export { default } from "@/features/home/components/HomeFeeds";

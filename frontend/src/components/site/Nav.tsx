@@ -17,12 +17,12 @@ import {
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import NotificationsMenu from "@/components/site/NotificationsMenu";
+import NotificationsMenu from "@/features/watchlist/components/NotificationsMenu";
 import NavSearch from "@/components/site/NavSearch";
 import SiteTopBar from "@/components/site/SiteTopBar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth } from "@/features/auth/hooks";
 import { logout } from "@/lib/api";
 
 const navItems = [

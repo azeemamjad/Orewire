@@ -9,7 +9,7 @@ const path = require('path');
 const { getDatacenterProxy, getResidentialProxy, getDirectProxy, DC_PORTS } = require('../relay/proxies');
 
 function getChromium() {
-  const scraperRoot = path.resolve(process.env.SCRAPER_PATH || path.join(__dirname, '../../Scraper'));
+  const scraperRoot = path.resolve(process.env.SCRAPER_PATH || path.join(__dirname, '../Scraper'));
   return require(path.join(scraperRoot, 'node_modules', 'playwright')).chromium;
 }
 
