@@ -171,7 +171,15 @@ async function main() {
   console.log(`  endpoint:  ${process.env.MINIO_ENDPOINT}`);
   console.log(`  mode:      ${DRY_RUN ? 'DRY RUN' : DELETE_LOCAL ? 'LIVE + delete local' : 'LIVE'}`);
 
-  if (!DRY_RUN) await ensureBucket();
+  if (!DRY_RUN) {
+    try {
+      await ensureBucket();
+    } catch (err) {
+      console.error('[migrate] MinIO connection failed:', err.code || err.name, err.message);
+      console.error('[migrate] Run: node scripts/test-minio-connection.js');
+      process.exit(1);
+    }
+  }
 
   const stats = {
     updatedDb: 0,

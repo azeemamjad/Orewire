@@ -38,9 +38,32 @@ function parseEndpoint(raw) {
     };
   }
   return {
-    host: raw,
+    host: raw.replace(/\/+$/, ''),
     port: parseInt(process.env.MINIO_PORT || (useSSL ? '443' : '9000'), 10),
     useSSL,
+  };
+}
+
+/** Path-style URLs (host/bucket/key) work behind Traefik/Dokploy reverse proxies. */
+function usePathStyle() {
+  if (process.env.MINIO_PATH_STYLE === 'false') return false;
+  if (process.env.MINIO_PATH_STYLE === 'true') return true;
+  // Default on for public hostnames — virtual-hosted style needs bucket DNS records.
+  const host = parseEndpoint(process.env.MINIO_ENDPOINT || '').host;
+  return host !== 'localhost' && host !== '127.0.0.1' && !host.endsWith('.internal');
+}
+
+function buildClientOptions() {
+  const { host, port, useSSL } = parseEndpoint(process.env.MINIO_ENDPOINT || 'localhost');
+  const region = (process.env.MINIO_REGION || '').trim();
+  return {
+    endPoint: host,
+    port,
+    useSSL,
+    accessKey: (process.env.MINIO_ACCESS_KEY || '').trim(),
+    secretKey: (process.env.MINIO_SECRET_KEY || '').trim(),
+    region: region || undefined,
+    pathStyle: usePathStyle(),
   };
 }
 
@@ -53,18 +76,25 @@ function getClient() {
   if (client) return client;
 
   const Minio = require('minio');
-  const { host, port, useSSL } = parseEndpoint(process.env.MINIO_ENDPOINT || 'localhost');
-
-  client = new Minio.Client({
-    endPoint: host,
-    port,
-    useSSL,
-    accessKey: process.env.MINIO_ACCESS_KEY,
-    secretKey: process.env.MINIO_SECRET_KEY,
-    region: process.env.MINIO_REGION || undefined,
-  });
+  const opts = buildClientOptions();
+  client = new Minio.Client(opts);
 
   return client;
+}
+
+/** For diagnostics — safe to log (no secrets). */
+function describeClientConfig() {
+  const opts = buildClientOptions();
+  return {
+    endPoint: opts.endPoint,
+    port: opts.port,
+    useSSL: opts.useSSL,
+    pathStyle: opts.pathStyle,
+    region: opts.region || '(default)',
+    bucket: getBucket(),
+    accessKeySet: !!opts.accessKey,
+    secretKeySet: !!opts.secretKey,
+  };
 }
 
 function getBucket() {
@@ -139,6 +169,8 @@ module.exports = {
   getClient,
   getBucket,
   ensureBucket,
+  describeClientConfig,
+  buildClientOptions,
   localPathToObjectKey,
   objectExists,
   statObject,
