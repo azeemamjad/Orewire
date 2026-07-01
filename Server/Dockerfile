@@ -1,5 +1,5 @@
-# Playwright image includes Chromium + system deps for in-process scrapers / Relay
-FROM mcr.microsoft.com/playwright:v1.59.1-jammy
+# Playwright image must match package.json playwright version exactly
+FROM mcr.microsoft.com/playwright:v1.61.1-jammy
 
 WORKDIR /app
 
