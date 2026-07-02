@@ -234,7 +234,7 @@ function watchlistContextBlock(ticker) {
 }
 
 function fmtPctChange(pct) {
-  if (pct == null || Number.isNaN(Number(pct))) return `<span style="color:${C.faint};">—</span>`;
+  if (pct == null || Number.isNaN(Number(pct))) return `<span style="color:${C.faint};">N/A</span>`;
   const n = Number(pct);
   const positive = n >= 0;
   const color = positive ? C.green : C.red;

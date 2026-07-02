@@ -24,6 +24,9 @@ const {
   setMoversCached,
   clearMoversCache,
 } = require('../../lib/market/movers-cache');
+const { listSymbols } = require('../../lib/market/instrument-symbols-store');
+const { fetchTvQuote } = require('../../lib/market/tv-quote');
+const { isTvSymbolHealthy } = require('../../lib/market/symbol-health');
 
 // Market data is sourced from Yahoo Finance with a TradingView fallback (see
 // lib/market-quote). The function keeps its historical name and (exchange,
@@ -32,6 +35,77 @@ const {
 async function fetchTradingView(exchange, ticker) {
   return fetchCompanyQuote(exchange, ticker);
 }
+
+// GET /api/market/quote?symbol=TSX:TECK.B — TV symbol query (live header polling)
+router.get('/quote', async (req, res) => {
+  const symbol = String(req.query.symbol || '').trim();
+  if (!symbol) return res.status(400).json({ error: 'symbol query param required' });
+
+  const empty = {
+    price: null,
+    change_pct: null,
+    change_abs: null,
+    open: null,
+    high: null,
+    low: null,
+    volume: null,
+    currency: null,
+    tv_symbol: symbol,
+    source: 'tradingview',
+    unavailable: true,
+    updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    const data = await fetchTvQuote(symbol);
+    if (!data || data.close == null) return res.json(empty);
+    const norm = normalizePrice(data);
+    res.json({
+      ...norm,
+      tv_symbol: symbol,
+      source: 'tradingview',
+      unavailable: false,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch {
+    res.json(empty);
+  }
+});
+
+// GET /api/market/symbol-health?symbol=TSX:TECK
+router.get('/symbol-health', async (req, res) => {
+  try {
+    const symbol = String(req.query.symbol || '').trim();
+    if (!symbol) return res.status(400).json({ error: 'symbol required' });
+    const healthy = await isTvSymbolHealthy(symbol);
+    res.json({ symbol, healthy });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// GET /api/market/instruments/:type/:key/symbols
+router.get('/instruments/:type/:key/symbols', async (req, res) => {
+  try {
+    const type = String(req.params.type || '').toLowerCase();
+    const key = req.params.key;
+    if (!['company', 'commodity', 'currency', 'index'].includes(type)) {
+      return res.status(400).json({ error: 'Invalid type' });
+    }
+    let items;
+    if (type === 'company') {
+      const companyId = parseInt(key, 10);
+      if (!Number.isFinite(companyId)) return res.status(400).json({ error: 'Company key must be numeric id' });
+      items = await listSymbols('company', { entityId: companyId });
+    } else {
+      items = await listSymbols(type, { entityKey: key });
+    }
+    res.json({ items });
+  } catch (err) {
+    console.error('Instrument symbols fetch failed:', err?.message || err);
+    res.status(503).json({ error: 'Database unavailable' });
+  }
+});
 
 // GET /api/market/quote/:exchange/:ticker
 router.get('/quote/:exchange/:ticker', async (req, res) => {

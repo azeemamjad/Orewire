@@ -1,4 +1,18 @@
-export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+function resolveApiBase(): string {
+  const explicit = import.meta.env.VITE_API_URL;
+  if (explicit && String(explicit).trim()) {
+    return String(explicit).replace(/\/$/, '');
+  }
+  const backend = import.meta.env.VITE_BACKEND_DOMAIN;
+  if (backend && String(backend).trim()) {
+    const host = String(backend).trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
+    const isLocal = /localhost|127\.0\.0\.1|^\d+\.\d+\.\d+\.\d+/.test(host);
+    return `${isLocal ? 'http' : 'https'}://${host}/api`;
+  }
+  return 'http://localhost:3000/api';
+}
+
+export const API_BASE = resolveApiBase();
 
 const ACCESS_KEY = 'orewire.auth.access';
 const REFRESH_KEY = 'orewire.auth.refresh';

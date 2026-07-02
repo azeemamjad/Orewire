@@ -13,7 +13,14 @@ function initAdminPage() {
   const page = document.body.dataset.page;
   if (!page) return;
   if (page === 'dashboard') loadDashboard();
-  if (page === 'companies') { loadExchanges(); loadCompanies(); }
+  if (page === 'companies') {
+    loadExchanges();
+    loadCompanies().then(() => {
+      const sp = new URLSearchParams(window.location.search);
+      const editId = sp.get('edit');
+      if (editId) openEditProfile(parseInt(editId, 10));
+    });
+  }
   if (page === 'filings') loadFilings();
   if (page === 'import') { loadCseStatus(); loadAsxStatus(); }
   if (page === 'scraper') {
@@ -33,6 +40,7 @@ function initAdminPage() {
   if (page === 'ai') loadAi();
   if (page === 'va-tasks') initVaTasks();
   if (page === 'contact-messages') initContactMessages();
+  if (page === 'market-symbols') initMarketSymbols();
 }
 document.addEventListener('DOMContentLoaded', initAdminPage);
 
@@ -199,11 +207,13 @@ async function deleteCompany(id) {
 
 let _editingCompanyId = null;
 let _editingPeople = [];
+let _editingSymbols = [];
 
 function closeProfileModal() {
   document.getElementById('profile-modal').classList.remove('open');
   _editingCompanyId = null;
   _editingPeople = [];
+  _editingSymbols = [];
 }
 
 async function openEditProfile(companyId) {
@@ -218,6 +228,7 @@ async function openEditProfile(companyId) {
     _editingPeople = r.people || [];
     document.getElementById('profile-modal-title').textContent =
       `Edit Profile - ${r.company.name} (${r.company.exchange || ''} ${r.company.ticker || ''})`;
+    await loadCompanySymbols(companyId);
     renderEditProfileForm(r.company);
   } catch (e) {
     body.innerHTML = `<p style="color:var(--danger);">Error: ${esc(e.message)}</p>`;
@@ -261,6 +272,22 @@ function renderEditProfileForm(company) {
 
       <div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div class="section-title" style="margin:0;">Listings &amp; symbols</div>
+          <button class="btn btn-primary btn-sm" type="button" onclick="addCompanySymbolRow()">+ Add listing</button>
+        </div>
+        <div class="table-wrap" style="max-height:200px;overflow:auto;margin-bottom:16px;">
+          <table>
+            <thead><tr><th>Default</th><th>Exchange</th><th>Ticker</th><th>TV symbol</th><th>Label</th><th></th></tr></thead>
+            <tbody id="pf-symbols-body"></tbody>
+          </table>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Set the default listing used for charts and quotes. Flagged companies usually need a corrected default here.</div>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:10px 0;" />
+
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
           <div class="section-title" style="margin:0;">Managers</div>
           <button class="btn btn-primary btn-sm" type="button" onclick="addPersonRow('manager')">+ Add manager</button>
         </div>
@@ -285,6 +312,7 @@ function renderEditProfileForm(company) {
     </div>
   `;
   renderPeopleRows();
+  renderSymbolRows();
 }
 
 function _peopleForKind(kind) {
@@ -1939,14 +1967,14 @@ async function loadUsers() {
       return;
     }
     tbody.innerHTML = items.map((u) => {
-      const name = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || '—';
-      const created = u.createdAt ? new Date(u.createdAt).toLocaleString() : '—';
+      const name = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || 'N/A';
+      const created = u.createdAt ? new Date(u.createdAt).toLocaleString() : 'N/A';
       return `<tr>
         <td>${esc(name)}</td>
         <td>${esc(u.email)}</td>
-        <td>${esc(u.company || '—')}</td>
-        <td>${esc(u.username || '—')}</td>
-        <td>${u.emailVerified ? '✓' : '—'}</td>
+        <td>${esc(u.company || 'N/A')}</td>
+        <td>${esc(u.username || 'N/A')}</td>
+        <td>${u.emailVerified ? '✓' : 'N/A'}</td>
         <td style="font-size:12px;color:var(--muted);">${esc(created)}</td>
         <td class="user-actions">
           <button class="btn btn-primary btn-sm" type="button" onclick="resetUserPassword(${u.id}, true)" title="Generate temp password and email">📧 Send password</button>
@@ -2020,13 +2048,13 @@ async function loadProxyUsageLog() {
       return;
     }
     usageBody.innerHTML = items.map((e) => {
-      const when = e.startedAt ? new Date(e.startedAt).toLocaleString() : '—';
+      const when = e.startedAt ? new Date(e.startedAt).toLocaleString() : 'N/A';
       const statusCls = e.status === 'success' ? 'proxy-enabled' : 'proxy-disabled';
       return `<tr>
-        <td>${esc(e.proxyName || '—')}</td>
-        <td><code>${esc(e.workerId || '—')}</code></td>
-        <td>${esc(e.taskSlug || '—')}</td>
-        <td class="${statusCls}">${esc(e.status || '—')}</td>
+        <td>${esc(e.proxyName || 'N/A')}</td>
+        <td><code>${esc(e.workerId || 'N/A')}</code></td>
+        <td>${esc(e.taskSlug || 'N/A')}</td>
+        <td class="${statusCls}">${esc(e.status || 'N/A')}</td>
         ${usageErrorCell(e.errorMessage, e.status)}
         <td style="font-size:12px;color:var(--muted);">${esc(when)}</td>
       </tr>`;
@@ -2064,14 +2092,14 @@ async function loadProxies() {
       return;
     }
     tbody.innerHTML = directRow + items.map((p) => {
-      const lastUsed = p.lastUsedAt ? new Date(p.lastUsedAt).toLocaleString() : '—';
+      const lastUsed = p.lastUsedAt ? new Date(p.lastUsedAt).toLocaleString() : 'N/A';
       const enabledCls = p.enabled ? 'proxy-enabled' : 'proxy-disabled';
       const enabledTxt = p.enabled ? 'Yes' : 'No';
       return `<tr>
         <td>${esc(p.name)}</td>
         <td>${tierTag(p.tier)}</td>
         <td><code>${esc(p.host)}:${p.port}</code></td>
-        <td>${esc(p.username || (p.passwordSet ? '••••' : '—'))}</td>
+        <td>${esc(p.username || (p.passwordSet ? '••••' : 'N/A'))}</td>
         <td class="${enabledCls}">${enabledTxt}</td>
         <td>${p.sessionCount ?? 0}</td>
         <td>${p.errorCount ?? 0}</td>
@@ -2215,14 +2243,14 @@ async function loadAi() {
     }
 
     usageBody.innerHTML = events.map((e) => {
-      const when = e.startedAt ? new Date(e.startedAt).toLocaleString() : '—';
-      const tokens = [e.promptTokens, e.completionTokens].filter((x) => x != null).join(' + ') || '—';
-      const dur = e.durationMs != null ? `${e.durationMs}ms` : '—';
+      const when = e.startedAt ? new Date(e.startedAt).toLocaleString() : 'N/A';
+      const tokens = [e.promptTokens, e.completionTokens].filter((x) => x != null).join(' + ') || 'N/A';
+      const dur = e.durationMs != null ? `${e.durationMs}ms` : 'N/A';
       const statusCls = e.status === 'success' ? 'proxy-enabled' : 'proxy-disabled';
       return `<tr>
         <td><code>${esc(e.feature)}</code></td>
-        <td>${esc(e.model || '—')}</td>
-        <td class="${statusCls}">${esc(e.status || '—')}</td>
+        <td>${esc(e.model || 'N/A')}</td>
+        <td class="${statusCls}">${esc(e.status || 'N/A')}</td>
         <td>${esc(dur)}</td>
         <td>${esc(tokens)}</td>
         ${usageErrorCell(e.errorMessage, e.status)}
@@ -2270,6 +2298,248 @@ async function testAiProvider() {
     toast(`OK — ${t.content} (${t.durationMs}ms, model ${t.model})`);
     loadAi();
   } catch (err) { toast(err.message, 'err'); }
+}
+
+// ── Instrument symbols (admin) ──
+
+async function loadCompanySymbols(companyId) {
+  const r = await fetch(`${API}/api/admin/instrument-symbols?entity_type=company&entity_id=${companyId}`).then((x) => x.json());
+  _editingSymbols = r.items || [];
+}
+
+function renderSymbolRows() {
+  const tbody = document.getElementById('pf-symbols-body');
+  if (!tbody) return;
+  if (!_editingSymbols.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No listings yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _editingSymbols.map((s, idx) => `
+    <tr data-sym-idx="${idx}">
+      <td><input type="radio" name="pf-sym-default" ${s.is_default ? 'checked' : ''} onchange="setCompanySymbolDefault(${s.id || 0}, ${idx})" /></td>
+      <td><input value="${esc(s.exchange ?? '')}" data-field="exchange" style="width:72px;padding:4px;font:inherit;" /></td>
+      <td><input value="${esc(s.ticker ?? '')}" data-field="ticker" style="width:72px;padding:4px;font:inherit;" /></td>
+      <td><input value="${esc(s.tv_symbol ?? '')}" data-field="tv_symbol" style="width:120px;padding:4px;font:inherit;" /></td>
+      <td><input value="${esc(s.label ?? '')}" data-field="label" style="width:80px;padding:4px;font:inherit;" /></td>
+      <td style="display:flex;gap:4px;">
+        <button type="button" class="btn btn-primary btn-sm" onclick="saveCompanySymbolRow(${idx})" title="Save">💾</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="deleteCompanySymbolRow(${idx})" title="Delete">🗑</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function _readSymbolRow(idx) {
+  const tr = document.querySelector(`tr[data-sym-idx="${idx}"]`);
+  if (!tr) return null;
+  const get = (f) => tr.querySelector(`[data-field="${f}"]`)?.value?.trim() || '';
+  return {
+    exchange: get('exchange') || null,
+    ticker: get('ticker'),
+    tv_symbol: get('tv_symbol'),
+    label: get('label') || null,
+  };
+}
+
+async function saveCompanySymbolRow(idx) {
+  const sym = _editingSymbols[idx];
+  const data = _readSymbolRow(idx);
+  if (!data?.ticker) { toast('Ticker required', 'err'); return; }
+  if (!data.tv_symbol && data.exchange) data.tv_symbol = `${data.exchange}:${data.ticker}`;
+  if (!data.tv_symbol) { toast('TV symbol required', 'err'); return; }
+  try {
+    const url = sym?.id
+      ? `${API}/api/admin/instrument-symbols/${sym.id}`
+      : `${API}/api/admin/instrument-symbols`;
+    const r = await fetch(url, {
+      method: sym?.id ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sym?.id ? data : {
+        ...data,
+        entity_type: 'company',
+        entity_id: _editingCompanyId,
+        is_default: !!sym?.is_default,
+        sort_order: idx,
+      }),
+    }).then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    await loadCompanySymbols(_editingCompanyId);
+    renderSymbolRows();
+    toast('Symbol saved');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function deleteCompanySymbolRow(idx) {
+  const sym = _editingSymbols[idx];
+  if (!sym?.id) {
+    _editingSymbols.splice(idx, 1);
+    renderSymbolRows();
+    return;
+  }
+  if (!confirm('Delete this listing?')) return;
+  try {
+    const r = await fetch(`${API}/api/admin/instrument-symbols/${sym.id}`, { method: 'DELETE' }).then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    await loadCompanySymbols(_editingCompanyId);
+    renderSymbolRows();
+    toast('Deleted');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function setCompanySymbolDefault(id, idx) {
+  if (!id) return;
+  try {
+    const r = await fetch(`${API}/api/admin/instrument-symbols/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_default: true }),
+    }).then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    await loadCompanySymbols(_editingCompanyId);
+    renderSymbolRows();
+    toast('Default listing updated');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+function addCompanySymbolRow() {
+  _editingSymbols.push({
+    id: null,
+    exchange: '',
+    ticker: '',
+    tv_symbol: '',
+    label: '',
+    is_default: _editingSymbols.length === 0,
+  });
+  renderSymbolRows();
+}
+
+let _marketSymbolKeys = { commodities: [], currencies: [], indexes: [] };
+
+async function initMarketSymbols() {
+  const r = await fetch(`${API}/api/admin/instrument-symbols/market-keys/list`).then((x) => x.json());
+  _marketSymbolKeys = r;
+  marketSymbolsOnTypeChange();
+}
+
+function marketSymbolsOnTypeChange() {
+  const type = document.getElementById('ms-type')?.value || 'commodity';
+  const sel = document.getElementById('ms-key');
+  if (!sel) return;
+  const list = type === 'commodity' ? _marketSymbolKeys.commodities
+    : type === 'currency' ? _marketSymbolKeys.currencies
+    : _marketSymbolKeys.indexes;
+  sel.innerHTML = (list || []).map((k) => `<option value="${esc(k.key)}">${esc(k.label)} (${esc(k.key)})</option>`).join('');
+  loadMarketSymbols();
+}
+
+async function loadMarketSymbols() {
+  const tbody = document.getElementById('ms-body');
+  if (!tbody) return;
+  const type = document.getElementById('ms-type')?.value;
+  const key = document.getElementById('ms-key')?.value;
+  if (!type || !key) return;
+  tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Loading…</td></tr>';
+  try {
+    const r = await fetch(`${API}/api/admin/instrument-symbols?entity_type=${encodeURIComponent(type)}&entity_key=${encodeURIComponent(key)}`).then((x) => x.json());
+    const items = r.items || [];
+    if (!items.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No symbols. Click + Add symbol.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map((s) => `
+      <tr data-ms-id="${s.id}">
+        <td><input type="radio" name="ms-default" ${s.is_default ? 'checked' : ''} onchange="setMarketSymbolDefault(${s.id})" /></td>
+        <td><input class="ms-field" data-f="exchange" value="${esc(s.exchange ?? '')}" style="width:72px;padding:4px;" /></td>
+        <td><input class="ms-field" data-f="ticker" value="${esc(s.ticker ?? '')}" style="width:72px;padding:4px;" /></td>
+        <td><input class="ms-field" data-f="tv_symbol" value="${esc(s.tv_symbol ?? '')}" style="width:140px;padding:4px;" /></td>
+        <td><input class="ms-field" data-f="label" value="${esc(s.label ?? '')}" style="width:90px;padding:4px;" /></td>
+        <td><input class="ms-field" data-f="sort_order" type="number" value="${s.sort_order ?? 0}" style="width:48px;padding:4px;" /></td>
+        <td style="display:flex;gap:4px;">
+          <button class="btn btn-primary btn-sm" type="button" onclick="saveMarketSymbolRow(${s.id})">Save</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="deleteMarketSymbolRow(${s.id})">Del</button>
+        </td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Error: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+function _readMarketSymbolRow(id) {
+  const tr = document.querySelector(`tr[data-ms-id="${id}"]`);
+  if (!tr) return null;
+  const get = (f) => tr.querySelector(`[data-f="${f}"]`)?.value?.trim() ?? '';
+  return {
+    exchange: get('exchange') || null,
+    ticker: get('ticker'),
+    tv_symbol: get('tv_symbol'),
+    label: get('label') || null,
+    sort_order: parseInt(get('sort_order'), 10) || 0,
+  };
+}
+
+async function saveMarketSymbolRow(id) {
+  const data = _readMarketSymbolRow(id);
+  if (!data?.ticker || !data?.tv_symbol) { toast('Ticker and TV symbol required', 'err'); return; }
+  try {
+    const r = await fetch(`${API}/api/admin/instrument-symbols/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    toast('Saved');
+    loadMarketSymbols();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function deleteMarketSymbolRow(id) {
+  if (!confirm('Delete this symbol?')) return;
+  try {
+    const r = await fetch(`${API}/api/admin/instrument-symbols/${id}`, { method: 'DELETE' }).then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    toast('Deleted');
+    loadMarketSymbols();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function setMarketSymbolDefault(id) {
+  try {
+    const r = await fetch(`${API}/api/admin/instrument-symbols/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_default: true }),
+    }).then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    toast('Default updated');
+    loadMarketSymbols();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function addMarketSymbolRow() {
+  const type = document.getElementById('ms-type')?.value;
+  const key = document.getElementById('ms-key')?.value;
+  if (!type || !key) return;
+  const tbody = document.getElementById('ms-body');
+  const count = tbody?.querySelectorAll('tr[data-ms-id]').length || 0;
+  try {
+    const r = await fetch(`${API}/api/admin/instrument-symbols`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entity_type: type,
+        entity_key: key,
+        exchange: '',
+        ticker: 'NEW',
+        tv_symbol: 'TVC:NEW',
+        label: 'New',
+        is_default: count === 0,
+        sort_order: count,
+      }),
+    }).then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    loadMarketSymbols();
+  } catch (e) { toast(e.message, 'err'); }
 }
 
 // ── VA tasks (admin) ──
@@ -2328,7 +2598,7 @@ async function loadVaTasks() {
       return;
     }
     tbody.innerHTML = _vaTasksCache.map((t) => {
-      const when = t.lastSeenAt ? new Date(t.lastSeenAt).toLocaleString() : '—';
+      const when = t.lastSeenAt ? new Date(t.lastSeenAt).toLocaleString() : 'N/A';
       const open = t.status === 'open' || t.status === 'in_progress';
       return `<tr class="${open ? 'va-task-row-open' : ''}" style="cursor:pointer" onclick="selectVaTask(${t.id})">
         <td class="${vaSeverityClass(t.severity)}">${esc(t.severity)}</td>
@@ -2448,7 +2718,7 @@ async function loadContactMessages() {
       return;
     }
     tbody.innerHTML = items.map((m) => {
-      const when = m.createdAt ? new Date(m.createdAt).toLocaleString() : '—';
+      const when = m.createdAt ? new Date(m.createdAt).toLocaleString() : 'N/A';
       const unread = !m.read;
       return `<tr class="${unread ? 'contact-row-unread' : ''}" style="cursor:pointer" onclick="selectContactMessage(${m.id})">
         <td>${unread ? '● ' : ''}${esc(m.subject)}</td>
@@ -2471,14 +2741,14 @@ async function selectContactMessage(id) {
   try {
     await fetch(`${API}/api/admin/contact-messages/${id}/read`, { method: 'POST' });
     const m = await fetch(`${API}/api/admin/contact-messages/${id}`).then((r) => r.json());
-    const when = m.createdAt ? new Date(m.createdAt).toLocaleString() : '—';
-    const readWhen = m.readAt ? new Date(m.readAt).toLocaleString() : '—';
+    const when = m.createdAt ? new Date(m.createdAt).toLocaleString() : 'N/A';
+    const readWhen = m.readAt ? new Date(m.readAt).toLocaleString() : 'N/A';
     el.innerHTML = `
       <div class="contact-detail-card">
         <h2 style="font-size:18px;margin-bottom:12px;">${esc(m.subject)}</h2>
         <div class="contact-detail-meta">
           <div><strong>From:</strong> ${esc(m.name)}${m.company ? ` · ${esc(m.company)}` : ''}</div>
-          <div><strong>Email:</strong> ${m.email ? `<a href="mailto:${esc(m.email)}">${esc(m.email)}</a>` : '—'}</div>
+          <div><strong>Email:</strong> ${m.email ? `<a href="mailto:${esc(m.email)}">${esc(m.email)}</a>` : 'N/A'}</div>
           <div><strong>Received:</strong> ${esc(when)}</div>
           <div><strong>Status:</strong> ${m.read ? `Read (${esc(readWhen)})` : 'Unread'}</div>
         </div>

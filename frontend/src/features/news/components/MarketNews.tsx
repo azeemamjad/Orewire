@@ -82,7 +82,7 @@ const MarketNews = () => {
         <div className="border border-border bg-surface grid grid-cols-1 md:grid-cols-2">
           {items.map((item, index) => (
             <NewsRow
-              key={item.link || item.title}
+              key={`${item.link || "news"}-${index}`}
               item={item}
               className={`border-b border-border md:odd:border-r ${
                 index === items.length - 1 ? "max-md:border-b-0" : ""

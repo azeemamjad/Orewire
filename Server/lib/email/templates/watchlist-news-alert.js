@@ -21,7 +21,7 @@ function fmtExchange(ex) {
 function slugLabel(exchange, ticker) {
   const ex = fmtExchange(exchange);
   const tk = (ticker || '').toUpperCase();
-  return ex && tk ? `${ex}: ${tk}` : tk || '—';
+  return ex && tk ? `${ex}: ${tk}` : tk || 'N/A';
 }
 
 function headlineTypeFromTitle(title) {

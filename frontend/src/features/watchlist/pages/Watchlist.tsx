@@ -6,7 +6,7 @@ import SiteLayout from "@/layouts/SiteLayout";
 import { fetchCompanies, fetchCommodities, fetchCurrencies, fetchIndexes, fetchWatchlist, addToWatchlist, removeFromWatchlist, reorderWatchlist, companySlug, type Company, type WatchlistItem } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
+import { API_BASE } from '@/lib/api-client';
 
 const COMMODITY_SLUG_TO_KEY: Record<string, string> = {
   GOLD: "gold", SLVR: "silver", COPR: "copper", PLAT: "platinum", PALL: "palladium",

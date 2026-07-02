@@ -150,7 +150,7 @@ const NewsReleases = () => {
           <div className="lg:col-span-7 space-y-4 text-[15px] leading-relaxed text-foreground/80">
             <p>
               Hundreds of releases hit the wire every trading day. Drill results, financings, resource updates,
-              corporate changes — each one buried in jargon, footnotes and 8-page PDFs.
+              corporate changes, each one buried in jargon, footnotes and 8-page PDFs.
             </p>
             <p>
               Every release is summarized into <strong className="text-foreground">one plain-English line</strong> with a

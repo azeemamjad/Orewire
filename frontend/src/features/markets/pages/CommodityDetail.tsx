@@ -27,6 +27,10 @@ import {
   type Discussion,
 } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
+import SymbolPicker from "@/features/markets/components/SymbolPicker";
+import { useInstrumentSymbols } from "@/hooks/use-instrument-symbols";
+import { useLiveQuote } from "@/hooks/use-live-quote";
+import { formatEmpty } from "@/lib/display";
 
 const COMMODITY_TV: Record<string, string> = {
   GOLD: "TVC:GOLD",
@@ -134,7 +138,7 @@ function avatarColor(email: string): string {
 }
 
 function fmtVol(n: number | null | undefined): string {
-  if (n == null) return "-";
+  if (n == null) return formatEmpty(null);
   if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
   if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
   if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
@@ -161,6 +165,11 @@ const CommodityDetail = () => {
   const apiKey = keyToApi[key] || key.toLowerCase();
   const [inWatchlist, setInWatchlist] = useState(false);
 
+  const { symbols, selectedTvSymbol, setSelectedTvSymbol } = useInstrumentSymbols("commodity", apiKey);
+  const { data: liveQuote } = useLiveQuote(selectedTvSymbol);
+  const fallbackTv = COMMODITY_TV[key] || null;
+  const chartTvSymbol = selectedTvSymbol || fallbackTv;
+
   useEffect(() => {
     checkWatchlist("commodity", key).then(setInWatchlist);
   }, [key]);
@@ -185,20 +194,23 @@ const CommodityDetail = () => {
     staleTime: 5 * 60 * 1000,
   });
 
-  const price = commodity?.price ?? null;
-  const changePct = commodity?.change_pct ?? null;
-  const changeAbs = commodity?.change_abs ?? null;
+  const price = liveQuote?.price ?? commodity?.price ?? null;
+  const changePct = liveQuote?.change_pct ?? commodity?.change_pct ?? null;
+  const changeAbs = liveQuote?.change_abs ?? commodity?.change_abs ?? null;
+  const displayOpen = liveQuote?.open ?? commodity?.open ?? null;
+  const displayHigh = liveQuote?.high ?? commodity?.high ?? null;
+  const displayLow = liveQuote?.low ?? commodity?.low ?? null;
+  const displayVolume = liveQuote?.volume ?? commodity?.volume ?? null;
   const isUp = (changePct ?? 0) >= 0;
   const isDown = changePct != null && changePct < 0;
-  const priceCcy = ccyPrefix(commodity?.currency);
+  const priceCcy = ccyPrefix(liveQuote?.currency ?? commodity?.currency);
   const providerLabel = commodity?.provider === "yahoo" ? "Yahoo Finance" : "TradingView";
-  const tvSymbol = COMMODITY_TV[key] || null;
   const prevClose =
     price != null && changeAbs != null ? +(price - changeAbs).toFixed(key === "GOLD" || key === "SLVR" ? 2 : 4) : null;
 
   const fmtPrice = (n: number) =>
     n.toLocaleString(undefined, { maximumFractionDigits: key === "GOLD" || key === "SLVR" ? 1 : 2 });
-  const px = (n: number | null | undefined) => (n != null ? `${priceCcy}${fmtPrice(n)}` : "-");
+  const px = (n: number | null | undefined) => (n != null ? `${priceCcy}${fmtPrice(n)}` : formatEmpty(null));
 
   return (
     <SiteLayout morningBrief>
@@ -277,14 +289,21 @@ const CommodityDetail = () => {
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
             <div className="rounded-lg border bg-card text-card-foreground shadow-sm h-full flex flex-col">
-              <div className="space-y-1.5 p-6 pb-3 flex flex-row items-center justify-between gap-3 flex-wrap shrink-0">
-                <h3 className="font-semibold tracking-tight font-display text-xl">Price</h3>
-                {tvSymbol && (
-                  <span className="font-mono text-[11px] text-muted-foreground">{tvSymbol}</span>
-                )}
+              <div className="space-y-1.5 p-6 pb-3 flex flex-col gap-2 shrink-0">
+                <div className="flex flex-row items-center justify-between gap-3 flex-wrap">
+                  <h3 className="font-semibold tracking-tight font-display text-xl">Price</h3>
+                  {chartTvSymbol && (
+                    <span className="font-mono text-[11px] text-muted-foreground">{chartTvSymbol}</span>
+                  )}
+                </div>
+                <SymbolPicker
+                  symbols={symbols}
+                  selectedTvSymbol={selectedTvSymbol}
+                  onSelect={setSelectedTvSymbol}
+                />
               </div>
               <div className="p-6 pt-0 flex-1 min-h-0">
-                <TradingViewChart symbol={tvSymbol} />
+                <TradingViewChart symbol={chartTvSymbol} />
               </div>
             </div>
           </div>
@@ -299,13 +318,13 @@ const CommodityDetail = () => {
                   <dt className="text-xs uppercase tracking-wider text-muted-foreground">Prev close</dt>
                   <dd className="font-mono text-right font-semibold">{px(prevClose)}</dd>
                   <dt className="text-xs uppercase tracking-wider text-muted-foreground">Open</dt>
-                  <dd className="font-mono text-right font-semibold">{px(commodity?.open ?? null)}</dd>
+                  <dd className="font-mono text-right font-semibold">{px(displayOpen)}</dd>
                   <dt className="text-xs uppercase tracking-wider text-muted-foreground">Day high</dt>
-                  <dd className="font-mono text-right font-semibold">{px(commodity?.high ?? null)}</dd>
+                  <dd className="font-mono text-right font-semibold">{px(displayHigh)}</dd>
                   <dt className="text-xs uppercase tracking-wider text-muted-foreground">Day low</dt>
-                  <dd className="font-mono text-right font-semibold">{px(commodity?.low ?? null)}</dd>
+                  <dd className="font-mono text-right font-semibold">{px(displayLow)}</dd>
                   <dt className="text-xs uppercase tracking-wider text-muted-foreground">Volume</dt>
-                  <dd className="font-mono text-right font-semibold">{fmtVol(commodity?.volume ?? null)}</dd>
+                  <dd className="font-mono text-right font-semibold">{fmtVol(displayVolume)}</dd>
                   <dt className="text-xs uppercase tracking-wider text-muted-foreground">Unit</dt>
                   <dd className="font-mono text-right font-semibold">{meta.unit}</dd>
                 </dl>

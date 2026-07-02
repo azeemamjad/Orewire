@@ -12,8 +12,8 @@ type Stage = "form" | "verify-register" | "verify-login" | "reset-request" | "re
 
 const FEATURES = [
   { icon: Bookmark, title: "Custom watchlists", body: "Track the juniors you care about. Reorder by conviction." },
-  { icon: TrendingUp, title: "Verdicts on every filing", body: "Noteworthy, Watch or Routine — no more 60-page PDFs." },
-  { icon: Bell, title: "Mover alerts", body: "Insider buys, drill results, financings — pushed to your feed." },
+  { icon: TrendingUp, title: "Verdicts on every filing", body: "Noteworthy, Watch, or Routine (no more 60-page PDFs)." },
+  { icon: Bell, title: "Mover alerts", body: "Insider buys, drill results, financings pushed to your feed." },
 ];
 
 const fieldClass = "h-11 rounded-none border-foreground/15 bg-muted/40 focus-visible:ring-accent focus-visible:border-foreground/40";
@@ -134,7 +134,7 @@ const Login = () => {
                 The intelligence layer for junior mining.
               </h1>
               <p className="text-muted-foreground mt-5 text-base md:text-lg max-w-md leading-relaxed">
-                TSX, TSX-V, CSE and ASX filings — read, ranked and routed to the names you actually own.
+                TSX, TSX-V, CSE and ASX filings: read, ranked and routed to the names you actually own.
               </p>
 
               <ul className="mt-10 space-y-5 max-w-md">

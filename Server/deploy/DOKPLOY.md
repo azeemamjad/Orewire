@@ -57,7 +57,7 @@ Important for MinIO: from inside the backend container, use the MinIO **service 
 1. **New application** → name e.g. `frontend` → Build type: **Dockerfile**
 2. **Root directory:** `frontend`
 3. **Dockerfile path:** `Dockerfile`
-4. **Build args** (required at build time):
+4. **Build arguments** (required — **not** runtime env only). In Dokploy, open **Build** / **Docker Build Args** and set:
 
    ```env
    VITE_API_URL=https://backend.orewire.com/api
@@ -65,10 +65,14 @@ Important for MinIO: from inside the backend container, use the MinIO **service 
    VITE_BACKEND_DOMAIN=backend.orewire.com
    ```
 
-5. **Container port:** `8080` (nginx listens on `8080` inside the image)
-6. **Domain:** `orewire.com`
+   `VITE_*` values are compiled into the static JS at **image build time**. Setting them only under Runtime Environment does nothing — the site will still call `localhost` and the browser will prompt to access your local network.
 
-Rebuild the frontend image whenever `VITE_*` URLs change.
+   If you skip `VITE_API_URL` but set `VITE_BACKEND_DOMAIN`, the app uses `https://backend.orewire.com/api` automatically.
+
+5. **Container port:** `8080` (nginx listens on `8080` inside the image)
+6. **Domain:** `orewire.com` (and `www.orewire.com` if you use it)
+
+**Rebuild and redeploy** the frontend after any `VITE_*` change.
 
 ---
 

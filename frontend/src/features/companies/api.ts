@@ -74,7 +74,20 @@ export interface CompanyFundamentals {
   currency: string | null;
 }
 
+export interface CompanyInstrumentSymbol {
+  id: number;
+  exchange: string | null;
+  ticker: string;
+  tv_symbol: string;
+  label: string | null;
+  is_default: boolean;
+  sort_order: number;
+}
+
 export interface CompanyDetail extends Company {
+  symbols?: CompanyInstrumentSymbol[];
+  symbol_flagged_at?: string | null;
+  symbol_flagged_reason?: string | null;
   marketData: MarketData | null;
   fundamentals: CompanyFundamentals | null;
   filings: { id: number; filing_type: string | null; commodity: string | null; created_at: string; verdict: string | null; summary: string | null }[];

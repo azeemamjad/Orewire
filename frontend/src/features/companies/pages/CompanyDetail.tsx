@@ -33,8 +33,11 @@ import { tvSymbol } from "@/lib/tradingview";
 import { checkWatchlist, addToWatchlist, removeFromWatchlist } from "@/lib/api";
 import { newsDisplayTime } from "@/components/site/news-release-utils";
 import CompanySnapshotCard from "@/components/site/CompanySnapshotCard";
-import { splitRegistryLine } from "@/lib/display";
+import { splitRegistryLine, formatEmpty } from "@/lib/display";
 import { companyBackState } from "@/lib/detail-navigation";
+import SymbolPicker from "@/features/markets/components/SymbolPicker";
+import { useInstrumentSymbols } from "@/hooks/use-instrument-symbols";
+import { useLiveQuote } from "@/hooks/use-live-quote";
 
 
 function timeAgo(dateStr: string): string {
@@ -64,6 +67,13 @@ const CompanyDetail = () => {
 
   const companyId = data?.id ?? 0;
 
+  const { symbols, selectedTvSymbol, setSelectedTvSymbol } = useInstrumentSymbols(
+    "company",
+    companyId > 0 ? String(companyId) : undefined,
+    { initial: data?.symbols, enabled: companyId > 0 },
+  );
+  const { data: liveQuote } = useLiveQuote(selectedTvSymbol);
+
   const { data: snapshotView, isLoading: snapshotLoading } = useQuery({
     queryKey: ["company-snapshot", companyId],
     queryFn: () => fetchCompanySnapshot(companyId),
@@ -90,19 +100,21 @@ const CompanyDetail = () => {
 
   const md = data.marketData;
   const fund = data.fundamentals;
+  const displayPrice = liveQuote?.price ?? md?.price ?? null;
+  const displayChangePct = liveQuote?.change_pct ?? md?.change_pct ?? null;
+  const displayChangeAbs = liveQuote?.change_abs ?? md?.change_abs ?? null;
+  const displayVolume = liveQuote?.volume ?? md?.volume ?? null;
+  const chartTvSymbol = selectedTvSymbol || tvSymbol(data.exchange, data.ticker);
 
   const isAsx = (data.exchange || "").toUpperCase().replace("-", "") === "ASX";
-  const priceCcy = ccySymbol(md?.currency ?? fund?.currency ?? (isAsx ? "AUD" : "CAD"));
-  // Prefer live shares-outstanding from TradingView, then the scraped DB values.
+  const priceCcy = ccySymbol(liveQuote?.currency ?? md?.currency ?? fund?.currency ?? (isAsx ? "AUD" : "CAD"));
   const sharesOut = fund?.shares_outstanding ?? data.shares_outstanding ?? data.total_float ?? null;
-  // Market cap = price × shares (kept in the trading currency so it matches the price).
-  // Fall back to TradingView's market_cap_basic (reported in its own currency) or the DB value.
-  const computedMcap = md?.price != null && sharesOut != null ? md.price * sharesOut : null;
+  const computedMcap = displayPrice != null && sharesOut != null ? displayPrice * sharesOut : null;
   const marketCap = computedMcap ?? fund?.market_cap ?? data.market_cap ?? null;
   const marketCapCcy = computedMcap != null ? priceCcy : fund?.market_cap != null ? ccySymbol(fund.market_cap_currency) : priceCcy;
 
-  const isUp = md && md.change_pct != null && md.change_pct >= 0;
-  const isDown = md && md.change_pct != null && md.change_pct < 0;
+  const isUp = displayChangePct != null && displayChangePct >= 0;
+  const isDown = displayChangePct != null && displayChangePct < 0;
   const quoteSourceLabel = md?.source === "yahoo" ? "Yahoo Finance" : "TradingView";
 
   return (
@@ -117,6 +129,13 @@ const CompanyDetail = () => {
             {fmtExLabel(data.exchange)}:{data.ticker || data.name}
           </span>
         </nav>
+
+        {data.symbol_flagged_at && (
+          <div className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+            Chart data may be outdated. We are reviewing this ticker
+            {data.symbol_flagged_reason ? `: ${data.symbol_flagged_reason}` : "."}
+          </div>
+        )}
 
         <header className="border-b border-border pb-6 mb-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -147,18 +166,18 @@ const CompanyDetail = () => {
                 )}
               </div>
               <h1 className="font-display text-4xl md:text-5xl tracking-tight">{data.name}</h1>
-              {md && md.price != null && (
+              {displayPrice != null && (
                 <div className="mt-3 flex items-baseline gap-3 flex-wrap">
-                  <span className="font-mono text-3xl font-semibold">{priceCcy}{md.price.toFixed(Math.abs(md.price) < 1 ? 4 : 3)}</span>
-                  {md.change_pct != null && (
+                  <span className="font-mono text-3xl font-semibold">{priceCcy}{displayPrice.toFixed(Math.abs(displayPrice) < 1 ? 4 : 3)}</span>
+                  {displayChangePct != null && (
                     <span
                       className={`font-mono text-sm flex items-center gap-1 ${
                         isUp ? "text-[hsl(var(--up))]" : isDown ? "text-[hsl(var(--down))]" : "text-muted-foreground"
                       }`}
                     >
                       {isUp ? <ArrowUpRight className="h-4 w-4" /> : isDown ? <ArrowDownRight className="h-4 w-4" /> : <Minus className="h-4 w-4" />}
-                      {md.change_abs != null && `${md.change_abs >= 0 ? "+" : ""}${md.change_abs.toFixed(Math.abs(md.price) < 1 ? 4 : 3)}`}
-                      {" "}({md.change_pct >= 0 ? "+" : ""}{md.change_pct.toFixed(2)}%)
+                      {displayChangeAbs != null && `${displayChangeAbs >= 0 ? "+" : ""}${displayChangeAbs.toFixed(Math.abs(displayPrice) < 1 ? 4 : 3)}`}
+                      {" "}({displayChangePct >= 0 ? "+" : ""}{displayChangePct.toFixed(2)}%)
                     </span>
                   )}
                   <span className="text-xs text-muted-foreground font-mono">
@@ -206,23 +225,28 @@ const CompanyDetail = () => {
         <div className="grid lg:grid-cols-3 gap-6 items-stretch">
           <div className="lg:col-span-2 min-h-0">
             <div className="rounded-lg border bg-card text-card-foreground shadow-sm h-full flex flex-col">
-              <div className="space-y-1.5 p-6 pb-3 flex flex-row items-center justify-between gap-3 flex-wrap shrink-0">
-                <h3 className="font-semibold tracking-tight font-display text-xl">Price</h3>
-                {tvSymbol(data.exchange, data.ticker) && (
-                  <span className="font-mono text-[11px] text-muted-foreground">
-                    {tvSymbol(data.exchange, data.ticker)}
-                  </span>
-                )}
+              <div className="space-y-1.5 p-6 pb-3 flex flex-col gap-2 shrink-0">
+                <div className="flex flex-row items-center justify-between gap-3 flex-wrap">
+                  <h3 className="font-semibold tracking-tight font-display text-xl">Price</h3>
+                  {chartTvSymbol && (
+                    <span className="font-mono text-[11px] text-muted-foreground">{chartTvSymbol}</span>
+                  )}
+                </div>
+                <SymbolPicker
+                  symbols={symbols}
+                  selectedTvSymbol={selectedTvSymbol}
+                  onSelect={setSelectedTvSymbol}
+                />
               </div>
               <div className="p-6 pt-0 flex-1 min-h-0">
-                <TradingViewChart symbol={tvSymbol(data.exchange, data.ticker)} />
+                <TradingViewChart symbol={chartTvSymbol} />
               </div>
             </div>
           </div>
 
           <aside className="flex flex-col gap-6 min-h-0 lg:h-full">
             <KeyStatsCard
-              volume={md?.volume ?? null}
+              volume={displayVolume}
               avgVol30={data.fundamentals?.avg_volume_30d ?? null}
               marketCap={marketCap}
               marketCapCcy={marketCapCcy}
@@ -232,6 +256,7 @@ const CompanyDetail = () => {
               priceCcy={priceCcy}
             />
             <IdentifiersCard
+              symbols={symbols.length ? symbols : undefined}
               exchange={data.exchange}
               ticker={data.ticker}
               sedarTicker={data.sedar_ticker}
@@ -390,7 +415,7 @@ const KeyStatsCard = ({
   low52: number | null;
   priceCcy: string;
 }) => {
-  const px = (n: number | null) => (n != null ? `${priceCcy}${n.toFixed(Math.abs(n) < 1 ? 4 : 2)}` : "-");
+  const px = (n: number | null) => (n != null ? `${priceCcy}${n.toFixed(Math.abs(n) < 1 ? 4 : 2)}` : formatEmpty(null));
   return (
     <div className="rounded-lg border bg-card text-card-foreground shadow-sm shrink-0">
       <div className="flex flex-col space-y-1.5 p-6 pb-3">
@@ -399,9 +424,9 @@ const KeyStatsCard = ({
       <div className="p-6 pt-0">
         <dl className="grid grid-cols-2 gap-y-2.5 text-sm leading-normal">
           <dt className="text-xs uppercase tracking-wider text-muted-foreground">Volume</dt>
-          <dd className="font-mono text-right font-semibold">{volume != null ? fmtNum(volume) : "-"}</dd>
+          <dd className="font-mono text-right font-semibold">{volume != null ? fmtNum(volume) : formatEmpty(null)}</dd>
           <dt className="text-xs uppercase tracking-wider text-muted-foreground">Avg Vol (30D)</dt>
-          <dd className="font-mono text-right font-semibold">{avgVol30 != null ? fmtNum(avgVol30) : "-"}</dd>
+          <dd className="font-mono text-right font-semibold">{avgVol30 != null ? fmtNum(avgVol30) : formatEmpty(null)}</dd>
           <dt className="text-xs uppercase tracking-wider text-muted-foreground">Market Cap</dt>
           <dd className="font-mono text-right font-semibold">{fmtMarketCap(marketCap, marketCapCcy)}</dd>
           <dt className="text-xs uppercase tracking-wider text-muted-foreground">Shares Out</dt>
@@ -432,6 +457,7 @@ const TransferAgentBlock = ({ value, isAsx }: { value: string; isAsx?: boolean }
 };
 
 const IdentifiersCard = ({
+  symbols,
   exchange,
   ticker,
   sedarTicker,
@@ -441,6 +467,7 @@ const IdentifiersCard = ({
   isAsx,
   className = "",
 }: {
+  symbols?: { exchange: string | null; ticker: string; label: string | null; tv_symbol: string }[];
   exchange?: string | null;
   ticker?: string | null;
   sedarTicker?: string | null;
@@ -461,26 +488,25 @@ const IdentifiersCard = ({
       <div>
         <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Exchanges &amp; Symbols</div>
         <ul className="space-y-1">
-          <li className="flex justify-between font-mono text-xs">
-            <span className="text-muted-foreground">{fmtExLabel(exchange)}</span>
-            <span className="font-semibold">{ticker || "-"}</span>
-          </li>
-          {sedarTicker && (
-            <li className="flex justify-between font-mono text-xs">
-              <span className="text-muted-foreground">OTCQB</span>
-              <span className="font-semibold">{sedarTicker}</span>
+          {(symbols?.length ? symbols : [
+            { exchange, ticker, label: null, tv_symbol: '' },
+            ...(sedarTicker ? [{ exchange: 'OTCQB', ticker: sedarTicker, label: null, tv_symbol: '' }] : []),
+          ]).map((s, i) => (
+            <li key={`${s.exchange}-${s.ticker}-${i}`} className="flex justify-between font-mono text-xs">
+              <span className="text-muted-foreground">{fmtExLabel(s.exchange)}</span>
+              <span className="font-semibold">{formatEmpty(s.ticker)}</span>
             </li>
-          )}
+          ))}
         </ul>
       </div>
       <div className="border-t border-border pt-2.5 space-y-1.5">
         <div className="flex justify-between font-mono text-xs">
           <span className="text-muted-foreground">ISIN</span>
-          <span className="font-semibold">{isin || "-"}</span>
+          <span className="font-semibold">{formatEmpty(isin)}</span>
         </div>
         <div className="flex justify-between font-mono text-xs">
           <span className="text-muted-foreground">CUSIP</span>
-          <span className="font-semibold">{cusip || "-"}</span>
+          <span className="font-semibold">{formatEmpty(cusip)}</span>
         </div>
       </div>
       {transferAgent && <TransferAgentBlock value={transferAgent} isAsx={isAsx} />}

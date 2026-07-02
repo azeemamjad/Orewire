@@ -232,9 +232,13 @@ async function buildMoversPayload(exchange = 'ALL', limit = 10) {
 
   const gainers = [];
   const losers = [];
+  const seen = new Set();
   let latestTs = 0;
 
   for (const row of r.rows) {
+    const dedupeKey = `${row.exchange}:${String(row.ticker).toUpperCase()}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
     const item = normalizeQuoteRow(row);
     if (!item) continue;
     const ts = row.quote_updated_at ? new Date(row.quote_updated_at).getTime() : 0;

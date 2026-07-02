@@ -28,6 +28,10 @@ import {
   type Discussion,
 } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
+import SymbolPicker from "@/features/markets/components/SymbolPicker";
+import { useInstrumentSymbols } from "@/hooks/use-instrument-symbols";
+import { useLiveQuote } from "@/hooks/use-live-quote";
+import { formatEmpty } from "@/lib/display";
 
 const INDEX_TV: Record<string, string> = {
   GDXJ: "AMEX:GDXJ",
@@ -80,6 +84,12 @@ function avatarColor(email: string): string {
 const IndexDetail = () => {
   const { slug } = useParams();
   const key = (slug || "TSXV").toUpperCase();
+  const entityKey = key.toLowerCase();
+
+  const { symbols, selectedTvSymbol, setSelectedTvSymbol } = useInstrumentSymbols("index", entityKey);
+  const { data: liveQuote } = useLiveQuote(selectedTvSymbol);
+  const fallbackTv = INDEX_TV[key] || null;
+  const chartTvSymbol = selectedTvSymbol || fallbackTv;
 
   const { data } = useQuery({
     queryKey: ["indexes"],
@@ -87,15 +97,23 @@ const IndexDetail = () => {
     staleTime: 30 * 60 * 1000,
   });
   const index = data?.items?.find((c: IndexSpot) => c.key === key);
-  const price = index?.price ?? null;
-  const changePct = index?.change_pct ?? null;
+  const price = liveQuote?.price ?? index?.price ?? null;
+  const changePct = liveQuote?.change_pct ?? index?.change_pct ?? null;
   const label = index?.label ?? key;
   const about = index?.about ?? `Market index ${key}.`;
-  const currency = index?.currency ?? "USD";
+  const currency = liveQuote?.currency ?? index?.currency ?? "USD";
   const isUp = (changePct ?? 0) >= 0;
-  const changeAbs = price && changePct ? +(price * changePct / 100).toFixed(2) : null;
-  const now = new Date();
-  const timeStr = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")} ET`;
+  const changeAbs = liveQuote?.change_abs ?? (price && changePct ? +(price * changePct / 100).toFixed(2) : null);
+  const quoteSourceLabel = "TradingView";
+
+  const prevClose = price != null && changeAbs != null ? +(price - changeAbs).toFixed(4) : null;
+  const dayOpen = liveQuote?.open ?? null;
+  const dayHigh = liveQuote?.high ?? null;
+  const dayLow = liveQuote?.low ?? null;
+  const dayVolume = liveQuote?.volume ?? null;
+
+  const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const fmtOpt = (n: number | null) => (n != null ? fmt(n) : formatEmpty(null));
 
   const [inWatchlist, setInWatchlist] = useState(false);
   useEffect(() => {
@@ -115,15 +133,6 @@ const IndexDetail = () => {
       /* skip */
     }
   };
-
-  const tvSymbol = INDEX_TV[key] || null;
-
-  const simOpen = price ? +(price * (1 - (changePct || 0) / 100 * 0.3)).toFixed(2) : null;
-  const simHigh = price ? +(price * 1.005).toFixed(2) : null;
-  const simLow = price ? +(price * 0.995).toFixed(2) : null;
-  const simPrevClose = price && changeAbs !== null ? +(price - changeAbs).toFixed(2) : null;
-
-  const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
   return (
     <SiteLayout morningBrief>
@@ -164,7 +173,9 @@ const IndexDetail = () => {
                       {changePct.toFixed(2)}%)
                     </span>
                   )}
-                  <span className="text-xs text-muted-foreground font-mono">· Live · Last: {timeStr}</span>
+                  <span className="text-xs text-muted-foreground font-mono">
+                    · {quoteSourceLabel} · Delayed · Day change vs prior close
+                  </span>
                 </div>
               )}
             </div>
@@ -187,17 +198,24 @@ const IndexDetail = () => {
         </header>
 
         <MarketDetailLayout
-          chartSymbol={tvSymbol}
-          chartLabel={tvSymbol || undefined}
+          chartSymbol={chartTvSymbol}
+          chartLabel={chartTvSymbol || undefined}
+          symbolPicker={
+            <SymbolPicker
+              symbols={symbols}
+              selectedTvSymbol={selectedTvSymbol}
+              onSelect={setSelectedTvSymbol}
+            />
+          }
           aboutTitle={`About ${key}`}
           aboutBody={<p>{about}</p>}
           stats={[
-            ...(simPrevClose !== null ? [{ label: "Prev close", value: fmt(simPrevClose) }] : []),
-            ...(simOpen !== null ? [{ label: "Open", value: fmt(simOpen) }] : []),
-            ...(simHigh !== null ? [{ label: "Day high", value: fmt(simHigh) }] : []),
-            ...(simLow !== null ? [{ label: "Day low", value: fmt(simLow) }] : []),
+            { label: "Prev close", value: fmtOpt(prevClose) },
+            { label: "Open", value: fmtOpt(dayOpen) },
+            { label: "Day high", value: fmtOpt(dayHigh) },
+            { label: "Day low", value: fmtOpt(dayLow) },
+            { label: "Volume", value: dayVolume != null ? fmt(dayVolume) : formatEmpty(null) },
             { label: "Currency", value: currency },
-            { label: "Type", value: "Index" },
           ]}
           marketNewsSection={<MarketNewsKeywordSection keyword={label} title="Market news" />}
           discussion={<IndexDiscussion indexKey={key} />}

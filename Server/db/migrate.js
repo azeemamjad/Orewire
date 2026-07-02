@@ -527,6 +527,48 @@ async function migrate() {
     console.log('[DB] Seeded 3 dummy contact messages');
   }
 
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS symbol_flagged_at TIMESTAMPTZ`);
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS symbol_flagged_reason TEXT`);
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS symbol_flagged_tv_symbol TEXT`);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS instrument_symbols (
+      id           SERIAL PRIMARY KEY,
+      entity_type  TEXT NOT NULL CHECK (entity_type IN ('company', 'commodity', 'currency', 'index')),
+      entity_id    INTEGER REFERENCES companies(id) ON DELETE CASCADE,
+      entity_key   TEXT,
+      exchange     TEXT,
+      ticker       TEXT NOT NULL,
+      tv_symbol    TEXT NOT NULL,
+      label        TEXT,
+      is_default   BOOLEAN NOT NULL DEFAULT FALSE,
+      sort_order   INTEGER NOT NULL DEFAULT 0,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (
+        (entity_type = 'company' AND entity_id IS NOT NULL)
+        OR (entity_type IN ('commodity', 'currency', 'index') AND entity_key IS NOT NULL)
+      )
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_instrument_symbols_entity ON instrument_symbols(entity_type, entity_id, entity_key, sort_order)`);
+  await safeQuery(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_instrument_symbols_company_tv
+      ON instrument_symbols(entity_type, entity_id, tv_symbol)
+      WHERE entity_type = 'company' AND entity_id IS NOT NULL
+  `);
+  await safeQuery(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_instrument_symbols_key_tv
+      ON instrument_symbols(entity_type, entity_key, tv_symbol)
+      WHERE entity_key IS NOT NULL
+  `);
+
+  try {
+    const { seedInstrumentSymbolsIfEmpty } = require('../lib/market/instrument-symbols-store');
+    await seedInstrumentSymbolsIfEmpty();
+  } catch (err) {
+    console.warn('[DB] instrument_symbols seed skipped:', err?.message || err);
+  }
+
   console.log('[DB] All migrations complete');
 }
 
