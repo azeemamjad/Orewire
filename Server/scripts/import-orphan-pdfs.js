@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Register orphan PDFs (on disk, not in DB) with analyzed=0, dedupe by SHA-256,
- * upload unique files to MinIO, store minio:filings/<hash>.pdf
+ * upload unique files to S3, store public HTTPS URL in pdf_path
  *
  *   node scripts/import-orphan-pdfs.js --dry-run
  *   node scripts/import-orphan-pdfs.js
@@ -14,20 +14,23 @@ const path = require('path');
 const db = require('../db');
 const migrate = require('../db/migrate');
 const {
-  isMinioEnabled,
-  isMinioPath,
-  parseMinioPath,
-  toMinioPath,
+  isStorageEnabled,
+  isRemoteStoragePath,
+  isMinioLegacyPath,
+  parseStoragePath,
+  toStoragePath,
+  toMinioLegacyPath,
+  getFilingPrefix,
   localPathToObjectKey,
   ensureBucket,
   objectExists,
-  uploadFile,
+  persistFilingPdf,
 } = require('../lib/infra/object-storage');
 
 const { DOWNLOADS_DIR } = require('../lib/scraper/paths');
 
 const DRY_RUN = process.argv.includes('--dry-run');
-const MINIO_OBJECT_PREFIX = (process.env.MINIO_FILING_PREFIX || 'filings').replace(/\/+$/, '');
+const MINIO_OBJECT_PREFIX = getFilingPrefix();
 
 function fmtBytes(n) {
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)} GB`;
@@ -113,8 +116,8 @@ async function resolveCompany(client, folderName, pdfFilename = null) {
 function addKnownPath(knownPaths, pdfPath) {
   if (!pdfPath) return;
   knownPaths.add(pdfPath);
-  if (isMinioPath(pdfPath)) {
-    knownPaths.add(parseMinioPath(pdfPath));
+  if (isRemoteStoragePath(pdfPath)) {
+    knownPaths.add(parseStoragePath(pdfPath));
   } else {
     const resolved = path.resolve(pdfPath);
     knownPaths.add(resolved);
@@ -124,11 +127,12 @@ function addKnownPath(knownPaths, pdfPath) {
 }
 
 function isKnownPath(knownPaths, objectKey, localAbs) {
-  return (
-    knownPaths.has(localAbs)
-    || knownPaths.has(objectKey)
-    || knownPaths.has(toMinioPath(objectKey))
-  );
+  if (knownPaths.has(localAbs) || knownPaths.has(objectKey)) return true;
+  if (knownPaths.has(toMinioLegacyPath(objectKey))) return true;
+  if (isStorageEnabled()) {
+    return knownPaths.has(toStoragePath(objectKey));
+  }
+  return false;
 }
 
 async function indexExistingFilings(client, knownPaths, knownHashes) {
@@ -146,8 +150,8 @@ async function indexExistingFilings(client, knownPaths, knownHashes) {
     }
 
     let localPath = null;
-    if (isMinioPath(row.pdf_path)) {
-      localPath = path.join(DOWNLOADS_DIR, parseMinioPath(row.pdf_path));
+    if (isMinioLegacyPath(row.pdf_path)) {
+      localPath = path.join(DOWNLOADS_DIR, parseStoragePath(row.pdf_path));
     } else if (fs.existsSync(path.resolve(row.pdf_path))) {
       localPath = path.resolve(row.pdf_path);
     }
@@ -184,14 +188,14 @@ async function main() {
     console.error(`DOWNLOADS_DIR not found: ${DOWNLOADS_DIR}`);
     process.exit(1);
   }
-  if (!DRY_RUN && !isMinioEnabled()) {
-    console.error('MINIO_ENABLED=true required for live import (orphans are stored in MinIO).');
+  if (!DRY_RUN && !isStorageEnabled()) {
+    console.error('AWS_S3_ENABLED=true required for live import (orphans are stored in S3).');
     process.exit(1);
   }
 
   const pdfs = walkPdfs(DOWNLOADS_DIR);
   console.log(`[import] ${pdfs.length} PDF(s) on disk under ${DOWNLOADS_DIR}`);
-  console.log(`[import] mode: ${DRY_RUN ? 'DRY RUN' : 'IMPORT + MinIO'}`);
+  console.log(`[import] mode: ${DRY_RUN ? 'DRY RUN' : 'IMPORT + S3'}`);
 
   const client = await db.connect();
   const knownPaths = new Set();
@@ -251,16 +255,19 @@ async function main() {
           continue;
         }
 
-        const minioKey = objectKeyForHash(hash);
-        const pdfPath = toMinioPath(minioKey);
+        const storageKey = objectKeyForHash(hash);
         const fileSize = fs.statSync(localAbs).size;
 
-        if (!DRY_RUN) {
-          if (!(await objectExists(minioKey))) {
-            await uploadFile(localAbs, minioKey);
-            stats.bytes += fileSize;
-          } else {
+        if (DRY_RUN) {
+          knownHashes.add(hash);
+          stats.inserted++;
+        } else {
+          const alreadyExists = await objectExists(storageKey);
+          const pdfPath = await persistFilingPdf(localAbs, storageKey);
+          if (alreadyExists) {
             stats.uploadSkipped++;
+          } else {
+            stats.bytes += fileSize;
           }
 
           const ins = await client.query(
@@ -282,14 +289,14 @@ async function main() {
             stats.skippedDuplicate++;
             continue;
           }
+
+          knownHashes.add(hash);
+          addKnownPath(knownPaths, pdfPath);
+          addKnownPath(knownPaths, localAbs);
+          stats.inserted++;
         }
 
-        knownHashes.add(hash);
-        addKnownPath(knownPaths, pdfPath);
-        addKnownPath(knownPaths, localAbs);
-        stats.inserted++;
-
-        if (stats.inserted % 500 === 0) {
+        if (stats.inserted % 500 === 0 && stats.inserted > 0) {
           console.log(`[import] … ${stats.inserted} unique orphan(s) registered (${fmtBytes(stats.bytes)} uploaded)`);
         }
       } catch (err) {
@@ -307,9 +314,9 @@ async function main() {
   console.log(`  Unique orphans registered:  ${stats.inserted}`);
   console.log(`  Skipped (path in DB):       ${stats.skippedPath}`);
   console.log(`  Skipped (duplicate content): ${stats.skippedDuplicate}`);
-  console.log(`  MinIO upload skipped:       ${stats.uploadSkipped} (object already existed)`);
+  console.log(`  S3 upload skipped:          ${stats.uploadSkipped} (object already existed)`);
   console.log(`  No company match:           ${stats.noCompany}`);
-  console.log(`  Uploaded to MinIO:          ${fmtBytes(stats.bytes)}`);
+  console.log(`  Uploaded to S3:             ${fmtBytes(stats.bytes)}`);
   console.log(`  Errors:                     ${stats.errors}`);
 
   if (DRY_RUN) {

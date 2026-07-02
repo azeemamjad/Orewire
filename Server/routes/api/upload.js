@@ -7,6 +7,11 @@ const fs      = require('fs');
 const db      = require('../../db');
 const { upsertInsiderData } = require('../../db/insiders');
 const { chatWithSystem } = require('../../lib/ai/client');
+const {
+  isStorageEnabled,
+  persistFilingPdf,
+  localPathToObjectKey,
+} = require('../../lib/infra/object-storage');
 
 const upload = multer({ dest: './uploads/' });
 
@@ -355,7 +360,16 @@ router.post('/sync-analyses', express.json(), async (req, res) => {
         const pdfName = jf.replace(/_analysis\.json$/, '.pdf');
         const pdfPath = path.join(dp, pdfName);
         try {
-          const existing = await client.query('SELECT id FROM filings WHERE pdf_path = $1', [pdfPath]);
+          let storedPdfPath = pdfPath;
+          if (isStorageEnabled() && fs.existsSync(pdfPath)) {
+            const objectKey = localPathToObjectKey(pdfPath, downloadsDir);
+            storedPdfPath = await persistFilingPdf(pdfPath, objectKey);
+          }
+
+          const existing = await client.query(
+            'SELECT id FROM filings WHERE pdf_path = $1 OR pdf_path = $2',
+            [pdfPath, storedPdfPath],
+          );
           if (existing.rows.length > 0) { stats.skipped++; continue; }
 
           const analysis = JSON.parse(fs.readFileSync(path.join(dp, jf), 'utf8'));
@@ -367,7 +381,7 @@ router.post('/sync-analyses', express.json(), async (req, res) => {
             companyRow?.id ?? null,
             dir.replace(/_/g, ' '),
             pdfName,
-            pdfPath,
+            storedPdfPath,
             commodity,
             companyRow?.exchange || null,
           ]);

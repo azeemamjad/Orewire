@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Storage | OreWire Admin</title>
+<link rel="stylesheet" href="/admin/css/admin.css" />
+<style>
+nav li a { color: inherit; text-decoration: none; display: flex; align-items: center; gap: 8px; width: 100%; }
+.storage-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; margin-bottom: 24px; }
+.storage-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+.storage-card .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.storage-card .value { font-size: 22px; font-weight: 700; }
+.storage-card .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.conn-ok { color: #16a34a; }
+.conn-fail { color: #dc2626; }
+.progress-wrap { background: var(--surface2); border-radius: 8px; height: 10px; overflow: hidden; margin: 12px 0; }
+.progress-bar { height: 100%; background: var(--gold); width: 0%; transition: width 0.3s; }
+.storage-log { background: #0f172a; color: #e2e8f0; font-family: ui-monospace, monospace; font-size: 12px; padding: 12px; border-radius: 8px; max-height: 320px; overflow-y: auto; white-space: pre-wrap; }
+.storage-log .err { color: #fca5a5; }
+.migrate-options { display: flex; flex-wrap: wrap; gap: 16px; margin: 12px 0; font-size: 13px; }
+</style>
+</head>
+<body data-page="storage">
+<aside class="sidebar">
+  <div class="logo"><a href="dashboard.html" class="brand-link" aria-label="OreWire Admin home"><span class="brand-mark" aria-hidden="true">O</span><span class="brand-copy"><span class="brand-title">OreWire Admin</span><span class="brand-subtitle">Mining intelligence operations</span></span></a></div>
+  <nav><ul>
+      <li><a href="dashboard.html"><span class="icon">📊</span>Dashboard</a></li>
+      <li><a href="companies.html"><span class="icon">🏢</span>Companies</a></li>
+      <li><a href="filings.html"><span class="icon">📄</span>Filings</a></li>
+      <li class="active"><a href="storage.html"><span class="icon">☁</span>Storage</a></li>
+      <li><a href="import.html"><span class="icon">📥</span>Import Data</a></li>
+      <li><a href="scraper.html"><span class="icon">🤖</span>Run Scraper</a></li>
+      <li><a href="pipeline.html"><span class="icon">⚙️</span>Pipeline</a></li>
+      <li><a href="relay.html"><span class="icon">🌐</span>Relay</a></li>
+      <li><a href="proxies.html"><span class="icon">🔌</span>Proxies</a></li>
+      <li><a href="ai.html"><span class="icon">🧠</span>AI</a></li>
+      <li><a href="va-tasks.html"><span class="icon">📋</span>VA Tasks<span class="nav-badge" data-va-tasks-badge hidden></span></a></li>
+      <li><a href="users.html"><span class="icon">👤</span>Users</a></li>
+      <li><a href="contact-messages.html"><span class="icon">📧</span>Contact<span class="nav-badge" data-contact-unread-badge hidden></span></a></li>
+      <li><a href="processes.html"><span class="icon">🖥</span>System</a></li>
+  </ul></nav>
+  <div class="sidebar-footer">
+    <a href="/admin/logout" class="logout-link">🚪 Logout</a>
+  </div>
+</aside>
+<main class="main">
+  <div class="page-header">
+    <h1>Storage</h1>
+    <p>MinIO → AWS S3 migration, bucket analytics, and presigned document access</p>
+  </div>
+
+  <div class="toolbar" style="margin-bottom:16px;">
+    <button class="btn btn-ghost btn-sm" onclick="loadStorageSummary()">↻ Refresh</button>
+    <span id="storage-updated" style="margin-left:auto;font-size:12px;color:var(--muted);"></span>
+  </div>
+
+  <div class="section-title">Connections</div>
+  <div class="storage-grid" id="storage-conn-grid">
+    <div class="storage-card"><div class="label">MinIO</div><div class="value" id="conn-minio">—</div><div class="sub" id="conn-minio-sub"></div></div>
+    <div class="storage-card"><div class="label">AWS S3</div><div class="value" id="conn-s3">—</div><div class="sub" id="conn-s3-sub"></div></div>
+    <div class="storage-card"><div class="label">Access mode</div><div class="value" style="font-size:16px;" id="conn-mode">—</div><div class="sub" id="conn-mode-sub"></div></div>
+  </div>
+
+  <div class="section-title">Database (pdf_path)</div>
+  <div class="storage-grid">
+    <div class="storage-card"><div class="label">minio: (pending)</div><div class="value" id="db-minio">—</div></div>
+    <div class="storage-card"><div class="label">s3: (migrated)</div><div class="value" id="db-s3">—</div></div>
+    <div class="storage-card"><div class="label">https: (legacy)</div><div class="value" id="db-https">—</div></div>
+    <div class="storage-card"><div class="label">Local paths</div><div class="value" id="db-local">—</div></div>
+  </div>
+
+  <div class="section-title">Bucket volume</div>
+  <div class="storage-grid">
+    <div class="storage-card"><div class="label">MinIO objects</div><div class="value" id="minio-objects">—</div><div class="sub" id="minio-bytes"></div></div>
+    <div class="storage-card"><div class="label">S3 objects</div><div class="value" id="s3-objects">—</div><div class="sub" id="s3-bytes"></div></div>
+  </div>
+
+  <div class="section-title" style="margin-top:24px;">Migration</div>
+  <div class="preview-box">
+    <p style="color:var(--muted);font-size:13px;line-height:1.6;margin-bottom:12px;">
+      Copies filing PDFs from MinIO to AWS S3 and updates <code>filings.pdf_path</code> to
+      <code>s3:filings/…</code>. Documents are served via presigned URLs (private bucket).
+      Requires both <code>MINIO_*</code> and <code>AWS_*</code> env on the backend.
+    </p>
+    <div class="migrate-options">
+      <label><input type="checkbox" id="migrate-include-local" /> Include local disk paths</label>
+      <label><input type="checkbox" id="migrate-include-orphans" /> Include orphan MinIO objects</label>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn btn-ghost" id="migrate-dry-btn" onclick="startStorageMigration(true)">Dry run</button>
+      <button class="btn btn-primary" id="migrate-start-btn" onclick="startStorageMigration(false)">Start migration</button>
+      <button class="btn btn-ghost" id="migrate-cancel-btn" onclick="cancelStorageMigration()" disabled>Cancel</button>
+    </div>
+    <div style="margin-top:16px;">
+      <div style="font-size:13px;margin-bottom:4px;"><span id="migrate-phase">Idle</span> · <span id="migrate-progress-text">0 / 0</span></div>
+      <div class="progress-wrap"><div class="progress-bar" id="migrate-progress-bar"></div></div>
+      <div id="migrate-stats" style="font-size:12px;color:var(--muted);margin-bottom:8px;"></div>
+      <div class="storage-log" id="migrate-log">No migration logs yet.</div>
+    </div>
+  </div>
+</main>
+<div id="toast"></div>
+<script src="/admin/js/cron-schedule.js"></script>
+<script src="/admin/js/admin-sidebar.js"></script>
+<script src="/admin/js/legacy-admin.js"></script>
+</body>
+</html>

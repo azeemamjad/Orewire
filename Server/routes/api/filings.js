@@ -4,8 +4,9 @@ const path    = require('path');
 const fs      = require('fs');
 const db      = require('../../db');
 const {
-  isMinioPath,
-  parseMinioPath,
+  isRemoteStoragePath,
+  parseStoragePath,
+  resolveDocumentRedirect,
   streamToResponse,
 } = require('../../lib/infra/object-storage');
 
@@ -176,13 +177,25 @@ router.get('/:id/document', async (req, res) => {
     const filing = result.rows[0];
     if (!filing || !filing.pdf_path) return res.status(404).json({ error: 'Document not found' });
 
-    if (isMinioPath(filing.pdf_path)) {
-      const objectKey = parseMinioPath(filing.pdf_path);
+    if (isRemoteStoragePath(filing.pdf_path)) {
+      try {
+        const redirectUrl = await resolveDocumentRedirect(filing.pdf_path);
+        if (redirectUrl) {
+          return res.redirect(302, redirectUrl);
+        }
+      } catch (err) {
+        console.error('Presigned redirect failed:', err?.message || err);
+      }
+
+      const objectKey = parseStoragePath(filing.pdf_path);
+      if (!objectKey) {
+        return res.status(404).json({ error: 'Document not found' });
+      }
       try {
         await streamToResponse(objectKey, res, { filename: filing.pdf_filename || 'filing.pdf' });
         return;
       } catch (err) {
-        if (err?.code === 'NotFound' || err?.code === 'NoSuchKey') {
+        if (err?.name === 'NotFound' || err?.code === 'NotFound' || err?.code === 'NoSuchKey') {
           return res.status(404).json({ error: 'File no longer available' });
         }
         throw err;

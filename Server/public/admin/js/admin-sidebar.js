@@ -3,6 +3,7 @@ const ADMIN_NAV = [
   { page: 'companies', href: 'companies.html', icon: '🏢', label: 'Companies' },
   { page: 'market-symbols', href: 'market-symbols.html', icon: '📈', label: 'Market Symbols' },
   { page: 'filings', href: 'filings.html', icon: '📄', label: 'Filings' },
+  { page: 'storage', href: 'storage.html', icon: '☁', label: 'Storage' },
   { page: 'import', href: 'import.html', icon: '📥', label: 'Import Data' },
   { page: 'scraper', href: 'scraper.html', icon: '🤖', label: 'Run Scraper' },
   { page: 'pipeline', href: 'pipeline.html', icon: '⚙️', label: 'Pipeline' },
