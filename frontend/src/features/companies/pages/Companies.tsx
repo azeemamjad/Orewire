@@ -17,6 +17,7 @@ import {
   type Company,
 } from "@/lib/api";
 import { parseCompanySearchQuery, parsedExchangeToMarket } from "@/lib/company-search-parse";
+import { API_BASE } from "@/lib/api-client";
 
 type Selected = {
   market: string | null;
@@ -31,8 +32,6 @@ const EMPTY: Selected = {
   continent: null,
   country: null,
 };
-
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
 
 function fmtMcap(n: number | null | undefined): string {
   if (n == null) return "-";

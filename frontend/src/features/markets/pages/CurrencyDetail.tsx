@@ -28,6 +28,10 @@ import {
   type Discussion,
 } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
+import SymbolPicker from "@/features/markets/components/SymbolPicker";
+import { useInstrumentSymbols } from "@/hooks/use-instrument-symbols";
+import { useLiveQuote } from "@/hooks/use-live-quote";
+import { formatEmpty } from "@/lib/display";
 
 function currencyTvSymbol(key: string): string | null {
   if (key === "DXY") return "TVC:DXY";
@@ -100,7 +104,13 @@ function avatarColor(email: string): string {
 const CurrencyDetail = () => {
   const { slug } = useParams();
   const key = (slug || "USDCAD").toUpperCase();
+  const entityKey = key.toLowerCase();
   const meta = CURRENCY_META[key] || { name: key, fullName: key, quote: "", about: `Spot rate for ${key}.` };
+
+  const { symbols, selectedTvSymbol, setSelectedTvSymbol } = useInstrumentSymbols("currency", entityKey);
+  const { data: liveQuote } = useLiveQuote(selectedTvSymbol);
+  const fallbackTv = currencyTvSymbol(key);
+  const chartTvSymbol = selectedTvSymbol || fallbackTv;
 
   const { data } = useQuery({
     queryKey: ["currencies"],
@@ -108,12 +118,17 @@ const CurrencyDetail = () => {
     staleTime: 30 * 60 * 1000,
   });
   const currency = data?.items?.find((c: CurrencySpot) => c.key === key);
-  const price = currency?.price ?? null;
-  const changePct = currency?.change_pct ?? null;
+  const price = liveQuote?.price ?? currency?.price ?? null;
+  const changePct = liveQuote?.change_pct ?? currency?.change_pct ?? null;
   const isUp = (changePct ?? 0) >= 0;
-  const changeAbs = price && changePct ? +(price * changePct / 100).toFixed(4) : null;
-  const now = new Date();
-  const timeStr = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")} ET`;
+  const changeAbs = liveQuote?.change_abs ?? (price && changePct ? +(price * changePct / 100).toFixed(4) : null);
+  const quoteSourceLabel = "TradingView";
+
+  const prevClose = price != null && changeAbs != null ? +(price - changeAbs).toFixed(4) : null;
+  const dayOpen = liveQuote?.open ?? null;
+  const dayHigh = liveQuote?.high ?? null;
+  const dayLow = liveQuote?.low ?? null;
+  const fmt4 = (n: number | null) => (n != null ? n.toFixed(4) : formatEmpty(null));
 
   const [inWatchlist, setInWatchlist] = useState(false);
   useEffect(() => {
@@ -133,13 +148,6 @@ const CurrencyDetail = () => {
       /* skip */
     }
   };
-
-  const tvSymbol = currencyTvSymbol(key);
-
-  const simOpen = price ? +(price * (1 - (changePct || 0) / 100 * 0.3)).toFixed(4) : null;
-  const simHigh = price ? +(price * 1.0015).toFixed(4) : null;
-  const simLow = price ? +(price * 0.9985).toFixed(4) : null;
-  const simPrevClose = price && changeAbs !== null ? +(price - changeAbs).toFixed(4) : null;
 
   return (
     <SiteLayout morningBrief>
@@ -180,7 +188,9 @@ const CurrencyDetail = () => {
                       {changePct.toFixed(2)}%)
                     </span>
                   )}
-                  <span className="text-xs text-muted-foreground font-mono">· Live · Last: {timeStr}</span>
+                  <span className="text-xs text-muted-foreground font-mono">
+                    · {quoteSourceLabel} · Delayed · Day change vs prior close
+                  </span>
                 </div>
               )}
             </div>
@@ -203,16 +213,23 @@ const CurrencyDetail = () => {
         </header>
 
         <MarketDetailLayout
-          chartSymbol={tvSymbol}
-          chartLabel={tvSymbol || undefined}
+          chartSymbol={chartTvSymbol}
+          chartLabel={chartTvSymbol || undefined}
+          symbolPicker={
+            <SymbolPicker
+              symbols={symbols}
+              selectedTvSymbol={selectedTvSymbol}
+              onSelect={setSelectedTvSymbol}
+            />
+          }
           aboutTitle={`About ${key}`}
           aboutBody={<p>{meta.about}</p>}
           stats={[
-            ...(simPrevClose !== null ? [{ label: "Prev close", value: simPrevClose.toFixed(4) }] : []),
-            ...(simOpen !== null ? [{ label: "Open", value: simOpen.toFixed(4) }] : []),
-            ...(simHigh !== null ? [{ label: "Day high", value: simHigh.toFixed(4) }] : []),
-            ...(simLow !== null ? [{ label: "Day low", value: simLow.toFixed(4) }] : []),
-            { label: "Quote", value: meta.quote || "-" },
+            { label: "Prev close", value: fmt4(prevClose) },
+            { label: "Open", value: fmt4(dayOpen) },
+            { label: "Day high", value: fmt4(dayHigh) },
+            { label: "Day low", value: fmt4(dayLow) },
+            { label: "Quote", value: meta.quote || formatEmpty(null) },
             { label: "Type", value: "FX Spot" },
           ]}
           marketNewsSection={<MarketNewsKeywordSection keyword={meta.fullName} title="Market news" />}

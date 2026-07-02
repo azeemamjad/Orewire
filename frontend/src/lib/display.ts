@@ -1,5 +1,13 @@
 /** Shown when a numeric or text field has no value. */
-export const EMPTY = "-";
+export const EMPTY = 'N/A';
+
+export function formatEmpty(
+  value: string | number | null | undefined,
+  fallback: string = EMPTY,
+): string {
+  if (value == null || value === '') return fallback;
+  return String(value);
+}
 
 /** Split "Agent Name - address" lines (still parses legacy em/en dashes in stored data). */
 export function splitRegistryLine(value: string): { name: string; address: string | null } {

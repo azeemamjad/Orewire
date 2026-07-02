@@ -13,6 +13,8 @@ function normalizeExchange(ex) {
 
 const { fetchCompanyQuote } = require('../../lib/market-quote');
 const { fetchTvFundamentals, tvSymbolForCompany } = require('../../lib/tv-quote');
+const { listSymbols, getDefaultSymbol } = require('../../lib/market/instrument-symbols-store');
+const { checkCompanySymbolHealth } = require('../../lib/market/symbol-health');
 const {
   COMMODITY_KEYS,
   CONTINENT_KEYS,
@@ -393,11 +395,22 @@ router.get('/:idOrSlug', async (req, res) => {
   const row = result.rows[0];
   if (!row) return res.status(404).json({ error: 'Not found' });
 
+  const symbols = await listSymbols('company', { entityId: row.id });
+  const defaultListing = await getDefaultSymbol('company', { entityId: row.id });
+  const quoteExchange = defaultListing?.exchange || row.exchange;
+  const quoteTicker = defaultListing?.ticker || row.ticker;
+  const tvSym = defaultListing?.tv_symbol || tvSymbolForCompany(row.exchange, row.ticker);
+
+  // Non-blocking symbol health check on page visit
+  checkCompanySymbolHealth(row).catch((err) => {
+    console.warn(`[symbol-health] Company ${row.id} check failed:`, err?.message || err);
+  });
+
   // Fetch market data from TradingView if ticker exists
   let marketData = null;
-  if (row.ticker && row.exchange) {
+  if (quoteTicker && quoteExchange) {
     try {
-      const tv = await fetchTvSymbol(row.exchange, row.ticker);
+      const tv = await fetchTvSymbol(quoteExchange, quoteTicker);
       marketData = {
         price: tv.close ?? null,
         change_pct: tv.change ?? null,
@@ -418,18 +431,19 @@ router.get('/:idOrSlug', async (req, res) => {
         price_52_week_high: tv.price_52_week_high ?? null,
         price_52_week_low: tv.price_52_week_low ?? null,
         source: tv._source === 'yahoo' ? 'yahoo' : 'tradingview',
+        tv_symbol: tvSym,
       };
     } catch (err) {
-      marketData = { error: err.message };
+      marketData = { error: err.message, tv_symbol: tvSym };
     }
   }
 
   // Fundamentals + identifiers (market cap, shares out, 30d avg volume, ISIN, CUSIP)
   // from the TradingView scanner — neither the Yahoo chart nor the price quote carry them.
   let fundamentals = null;
-  if (row.ticker && row.exchange) {
+  if (tvSym) {
     try {
-      fundamentals = await fetchTvFundamentals(tvSymbolForCompany(row.exchange, row.ticker));
+      fundamentals = await fetchTvFundamentals(tvSym);
     } catch {
       fundamentals = null;
     }
@@ -448,7 +462,15 @@ router.get('/:idOrSlug', async (req, res) => {
   const enriched = enrichCompany(row);
   // eslint-disable-next-line no-unused-vars
   const { raw_data, ...clean } = enriched;
-  res.json({ ...clean, marketData, fundamentals, filings: filingsResult.rows });
+  res.json({
+    ...clean,
+    symbols,
+    symbol_flagged_at: row.symbol_flagged_at ?? null,
+    symbol_flagged_reason: row.symbol_flagged_reason ?? null,
+    marketData,
+    fundamentals,
+    filings: filingsResult.rows,
+  });
   } catch (err) {
     console.error('Company detail query failed:', err?.message || err);
     res.status(503).json({ error: 'Database unavailable' });

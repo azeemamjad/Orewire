@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Market Symbols | OreWire Admin</title>
+<link rel="stylesheet" href="/admin/css/admin.css" />
+<style>
+nav li a { color: inherit; text-decoration: none; display: flex; align-items: center; gap: 8px; width: 100%; }
+.sym-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
+</style>
+</head>
+<body data-page="market-symbols">
+<aside class="sidebar"></aside>
+<main class="main">
+  <div class="page-header">
+    <h1>Market symbols</h1>
+    <p>TradingView tickers for commodities, currencies, and indexes (multiple fallbacks per instrument)</p>
+  </div>
+
+  <div class="sym-toolbar">
+    <select id="ms-type" onchange="marketSymbolsOnTypeChange()">
+      <option value="commodity">Commodity</option>
+      <option value="currency">Currency</option>
+      <option value="index">Index</option>
+    </select>
+    <select id="ms-key" onchange="loadMarketSymbols()"></select>
+    <button class="btn btn-primary btn-sm" type="button" onclick="addMarketSymbolRow()">+ Add symbol</button>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Default</th>
+          <th>Exchange</th>
+          <th>Ticker</th>
+          <th>TV symbol</th>
+          <th>Label</th>
+          <th>Order</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="ms-body">
+        <tr class="empty-row"><td colspan="7">Select an instrument</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+<div id="toast"></div>
+<script src="/admin/js/admin-sidebar.js"></script>
+<script src="/admin/js/legacy-admin.js"></script>
+</body>
+</html>

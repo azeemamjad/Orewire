@@ -51,6 +51,7 @@ const ERROR_LABELS = {
   unread_messages: 'Unread contact messages',
   pending_analysis: 'Filings awaiting AI analysis',
   missing_people: 'Companies missing managers/directors',
+  symbol_invalid: 'Invalid or stale ticker symbol',
 };
 
 function moduleLabel(module) {
@@ -222,6 +223,32 @@ async function collectActiveTasks() {
     /* ignore */
   }
 
+  try {
+    const flagged = await db.query(`
+      SELECT id, name, exchange, ticker, symbol_flagged_reason, symbol_flagged_tv_symbol
+        FROM companies
+       WHERE symbol_flagged_at IS NOT NULL
+    `);
+    for (const row of flagged.rows) {
+      const ex = row.exchange || '';
+      const tk = row.ticker || '';
+      tasks.push({
+        sourceKey: `companies|symbol_invalid|${row.id}`,
+        module: 'companies',
+        errorType: 'symbol_invalid',
+        title: `Fix ticker: ${row.name} (${ex}:${tk})`,
+        description: row.symbol_flagged_reason
+          || `TradingView symbol ${row.symbol_flagged_tv_symbol || `${ex}:${tk}`} returned no price.`,
+        actionUrl: `/admin/companies.html?edit=${row.id}&tab=symbols`,
+        severity: 'medium',
+        occurrenceCount: 1,
+        sampleDetail: row.symbol_flagged_tv_symbol || `${ex}:${tk}`,
+      });
+    }
+  } catch {
+    /* ignore */
+  }
+
   for (const group of collectPipelineErrors()) {
     if (group.count < 1) continue;
     const modLabel = moduleLabel(group.module);
@@ -301,6 +328,15 @@ async function upsertAutoTask(task) {
   );
 }
 
+async function resolveAutoTask(sourceKey) {
+  await db.query(
+    `UPDATE va_tasks
+     SET status = 'resolved', resolved_at = NOW(), resolved_by = 'system'
+     WHERE source_key = $1 AND auto_managed = TRUE AND status IN ('open', 'in_progress')`,
+    [sourceKey],
+  );
+}
+
 async function syncVaTasks() {
   const active = await collectActiveTasks();
   const activeKeys = active.map((t) => t.sourceKey);
@@ -331,6 +367,8 @@ async function syncVaTasks() {
 
 module.exports = {
   syncVaTasks,
+  upsertAutoTask,
+  resolveAutoTask,
   moduleLabel,
   errorLabel,
   classifyError,

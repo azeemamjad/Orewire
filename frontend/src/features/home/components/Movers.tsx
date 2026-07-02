@@ -72,9 +72,9 @@ const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up:
             </td>
           </tr>
         ) : (
-          rows.map((r) => (
+          rows.map((r, i) => (
             <tr
-              key={`${r.exchange}-${r.ticker}`}
+              key={`${r.exchange}-${r.ticker}-${i}`}
               className="hover:bg-background/60 transition-colors cursor-pointer group"
               onClick={() => navigate(`/company/${companySlug(r.exchange, r.ticker)}`)}
             >

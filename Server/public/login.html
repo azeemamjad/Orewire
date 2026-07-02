@@ -6,21 +6,23 @@
 <title>Sign in | OreWire Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,700;8..60,800&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet" />
 <style>
   :root {
-    --bg:         #f7f3ec;
+    --bg:         #f5f7fa;
     --surface:    #ffffff;
-    --border:     #d8d2c6;
-    --accent:     #14233f;
-    --accent-gold:#d4a12a;
-    --accent-gold-h: #b07d1a;
-    --text:       #1a2541;
-    --muted:      #6b6560;
-    --danger:     #b91c1c;
-    --radius:     8px;
+    --border:     #e6e8ee;
+    --accent:     #0f172a;
+    --primary:    #4f46e5;
+    --primary-h:  #4338ca;
+    --accent-gold:#4f46e5;
+    --accent-gold-h: #4338ca;
+    --text:       #0f172a;
+    --muted:      #64748b;
+    --danger:     #dc2626;
+    --radius:     12px;
     --font-sans:  'Inter', system-ui, sans-serif;
-    --font-display: 'Source Serif 4', Georgia, serif;
+    --font-display: 'Inter', system-ui, sans-serif;
     --font-mono:  'JetBrains Mono', monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -33,8 +35,8 @@
     font-family: var(--font-sans);
     color: var(--text);
     background:
-      radial-gradient(ellipse 80% 60% at 10% 0%, rgba(212, 161, 42, 0.12), transparent 55%),
-      radial-gradient(ellipse 70% 50% at 90% 100%, rgba(20, 35, 63, 0.08), transparent 50%),
+      radial-gradient(ellipse 80% 60% at 10% 0%, rgba(79, 70, 229, 0.10), transparent 55%),
+      radial-gradient(ellipse 70% 50% at 90% 100%, rgba(15, 23, 42, 0.06), transparent 50%),
       var(--bg);
     -webkit-font-smoothing: antialiased;
   }
@@ -44,7 +46,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 32px 28px 28px;
-    box-shadow: 0 8px 32px rgba(20, 35, 63, 0.08);
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.10);
   }
   .brand {
     display: flex;
@@ -56,15 +58,17 @@
   }
   .brand-mark {
     position: relative;
-    width: 40px;
-    height: 40px;
-    background: var(--accent);
+    width: 42px;
+    height: 42px;
+    background: linear-gradient(140deg, #6366f1, var(--primary));
     color: #fff;
+    border-radius: 12px;
     display: grid;
     place-items: center;
     font-family: var(--font-display);
-    font-size: 18px;
+    font-size: 19px;
     font-weight: 800;
+    box-shadow: 0 6px 16px rgba(79, 70, 229, 0.35);
     flex-shrink: 0;
   }
   .brand-mark::after {
@@ -75,7 +79,8 @@
     width: 7px;
     height: 7px;
     border-radius: 999px;
-    background: #15803d;
+    background: #16a34a;
+    box-shadow: 0 0 0 2px var(--surface);
   }
   .brand-text strong {
     display: block;
@@ -122,36 +127,37 @@
     width: 100%;
     height: 46px;
     padding: 0 14px;
-    background: #faf7f1;
+    background: #f8fafc;
     color: var(--text);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 15px;
     font-family: inherit;
     outline: none;
     transition: border-color .15s, box-shadow .15s;
   }
   input[type=password]:focus {
-    border-color: var(--accent-gold);
-    box-shadow: 0 0 0 3px rgba(212, 161, 42, 0.15);
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.18);
   }
   button[type=submit] {
     width: 100%;
-    height: 46px;
+    height: 48px;
     margin-top: 18px;
-    background: var(--accent-gold);
+    background: var(--primary);
     color: #fff;
     border: none;
-    border-radius: 6px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    font-weight: 700;
+    border-radius: 10px;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 600;
     cursor: pointer;
-    transition: background .15s;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.30);
+    transition: background .15s, box-shadow .15s;
   }
-  button[type=submit]:hover { background: var(--accent-gold-h); }
+  button[type=submit]:hover { background: var(--primary-h); }
   .error {
     margin-top: 16px;
     padding: 10px 14px;

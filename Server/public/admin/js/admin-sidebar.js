@@ -1,6 +1,7 @@
 const ADMIN_NAV = [
   { page: 'dashboard', href: 'dashboard.html', icon: '📊', label: 'Dashboard' },
   { page: 'companies', href: 'companies.html', icon: '🏢', label: 'Companies' },
+  { page: 'market-symbols', href: 'market-symbols.html', icon: '📈', label: 'Market Symbols' },
   { page: 'filings', href: 'filings.html', icon: '📄', label: 'Filings' },
   { page: 'import', href: 'import.html', icon: '📥', label: 'Import Data' },
   { page: 'scraper', href: 'scraper.html', icon: '🤖', label: 'Run Scraper' },

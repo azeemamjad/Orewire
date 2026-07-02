@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Relay | Mining Intel Admin</title>
+<title>Relay | OreWire Admin</title>
 <link rel="stylesheet" href="/admin/css/admin.css" />
 <style>
 .relay-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-top: 20px; }
@@ -32,14 +32,14 @@
 .relay-live-url a { color: var(--gold); text-decoration: none; }
 .relay-live-url a:hover { text-decoration: underline; }
 .relay-url-muted { color: var(--muted); font-style: italic; }
-.relay-task-line { font-size: 11px; color: #58a6ff; margin-bottom: 8px; word-break: break-word; }
+.relay-task-line { font-size: 11px; color: #2563eb; margin-bottom: 8px; word-break: break-word; }
 .relay-error-line {
   font-size: 12px;
   line-height: 1.45;
-  color: #f87171;
+  color: #dc2626;
   margin: 8px 0 10px;
   padding: 8px 10px;
-  background: rgba(248, 113, 113, .08);
+  background: #fef2f2;
   border-radius: 6px;
   word-break: break-word;
 }
@@ -53,10 +53,10 @@
   border-radius: 4px;
   margin-bottom: 12px;
 }
-.relay-status.active { background: rgba(46, 160, 67, .15); color: #3fb950; }
-.relay-status.needs_human { background: rgba(201, 162, 39, .2); color: var(--gold); }
-.relay-status.inactive { background: rgba(139, 148, 158, .15); color: var(--muted); }
-.relay-status.starting { background: rgba(88, 166, 255, .15); color: #58a6ff; }
+.relay-status.active { background: #dcfce7; color: #16a34a; }
+.relay-status.needs_human { background: #fef3c7; color: var(--gold); }
+.relay-status.inactive { background: #f1f5f9; color: var(--muted); }
+.relay-status.starting { background: #dbeafe; color: #2563eb; }
 .relay-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .relay-view-url {
   margin-top: 12px;
@@ -90,9 +90,9 @@
   margin-right: 6px;
   vertical-align: middle;
 }
-.relay-proxy-tag.dc { background: rgba(88, 166, 255, .2); color: #58a6ff; }
-.relay-proxy-tag.res { background: rgba(201, 162, 39, .25); color: var(--gold); }
-.relay-proxy-tag.local { background: rgba(139, 148, 158, .2); color: #c9d1d9; }
+.relay-proxy-tag.dc { background: #dbeafe; color: #2563eb; }
+.relay-proxy-tag.res { background: #fef3c7; color: var(--gold); }
+.relay-proxy-tag.local { background: #f1f5f9; color: #64748b; }
 .relay-card .proxy-line { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
 .relay-tasks-wrap { margin-top: 32px; }
 .relay-tasks-wrap h2 { font-size: 18px; margin-bottom: 8px; }
@@ -100,14 +100,14 @@
 .relay-tasks-table th, .relay-tasks-table td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; vertical-align: top; }
 .relay-tasks-table th { background: var(--card); color: var(--muted); font-weight: 600; }
 .relay-tasks-table tr.no-browser { opacity: 0.55; }
-.tag-yes { color: #3fb950; font-weight: 600; }
+.tag-yes { color: #16a34a; font-weight: 600; }
 .tag-captcha { color: var(--gold); font-weight: 600; }
 .tag-no { color: var(--muted); }
 </style>
 </head>
 <body data-page="relay">
 <aside class="sidebar">
-  <div class="logo">⛏ Mining Intel<span>SEDAR+ Filing Tracker</span></div>
+  <div class="logo"><a href="dashboard.html" class="brand-link" aria-label="OreWire Admin home"><span class="brand-mark" aria-hidden="true">O</span><span class="brand-copy"><span class="brand-title">OreWire Admin</span><span class="brand-subtitle">Mining intelligence operations</span></span></a></div>
   <nav><ul>
       <li><a href="dashboard.html"><span class="icon">📊</span>Dashboard</a></li>
       <li><a href="companies.html"><span class="icon">🏢</span>Companies</a></li>
@@ -123,8 +123,8 @@
       <li><a href="contact-messages.html"><span class="icon">📧</span>Contact<span class="nav-badge" data-contact-unread-badge hidden></span></a></li>
       <li><a href="processes.html"><span class="icon">🖥</span>System</a></li>
   </ul></nav>
-  <div style="margin-top:auto;padding:14px 16px;border-top:1px solid var(--border);">
-    <a href="/admin/logout" style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;text-decoration:none;">🚪 Logout</a>
+  <div class="sidebar-footer">
+    <a href="/admin/logout" class="logout-link">🚪 Logout</a>
   </div>
 </aside>
 <main class="main">
@@ -200,7 +200,7 @@ async function api(path, opts = {}) {
 
 function showGridError(msg) {
   document.getElementById('relay-grid').innerHTML =
-    '<p style="color:#f87171;grid-column:1/-1;"><strong>Cannot load browsers:</strong> ' + escapeHtml(msg) + '</p>';
+    '<p style="color:#dc2626;grid-column:1/-1;"><strong>Cannot load browsers:</strong> ' + escapeHtml(msg) + '</p>';
 }
 
 function statusClass(s) {

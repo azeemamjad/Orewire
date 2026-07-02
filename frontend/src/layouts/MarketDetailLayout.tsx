@@ -8,6 +8,7 @@ type MarketDetailLayoutProps = {
   chartSymbol: string | null;
   chartLabel?: string | null;
   chartInterval?: string;
+  symbolPicker?: ReactNode;
   aboutTitle: string;
   aboutBody: ReactNode;
   stats: StatRow[];
@@ -20,6 +21,7 @@ export default function MarketDetailLayout({
   chartSymbol,
   chartLabel,
   chartInterval,
+  symbolPicker,
   aboutTitle,
   aboutBody,
   stats,
@@ -30,9 +32,12 @@ export default function MarketDetailLayout({
     <div className="grid lg:grid-cols-3 gap-6 items-start">
       <div className="lg:col-span-2 flex flex-col gap-6">
         <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
-          <div className="space-y-1.5 p-6 pb-3 flex flex-row items-center justify-between gap-3 flex-wrap">
-            <h3 className="font-semibold tracking-tight font-display text-xl">Price</h3>
-            {chartLabel && <span className="font-mono text-[11px] text-muted-foreground">{chartLabel}</span>}
+          <div className="space-y-1.5 p-6 pb-3 flex flex-col gap-2 shrink-0">
+            <div className="flex flex-row items-center justify-between gap-3 flex-wrap">
+              <h3 className="font-semibold tracking-tight font-display text-xl">Price</h3>
+              {chartLabel && <span className="font-mono text-[11px] text-muted-foreground">{chartLabel}</span>}
+            </div>
+            {symbolPicker}
           </div>
           <div className="p-6 pt-0">
             <TradingViewChart symbol={chartSymbol} interval={chartInterval} />
