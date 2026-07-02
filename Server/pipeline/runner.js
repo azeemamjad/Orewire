@@ -6,6 +6,11 @@ const { state, addLog } = require('./state');
 const { load: loadConfig } = require('./config');
 const { upsertInsiderData } = require('../db/insiders');
 const { DOWNLOADS_DIR } = require('../lib/scraper/paths');
+const {
+  isStorageEnabled,
+  persistFilingPdf,
+  localPathToObjectKey,
+} = require('../lib/infra/object-storage');
 const { applyScraperEnv, restoreScraperEnv, relayWiringEnabled } = require('../lib/scraper/env');
 const { runSedarDownload } = require('../lib/scraper/runners/sedar');
 const { runAsxDownload } = require('../lib/scraper/runners/asx');
@@ -183,6 +188,12 @@ async function saveOneFiling(pdfPath, companyDir, companyName, ticker, exchange)
   const pdfName = path.basename(pdfPath);
   const commodity = inferCommodity(analysis.summary, analysis.ticker_summary);
 
+  let storedPdfPath = pdfPath;
+  if (isStorageEnabled() && fs.existsSync(pdfPath)) {
+    const objectKey = localPathToObjectKey(pdfPath, DOWNLOADS_DIR);
+    storedPdfPath = await persistFilingPdf(pdfPath, objectKey);
+  }
+
   const client = await db.connect();
   try {
     await client.query('BEGIN');
@@ -207,7 +218,7 @@ async function saveOneFiling(pdfPath, companyDir, companyName, ticker, exchange)
       companyRow?.id ?? null,
       companyRow?.name || companyName,
       pdfName,
-      pdfPath,
+      storedPdfPath,
       commodity,
       companyRow?.exchange || exchange,
     ]);
@@ -215,7 +226,10 @@ async function saveOneFiling(pdfPath, companyDir, companyName, ticker, exchange)
     const fid = fiResult.rows[0]?.id;
     if (!fid) {
       // Already exists (conflict) — update AI output instead
-      const existing = await client.query('SELECT id FROM filings WHERE pdf_path = $1', [pdfPath]);
+      const existing = await client.query(
+        'SELECT id FROM filings WHERE pdf_path = $1 OR pdf_path = $2',
+        [pdfPath, storedPdfPath],
+      );
       if (existing.rows[0]) {
         const existingFid = existing.rows[0].id;
         const ext = analysis.data_extracted || {};
@@ -392,7 +406,16 @@ async function syncAnalyses() {
         const pdfName = jf.replace(/_analysis\.json$/, '.pdf');
         const pdfPath = path.join(dp, pdfName);
         try {
-          const existing = await client.query('SELECT id FROM filings WHERE pdf_path = $1', [pdfPath]);
+          let storedPdfPath = pdfPath;
+          if (isStorageEnabled() && fs.existsSync(pdfPath)) {
+            const objectKey = localPathToObjectKey(pdfPath, DOWNLOADS_DIR);
+            storedPdfPath = await persistFilingPdf(pdfPath, objectKey);
+          }
+
+          const existing = await client.query(
+            'SELECT id FROM filings WHERE pdf_path = $1 OR pdf_path = $2',
+            [pdfPath, storedPdfPath],
+          );
           if (existing.rows.length > 0) { stats.skipped++; continue; }
 
           const analysis = JSON.parse(fs.readFileSync(path.join(dp, jf), 'utf8'));
@@ -409,7 +432,7 @@ async function syncAnalyses() {
             companyRow?.id ?? null,
             companyName,
             pdfName,
-            pdfPath,
+            storedPdfPath,
             commodity,
             companyRow?.exchange || null,
           ]);

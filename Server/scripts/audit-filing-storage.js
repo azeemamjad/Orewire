@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Compare local downloads, DB filings, and MinIO bucket usage.
+ * Compare local downloads, DB filings, MinIO (legacy), and AWS S3 bucket usage.
  *   node scripts/audit-filing-storage.js
  */
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
@@ -8,12 +8,15 @@ require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 const fs = require('fs');
 const path = require('path');
 const db = require('../db');
+const aws = require('../lib/infra/aws-s3-storage');
+const minio = require('../lib/infra/minio-storage');
 const {
+  isStorageEnabled,
   isMinioEnabled,
-  getClient,
-  getBucket,
-  parseMinioPath,
-  isMinioPath,
+  isRemoteStoragePath,
+  isPublicStorageUrl,
+  isS3Path,
+  isMinioLegacyPath,
 } = require('../lib/infra/object-storage');
 
 const { DOWNLOADS_DIR } = require('../lib/scraper/paths');
@@ -36,23 +39,27 @@ function fmtBytes(n) {
   return `${n} B`;
 }
 
-async function listAllMinioObjects() {
-  const minio = getClient();
-  const bucket = getBucket();
-  const objects = [];
-  const stream = minio.listObjectsV2(bucket, '', true);
-  await new Promise((resolve, reject) => {
-    stream.on('data', (obj) => objects.push(obj));
-    stream.on('error', reject);
-    stream.on('end', resolve);
-  });
-  return objects;
+async function headCheckSample(urls) {
+  let ok = 0;
+  let fail = 0;
+  for (const url of urls.slice(0, 10)) {
+    try {
+      const res = await fetch(url, { method: 'HEAD' });
+      if (res.ok) ok++;
+      else fail++;
+    } catch {
+      fail++;
+    }
+  }
+  return { ok, fail, checked: Math.min(urls.length, 10) };
 }
 
 async function main() {
   console.log('=== Filing storage audit ===\n');
   console.log('DOWNLOADS_DIR:', DOWNLOADS_DIR);
   console.log('Exists:', fs.existsSync(DOWNLOADS_DIR));
+  console.log('AWS S3 enabled:', isStorageEnabled());
+  console.log('MinIO enabled (legacy):', isMinioEnabled());
 
   const pdfs = walkFiles(DOWNLOADS_DIR, '.pdf');
   const jsons = walkFiles(DOWNLOADS_DIR, '.json');
@@ -71,20 +78,30 @@ async function main() {
     ORDER BY id
   `);
 
+  let httpsRows = 0;
+  let s3Rows = 0;
   let minioRows = 0;
   let localRows = 0;
   let localBytesInDb = 0;
   let localMissing = 0;
-  const localPaths = new Set();
+  const httpsUrls = [];
 
   for (const row of rows) {
-    if (isMinioPath(row.pdf_path)) {
+    if (isPublicStorageUrl(row.pdf_path)) {
+      httpsRows++;
+      httpsUrls.push(row.pdf_path);
+      continue;
+    }
+    if (isS3Path(row.pdf_path)) {
+      s3Rows++;
+      continue;
+    }
+    if (isMinioLegacyPath(row.pdf_path)) {
       minioRows++;
       continue;
     }
     localRows++;
     const resolved = path.resolve(row.pdf_path);
-    localPaths.add(resolved);
     if (fs.existsSync(resolved)) {
       localBytesInDb += fs.statSync(resolved).size;
     } else {
@@ -94,28 +111,18 @@ async function main() {
 
   console.log('\n--- Database (filings) ---');
   console.log(`  Total rows with pdf_path: ${rows.length}`);
-  console.log(`  minio: paths:            ${minioRows}`);
-  console.log(`  Local paths (pending):    ${localRows}`);
-  console.log(`  Local size (DB refs):     ${fmtBytes(localBytesInDb)}`);
-  console.log(`  Local paths missing:      ${localMissing}`);
+  console.log(`  HTTPS (legacy public):    ${httpsRows}`);
+  console.log(`  s3: paths:                ${s3Rows}`);
+  console.log(`  minio: paths (legacy):    ${minioRows}`);
+  console.log(`  Local paths (pending):      ${localRows}`);
+  console.log(`  Local size (DB refs):       ${fmtBytes(localBytesInDb)}`);
+  console.log(`  Local paths missing:        ${localMissing}`);
 
-  const pdfPathSet = new Set(pdfs.map((f) => f.full));
+  const dbLocalResolved = new Set(
+    rows.filter((r) => !isRemoteStoragePath(r.pdf_path)).map((r) => path.resolve(r.pdf_path)),
+  );
   let orphans = 0;
   let orphanBytes = 0;
-  for (const f of pdfs) {
-    if (!localPaths.has(f.full)) {
-      const rel = path.relative(DOWNLOADS_DIR, f.full);
-      const inDbAsMinio = minioRows > 0; // rough — orphans are disk PDFs not referenced as local path
-      orphans++;
-      orphanBytes += f.size;
-    }
-  }
-  // Better orphan check: PDF on disk not matching any DB local path and not clearly migrated
-  orphans = 0;
-  orphanBytes = 0;
-  const dbLocalResolved = new Set(
-    rows.filter((r) => !isMinioPath(r.pdf_path)).map((r) => path.resolve(r.pdf_path)),
-  );
   for (const f of pdfs) {
     if (!dbLocalResolved.has(f.full)) {
       orphans++;
@@ -125,58 +132,65 @@ async function main() {
 
   console.log('\n--- Orphans (PDF on disk, not a pending local DB path) ---');
   console.log(`  Count: ${orphans}  (${fmtBytes(orphanBytes)})`);
-  console.log('  (Includes already-migrated filings still on disk if --delete-local not run)');
+  console.log('  (Includes already-migrated filings still on disk if local copies were not deleted)');
 
-  if (isMinioEnabled()) {
+  if (isStorageEnabled()) {
     try {
-      const objects = await listAllMinioObjects();
+      const objects = await aws.listObjects('');
       const objBytes = objects.reduce((s, o) => s + (o.size || 0), 0);
       const pdfObjs = objects.filter((o) => o.name.toLowerCase().endsWith('.pdf'));
 
-      console.log('\n--- MinIO bucket ---');
-      console.log(`  Bucket: ${getBucket()}`);
+      console.log('\n--- AWS S3 bucket ---');
+      console.log(`  Bucket: ${aws.getBucket()}`);
+      console.log(`  Objects (all):  ${objects.length}  (${fmtBytes(objBytes)})`);
+      console.log(`  Objects (.pdf): ${pdfObjs.length}`);
+
+      if (httpsRows > 0 && httpsUrls.length > 0) {
+        const sample = await headCheckSample(httpsUrls);
+        console.log(`  HTTPS sample HEAD (${sample.checked}): ${sample.ok} OK, ${sample.fail} failed`);
+      }
+    } catch (err) {
+      console.error('\n--- AWS S3 bucket ---');
+      console.error('  Could not list bucket:', err.message);
+    }
+  } else {
+    console.log('\n--- AWS S3 ---');
+    console.log('  AWS_S3_ENABLED not set — skipping bucket listing');
+  }
+
+  if (isMinioEnabled()) {
+    try {
+      const objects = await minio.listObjects('');
+      const objBytes = objects.reduce((s, o) => s + (o.size || 0), 0);
+      const pdfObjs = objects.filter((o) => o.name.toLowerCase().endsWith('.pdf'));
+
+      console.log('\n--- MinIO bucket (legacy) ---');
+      console.log(`  Bucket: ${minio.getBucket()}`);
       console.log(`  Objects (all):  ${objects.length}  (${fmtBytes(objBytes)})`);
       console.log(`  Objects (.pdf): ${pdfObjs.length}`);
 
       if (minioRows > 0 && objects.length !== minioRows) {
         console.log(`  Note: ${minioRows} DB rows use minio: but bucket has ${objects.length} objects`);
       }
-
-      // Sample size mismatch: DB minio rows vs local file if still on disk
-      let sizeMismatches = 0;
-      let checked = 0;
-      for (const row of rows) {
-        if (!isMinioPath(row.pdf_path) || checked >= 50) continue;
-        const key = parseMinioPath(row.pdf_path);
-        const obj = objects.find((o) => o.name === key);
-        const localGuess = path.join(DOWNLOADS_DIR, key);
-        if (obj && fs.existsSync(localGuess)) {
-          const localSize = fs.statSync(localGuess).size;
-          if (Math.abs(localSize - obj.size) > 1024) sizeMismatches++;
-          checked++;
-        }
-      }
-      if (checked > 0) {
-        console.log(`  Size mismatches (sample ${checked}): ${sizeMismatches}`);
-      }
     } catch (err) {
       console.error('\n--- MinIO bucket ---');
       console.error('  Could not list bucket:', err.message);
     }
-  } else {
-    console.log('\n--- MinIO ---');
-    console.log('  MINIO_ENABLED not set — skipping bucket listing');
   }
 
   console.log('\n--- Likely explanation ---');
+  if (minioRows > 0) {
+    console.log(`  • ${minioRows} filings still use minio: — run migrate-minio-to-aws.js`);
+  }
   if (localRows > 0) {
-    console.log(`  • ${localRows} filings still have local pdf_path — migration not finished.`);
+    console.log(`  • ${localRows} filings still have local pdf_path — run migrate-minio-to-aws.js --include-local`);
   }
-  if (orphanBytes > 1e9) {
-    console.log(`  • ~${fmtBytes(orphanBytes)} on disk may be PDFs not linked in DB, or local copies after MinIO upload.`);
+  if (s3Rows > 0) {
+    console.log(`  • ${s3Rows} filings use s3: paths (presigned access on document request).`);
   }
-  console.log('  • MinIO console "objects" counts every object; size is sum of stored bytes.');
-  console.log('  • 25 GB local + 3.5 GB bucket often means: migration partial, or most disk is duplicates/orphans still local.');
+  if (httpsRows > 0) {
+    console.log(`  • ${httpsRows} filings use legacy https: paths — re-run migration or serve via presigned redirect.`);
+  }
 
   await db.end();
 }

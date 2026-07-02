@@ -41,6 +41,7 @@ function initAdminPage() {
   if (page === 'va-tasks') initVaTasks();
   if (page === 'contact-messages') initContactMessages();
   if (page === 'market-symbols') initMarketSymbols();
+  if (page === 'storage') storageInit();
 }
 document.addEventListener('DOMContentLoaded', initAdminPage);
 
@@ -2758,5 +2759,173 @@ async function selectContactMessage(id) {
     if (typeof refreshContactUnreadBadge === 'function') refreshContactUnreadBadge();
   } catch (err) {
     el.innerHTML = `<div class="contact-detail-empty">${esc(err.message)}</div>`;
+  }
+}
+
+// ── Storage (MinIO → S3) ──
+let _storagePollId = null;
+
+function fmtStorageBytes(n) {
+  if (n == null || Number.isNaN(n)) return '—';
+  if (n >= 1e9) return `${(n / 1e9).toFixed(2)} GB`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(2)} MB`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)} KB`;
+  return `${n} B`;
+}
+
+function storageInit() {
+  loadStorageSummary();
+  pollStorageMigrationStatus();
+}
+
+async function loadStorageSummary() {
+  try {
+    const data = await fetch(`${API}/api/admin/storage/summary`).then((r) => r.json());
+    if (data.error) throw new Error(data.error);
+
+    const minioConn = data.connections?.minio;
+    const s3Conn = data.connections?.s3;
+    document.getElementById('conn-minio').innerHTML = minioConn?.ok
+      ? '<span class="conn-ok">Connected</span>'
+      : `<span class="conn-fail">Offline</span>`;
+    document.getElementById('conn-minio-sub').textContent = minioConn?.ok
+      ? (data.config?.minioBucket || '')
+      : (minioConn?.error || 'Not configured');
+
+    document.getElementById('conn-s3').innerHTML = s3Conn?.ok
+      ? '<span class="conn-ok">Connected</span>'
+      : `<span class="conn-fail">Offline</span>`;
+    document.getElementById('conn-s3-sub').textContent = s3Conn?.ok
+      ? `${data.config?.s3Bucket || ''} (${data.config?.s3Region || ''})`
+      : (s3Conn?.error || 'Not configured');
+
+    document.getElementById('conn-mode').textContent = data.config?.presignedUrls ? 'Presigned' : 'Public URL';
+    document.getElementById('conn-mode-sub').textContent = data.config?.presignedUrls
+      ? `Expires ${data.config?.presignExpiresSec || 3600}s per request`
+      : 'Direct HTTPS links in DB';
+
+    document.getElementById('db-minio').textContent = data.db?.minio_rows ?? 0;
+    document.getElementById('db-s3').textContent = data.db?.s3_rows ?? 0;
+    document.getElementById('db-https').textContent = data.db?.https_rows ?? 0;
+    document.getElementById('db-local').textContent = data.db?.local_rows ?? 0;
+
+    if (data.minio && !data.minio.error) {
+      document.getElementById('minio-objects').textContent = data.minio.objects ?? 0;
+      document.getElementById('minio-bytes').textContent = fmtStorageBytes(data.minio.bytes);
+    } else {
+      document.getElementById('minio-objects').textContent = '—';
+      document.getElementById('minio-bytes').textContent = data.minio?.error || '';
+    }
+
+    if (data.s3 && !data.s3.error) {
+      document.getElementById('s3-objects').textContent = data.s3.objects ?? 0;
+      document.getElementById('s3-bytes').textContent = fmtStorageBytes(data.s3.bytes);
+    } else {
+      document.getElementById('s3-objects').textContent = '—';
+      document.getElementById('s3-bytes').textContent = data.s3?.error || '';
+    }
+
+    document.getElementById('storage-updated').textContent = `Updated ${new Date().toLocaleTimeString()}`;
+
+    if (data.migration?.running) setMigrationControls(true);
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+function setMigrationControls(running) {
+  document.getElementById('migrate-dry-btn').disabled = running;
+  document.getElementById('migrate-start-btn').disabled = running;
+  document.getElementById('migrate-cancel-btn').disabled = !running;
+}
+
+function renderMigrationStatus(job) {
+  if (!job || job.status === 'idle') return;
+
+  const phaseLabels = {
+    init: 'Initializing',
+    minio_rows: 'Phase A: MinIO DB rows',
+    orphans: 'Phase B: Orphan objects',
+    local_rows: 'Phase C: Local disk rows',
+    done: 'Complete',
+  };
+  document.getElementById('migrate-phase').textContent = phaseLabels[job.phase] || job.phase || job.status;
+
+  const total = job.total || 0;
+  const processed = job.processed || 0;
+  document.getElementById('migrate-progress-text').textContent = total > 0 ? `${processed} / ${total}` : job.status;
+  const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : (job.status === 'done' ? 100 : 0);
+  document.getElementById('migrate-progress-bar').style.width = `${pct}%`;
+
+  const s = job.stats || {};
+  document.getElementById('migrate-stats').textContent = [
+    s.copied != null ? `copied: ${s.copied}` : null,
+    s.skippedExists != null ? `skipped: ${s.skippedExists}` : null,
+    s.dbUpdated != null ? `db updated: ${s.dbUpdated}` : null,
+    s.wouldUpdateDb != null ? `would update: ${s.wouldUpdateDb}` : null,
+    s.errors != null ? `errors: ${s.errors}` : null,
+    s.bytes != null ? `transferred: ${fmtStorageBytes(s.bytes)}` : null,
+  ].filter(Boolean).join(' · ');
+
+  if (Array.isArray(job.logs) && job.logs.length > 0) {
+    document.getElementById('migrate-log').innerHTML = job.logs.map((line) => {
+      const cls = line.level === 'error' ? 'err' : '';
+      return `<span class="${cls}">[${line.t}] ${esc(line.message)}</span>`;
+    }).join('\n');
+    const logEl = document.getElementById('migrate-log');
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  const running = job.status === 'running';
+  setMigrationControls(running);
+
+  if (!running && _storagePollId) {
+    clearInterval(_storagePollId);
+    _storagePollId = null;
+    loadStorageSummary();
+  }
+}
+
+async function pollStorageMigrationStatus() {
+  try {
+    const job = await fetch(`${API}/api/admin/storage/migrate/status`).then((r) => r.json());
+    renderMigrationStatus(job);
+    if (job.status === 'running' && !_storagePollId) {
+      _storagePollId = setInterval(pollStorageMigrationStatus, 2000);
+    }
+  } catch { /* ignore */ }
+}
+
+async function startStorageMigration(dryRun) {
+  const includeLocal = document.getElementById('migrate-include-local')?.checked;
+  const includeOrphans = document.getElementById('migrate-include-orphans')?.checked;
+  setMigrationControls(true);
+  document.getElementById('migrate-log').textContent = dryRun ? 'Starting dry run…' : 'Starting migration…';
+
+  try {
+    const r = await fetch(`${API}/api/admin/storage/migrate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dryRun, includeLocal, includeOrphans }),
+    }).then((x) => x.json());
+    if (r.error) throw new Error(r.error);
+    toast(dryRun ? 'Dry run started' : 'Migration started');
+    if (!_storagePollId) {
+      _storagePollId = setInterval(pollStorageMigrationStatus, 2000);
+    }
+    pollStorageMigrationStatus();
+  } catch (err) {
+    setMigrationControls(false);
+    toast(err.message, 'err');
+  }
+}
+
+async function cancelStorageMigration() {
+  try {
+    const r = await fetch(`${API}/api/admin/storage/migrate/cancel`, { method: 'POST' }).then((x) => x.json());
+    if (r.error) throw new Error(r.error);
+    toast('Cancel requested');
+  } catch (err) {
+    toast(err.message, 'err');
   }
 }

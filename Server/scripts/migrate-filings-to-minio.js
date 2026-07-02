@@ -20,14 +20,13 @@ const path = require('path');
 const db = require('../db');
 const {
   isMinioEnabled,
-  isMinioPath,
   toMinioPath,
   ensureBucket,
   localPathToObjectKey,
   objectExists,
   statObject,
   uploadFile,
-} = require('../lib/infra/object-storage');
+} = require('../lib/infra/minio-storage');
 
 const { DOWNLOADS_DIR } = require('../lib/scraper/paths');
 

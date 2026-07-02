@@ -14,11 +14,16 @@
     "relay:test-security": "node scripts/test-relay-security.js",
     "relay:test-wire": "node scripts/test-relay-wire.js",
     "migrate:filings-minio": "node scripts/migrate-filings-to-minio.js",
+    "migrate:minio-to-aws": "node scripts/migrate-minio-to-aws.js",
     "import:orphan-pdfs": "node scripts/import-orphan-pdfs.js",
-    "audit:filing-storage": "node scripts/audit-filing-storage.js"
+    "audit:filing-storage": "node scripts/audit-filing-storage.js",
+    "presign:s3-url": "node scripts/presign-s3-url.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.0",
+    "@aws-sdk/client-s3": "^3.1079.0",
+    "@aws-sdk/lib-storage": "^3.1079.0",
+    "@aws-sdk/s3-request-presigner": "^3.1079.0",
     "cheerio": "^1.2.0",
     "cors": "^2.8.5",
     "dotenv": "^17.0.0",

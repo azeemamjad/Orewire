@@ -50,7 +50,7 @@ The server container mounts a volume at `/app/data` for scraper downloads and co
 8. **Shared memory:** ≥ 1 GB if Relay is enabled
 9. **Redeploy** after git pull when `Server/Dockerfile` or `playwright` version changes
 
-Important for MinIO: from inside the backend container, use the MinIO **service hostname** on the Dokploy Docker network (e.g. `MINIO_ENDPOINT=minio`, `MINIO_PORT=9000`, `MINIO_USE_SSL=false`).
+Production filing storage uses **AWS S3** (`AWS_S3_ENABLED=true`). MinIO env is only needed during migration (`migrate-minio-to-aws.js`); use the MinIO service hostname on the Dokploy Docker network (e.g. `MINIO_ENDPOINT=minio`, `MINIO_PORT=9000`, `MINIO_USE_SSL=false`).
 
 ### Dokploy — frontend
 
@@ -97,131 +97,87 @@ COOKIE_FILE=./data/cookies.json
 ADMIN_PASSWORD=...
 ```
 
-MinIO (after migration):
+AWS S3 (production filing storage — private bucket + presigned URLs):
+
+```env
+AWS_S3_ENABLED=true
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+AWS_REGION=eu-north-1
+AWS_S3_BUCKET=orewire-filings
+AWS_S3_PUBLIC_BASE_URL=https://orewire-filings.s3.eu-north-1.amazonaws.com
+STORAGE_FILING_PREFIX=filings
+AWS_S3_PRESIGNED_URLS=true
+AWS_S3_PRESIGN_EXPIRES_SEC=3600
+```
+
+**AWS setup (console / IaC):**
+
+- Create bucket in your chosen region (match `AWS_REGION`).
+- **No public bucket policy required** when `AWS_S3_PRESIGNED_URLS=true` — bucket stays private.
+- IAM user/role for the app: `s3:PutObject`, `s3:GetObject`, `s3:ListBucket`, `s3:HeadObject`, `s3:DeleteObject` on the bucket prefix.
+- Never commit keys — use Dokploy secrets or an IAM role on EC2.
+
+MinIO (legacy — migration source only; remove after cutover):
 
 ```env
 MINIO_ENABLED=true
-MINIO_ENDPOINT=<your-minio-host>    # e.g. minio.internal or s3.orewire.com
+MINIO_ENDPOINT=minio
 MINIO_PORT=9000
-MINIO_USE_SSL=true
+MINIO_USE_SSL=false
+MINIO_PATH_STYLE=true
 MINIO_ACCESS_KEY=...
 MINIO_SECRET_KEY=...
 MINIO_BUCKET=orewire-filings
 ```
 
-## Filing storage migration (one-time on server)
+## Filing storage migration (MinIO → AWS S3)
 
-**Important:** With Dockerized backend, use the MinIO **service name** on the Dokploy network (`MINIO_ENDPOINT=minio`, port `9000`, SSL off). For one-off migration from the host, see options below.
+### Admin UI (recommended)
 
-### Option A — Backend container → MinIO service name (recommended in Dokploy)
+1. Deploy with both `MINIO_*` and `AWS_*` env vars set.
+2. Open **Admin → Storage** (`/admin/storage.html`).
+3. Review analytics (object counts, volume, pending `minio:` rows).
+4. Click **Dry run**, then **Start migration** (optional: include local paths / orphan objects).
+5. Watch live progress until complete.
+6. Spot-check a filing PDF on the public site (`/api/filings/:id/document` → presigned S3 redirect).
+7. Remove `MINIO_ENABLED`, decommission MinIO.
 
-```env
-MINIO_ENDPOINT=minio
-MINIO_PORT=9000
-MINIO_USE_SSL=false
-MINIO_PATH_STYLE=true
-```
-
-Run migration inside the running backend container:
-
-```bash
-docker exec -it <server-container> node scripts/migrate-filings-to-minio.js --dry-run
-docker exec -it <server-container> node scripts/migrate-filings-to-minio.js
-```
-
-### Option B — Host → MinIO container IP (legacy SSH / host Node)
+### CLI (alternative)
 
 ```bash
-# Get MinIO container IP on the Docker bridge
-MINIO_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' orewire-minio-0jtrko-minio-1)
-echo $MINIO_IP
+docker exec -it <server-container> node scripts/test-aws-s3-connection.js
+docker exec -it <server-container> node scripts/migrate-minio-to-aws.js --dry-run
+docker exec -it <server-container> node scripts/migrate-minio-to-aws.js
+docker exec -it <server-container> node scripts/migrate-minio-to-aws.js --include-local
 ```
 
-Temporarily in `.env` (or export for one run):
+Optional flags: `--include-orphans`
 
-```env
-MINIO_ENDPOINT=<that-ip>    # e.g. 172.18.0.5
-MINIO_PORT=9000
-MINIO_USE_SSL=false
-MINIO_PATH_STYLE=true
-```
+### Legacy: local disk → MinIO (pre-S3)
 
-Then from `~/www/Orewire/Server` on the host:
+If filings are still on local disk with `minio:` not yet in DB, run the older script first (requires MinIO):
 
 ```bash
 node scripts/test-minio-connection.js
+node scripts/migrate-filings-to-minio.js --dry-run
 node scripts/migrate-filings-to-minio.js
 ```
 
-Do **not** `docker exec` into the MinIO container — it has no Node.js.
-
-### Option B — Host → published port (if 9000 is mapped)
-
-```bash
-docker port orewire-minio-0jtrko-minio-1
-```
-
-If `9000/tcp -> 0.0.0.0:9000`:
-
-```env
-MINIO_ENDPOINT=127.0.0.1
-MINIO_PORT=9000
-MINIO_USE_SSL=false
-```
-
-### Option C — Public URL from host (slower; proxy may rate-limit)
-
-```env
-MINIO_ENDPOINT=storage.orewire.com
-MINIO_PORT=443
-MINIO_USE_SSL=true
-MINIO_UPLOAD_DELAY_MS=150
-```
-
-### Option D — One-off Node container on MinIO’s Docker network
-
-```bash
-NET=$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' orewire-minio-0jtrko-minio-1)
-docker run --rm -v "$PWD:/app" -w /app --env-file .env --network "$NET" \
-  -e MINIO_ENDPOINT=orewire-minio-0jtrko-minio-1 -e MINIO_PORT=9000 -e MINIO_USE_SSL=false \
-  node:22-alpine node scripts/migrate-filings-to-minio.js
-```
-
-(Service name `orewire-minio-0jtrko-minio-1` resolves inside that network.)
-
-### Steps
-
-   ```bash
-   cd Server
-   node scripts/migrate-filings-to-minio.js --dry-run
-   ```
-
-4. Upload + update DB:
-
-   ```bash
-   node scripts/migrate-filings-to-minio.js
-   ```
-
-5. Verify a few filings: `GET /api/filings/:id/document`
-6. After verification, free disk:
-
-   ```bash
-   node scripts/migrate-filings-to-minio.js --delete-local
-   ```
-
-   (Only deletes files already uploaded and recorded as `minio:…` in the DB.)
+Then migrate via Admin → Storage or `migrate-minio-to-aws.js`.
 
 ## pdf_path format
 
-| Before | After migration |
-|--------|-----------------|
-| `/app/data/downloads/Co (T)/file.pdf` | `minio:filings/<sha256>.pdf` |
+| Before | After S3 migration |
+|--------|---------------------|
+| `/app/data/downloads/Co (T)/file.pdf` | `s3:filings/<hash>.pdf` |
+| `minio:filings/abc.pdf` (legacy) | `s3:filings/abc.pdf` |
 
-The API serves both formats; new migrations use MinIO when `MINIO_ENABLED=true`.
+`GET /api/filings/:id/document` generates a **presigned redirect** (default) so the bucket can stay private. Local paths still stream from disk until migrated.
 
 ## Volumes
 
-- Mount a small volume at `Server/data/downloads` for scraper staging (PDFs move to MinIO via import/migration scripts).
+- Mount a small volume at `Server/data/downloads` for scraper staging (PDFs upload to S3 on save when `AWS_S3_ENABLED=true`).
 - MinIO bucket holds production filing PDFs.
 
 ## Scraper note

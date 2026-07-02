@@ -11,7 +11,7 @@ const {
   getClient,
   getBucket,
   ensureBucket,
-} = require('../lib/infra/object-storage');
+} = require('../lib/infra/minio-storage');
 
 async function main() {
   if (!isMinioEnabled()) {

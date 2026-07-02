@@ -45,6 +45,7 @@ adminApiRouter.use('/va-tasks', require('./routes/admin/admin-va-tasks'));
 adminApiRouter.use('/proxies', require('./routes/admin/admin-proxies'));
 adminApiRouter.use('/ai', require('./routes/admin/admin-ai'));
 adminApiRouter.use('/instrument-symbols', require('./routes/admin/admin-instrument-symbols'));
+adminApiRouter.use('/storage', require('./routes/admin/admin-storage'));
 adminApiRouter.use('/contact-messages', require('./routes/api/contact').adminRouter);
 app.use('/api', apiRouter);
 app.use('/api/admin', adminApiRouter);
