@@ -20,21 +20,25 @@ function getPageLabel(page) {
   return ADMIN_NAV.find((item) => item.page === page)?.label || 'Admin';
 }
 
-function enhanceSidebarShell() {
-  const body = document.body;
-  const sidebar = document.querySelector('.sidebar');
-  const main = document.querySelector('.main');
-  if (!sidebar || !main) return;
-
-  const page = body.dataset.page || '';
-  const pageLabel = getPageLabel(page);
-  if (pageLabel) {
-    document.title = `${pageLabel} | OreWire Admin`;
+function navBadgeHtml(badge) {
+  if (badge === 'va') {
+    return '<span class="nav-badge" data-va-tasks-badge hidden></span>';
   }
+  if (badge === 'contact') {
+    return '<span class="nav-badge" data-contact-unread-badge hidden></span>';
+  }
+  return '';
+}
 
-  const logo = sidebar.querySelector('.logo');
-  if (logo) {
-    logo.innerHTML = `
+function renderSidebarHtml(page) {
+  const navItems = ADMIN_NAV.map((item) => {
+    const active = item.page === page ? ' class="active"' : '';
+    const badge = navBadgeHtml(item.badge);
+    return `<li${active}><a href="${item.href}"><span class="icon">${item.icon}</span>${item.label}${badge}</a></li>`;
+  }).join('');
+
+  return `
+    <div class="logo">
       <a href="dashboard.html" class="brand-link" aria-label="OreWire Admin home">
         <span class="brand-mark" aria-hidden="true">O</span>
         <span class="brand-copy">
@@ -42,19 +46,32 @@ function enhanceSidebarShell() {
           <span class="brand-subtitle">Mining intelligence operations</span>
         </span>
       </a>
-    `;
+    </div>
+    <nav><ul>${navItems}</ul></nav>
+    <div class="sidebar-footer">
+      <a href="/admin/logout" class="logout-link">🚪 Logout</a>
+    </div>
+  `;
+}
+
+function enhanceSidebarShell() {
+  const body = document.body;
+  let sidebar = document.querySelector('.sidebar');
+  const main = document.querySelector('.main');
+  if (!main) return;
+
+  // Ensure a sidebar exists (e.g. market-symbols had an empty aside).
+  if (!sidebar) {
+    sidebar = document.createElement('aside');
+    sidebar.className = 'sidebar';
+    body.insertBefore(sidebar, main);
   }
 
-  const navItems = sidebar.querySelectorAll('nav li');
-  navItems.forEach((li) => li.classList.remove('active'));
-  const active = sidebar.querySelector(`nav a[href="${page}.html"]`)?.closest('li');
-  if (active) active.classList.add('active');
+  const page = body.dataset.page || '';
+  const pageLabel = getPageLabel(page);
+  document.title = `${pageLabel} | OreWire Admin`;
 
-  const logoutWrap = sidebar.querySelector('div[style*="margin-top:auto"]');
-  if (logoutWrap) logoutWrap.className = 'sidebar-footer';
-
-  const logoutLink = sidebar.querySelector('a[href="/admin/logout"]');
-  if (logoutLink) logoutLink.className = 'logout-link';
+  sidebar.innerHTML = renderSidebarHtml(page);
 
   if (!document.querySelector('.admin-topbar')) {
     body.insertAdjacentHTML(
@@ -74,12 +91,11 @@ function enhanceSidebarShell() {
           </div>
           <a href="/admin/logout" class="admin-topbar-logout">Logout</a>
         </header>
-      `
+      `,
     );
   }
 
   const closeSidebar = () => body.classList.remove('admin-sidebar-open');
-  const openSidebar = () => body.classList.add('admin-sidebar-open');
   const toggleSidebar = () => body.classList.toggle('admin-sidebar-open');
 
   body.querySelector('[data-admin-sidebar-toggle]')?.addEventListener('click', toggleSidebar);
@@ -97,7 +113,6 @@ function enhanceSidebarShell() {
   });
 
   main.classList.add('admin-main-shell');
-  document.title = `${pageLabel} | OreWire Admin`;
 }
 
 /** Sidebar badges: contact unread + open VA tasks. */
