@@ -1,6 +1,6 @@
 import { API_BASE } from '@/lib/api-client';
 
-export type Verdict = 'Noteworthy' | 'Watch' | 'Routine';
+export type Verdict = 'Noteworthy' | 'Watch' | 'Routine' | 'Extraction failed' | 'Company mismatch';
 export type Exchange = 'TSX' | 'TSX-V' | 'CSE' | 'ASX';
 export type Commodity = 'Gold' | 'Copper' | 'Silver' | 'Lithium' | 'Uranium';
 

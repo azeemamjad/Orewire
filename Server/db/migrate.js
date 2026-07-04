@@ -461,11 +461,12 @@ async function migrate() {
     CREATE TABLE IF NOT EXISTS ai_providers (
       id                 SERIAL PRIMARY KEY,
       name               TEXT NOT NULL,
-      provider           TEXT NOT NULL DEFAULT 'ollama' CHECK (provider IN ('ollama')),
+      provider           TEXT NOT NULL DEFAULT 'ollama' CHECK (provider IN ('ollama', 'deepseek')),
       host               TEXT NOT NULL,
       api_key            TEXT,
       default_model      TEXT NOT NULL,
       enabled            BOOLEAN NOT NULL DEFAULT TRUE,
+      is_default         BOOLEAN NOT NULL DEFAULT FALSE,
       request_count      INTEGER NOT NULL DEFAULT 0,
       error_count        INTEGER NOT NULL DEFAULT 0,
       prompt_tokens      BIGINT NOT NULL DEFAULT 0,
@@ -477,6 +478,11 @@ async function migrate() {
       updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await safeQuery(`ALTER TABLE ai_providers ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE`);
+  // Widen provider check for existing DBs created with ollama-only constraint.
+  await safeQuery(`ALTER TABLE ai_providers DROP CONSTRAINT IF EXISTS ai_providers_provider_check`);
+  await safeQuery(`ALTER TABLE ai_providers ADD CONSTRAINT ai_providers_provider_check CHECK (provider IN ('ollama', 'deepseek'))`);
+  await safeQuery(`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_providers_one_default ON ai_providers ((is_default)) WHERE is_default = TRUE`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_ai_providers_enabled ON ai_providers(provider, enabled)`);
 
   await db.query(`

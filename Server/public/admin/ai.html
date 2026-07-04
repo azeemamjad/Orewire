@@ -46,11 +46,13 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
 </aside>
 <main class="main">
   <div class="page-header">
-    <h1>Ollama AI</h1>
-    <p>Cloud LLM for filing analysis, snapshots, news enrichment, and upload validation — usage log kept <span id="ai-retention-days">3</span> days</p>
+    <h1>AI providers</h1>
+    <p>LLM for filing analysis, snapshots, news enrichment, and upload validation — usage log kept <span id="ai-retention-days">3</span> days</p>
   </div>
 
   <div id="ai-env-banner" class="relay-proxy-banner" style="display:none;"></div>
+
+  <div id="ai-active-label" style="font-size:13px;margin-bottom:12px;color:var(--muted);"></div>
 
   <div class="ai-stats" id="ai-stats" hidden>
     <div class="ai-stat"><div class="label">Requests</div><div class="value" id="ai-stat-requests">0</div></div>
@@ -62,6 +64,7 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
   <div class="toolbar">
     <button class="btn btn-primary btn-sm" type="button" onclick="openAiModal()">Edit config</button>
     <button class="btn btn-ghost btn-sm" type="button" onclick="testAiProvider()">Test</button>
+    <button class="btn btn-ghost btn-sm" type="button" id="ai-set-default-btn" onclick="setAiDefault()" hidden>Set as default</button>
     <button class="btn btn-ghost btn-sm" type="button" onclick="loadAi()">Refresh</button>
   </div>
 
@@ -88,20 +91,29 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
 <div class="modal-backdrop" id="ai-modal" onclick="if(event.target===this)closeAiModal()">
   <div class="modal" style="max-width:520px;">
     <div class="modal-header">
-      <h2>Ollama configuration</h2>
+      <h2>AI provider configuration</h2>
       <button class="modal-close" type="button" onclick="closeAiModal()">✕</button>
     </div>
     <div class="modal-body">
       <form id="ai-form" onsubmit="submitAi(event)">
         <input type="hidden" id="ai-id" value="" />
         <div class="form-grid" style="grid-template-columns:1fr;">
-          <div class="config-field"><label for="ai-name">Name *</label><input id="ai-name" required placeholder="Ollama Cloud" /></div>
-          <div class="config-field"><label for="ai-host">Host *</label><input id="ai-host" required placeholder="https://ollama.com" /></div>
-          <div class="config-field"><label for="ai-model">Default model *</label><input id="ai-model" required placeholder="kimi-k2.6:cloud" /></div>
+          <div class="config-field"><label for="ai-name">Name *</label><input id="ai-name" required placeholder="DeepSeek" /></div>
+          <div class="config-field"><label for="ai-provider">Provider *</label>
+            <select id="ai-provider">
+              <option value="ollama">ollama</option>
+              <option value="deepseek">deepseek</option>
+            </select>
+          </div>
+          <div class="config-field"><label for="ai-host">Host *</label><input id="ai-host" required placeholder="https://api.deepseek.com" /></div>
+          <div class="config-field"><label for="ai-model">Default model *</label><input id="ai-model" required placeholder="deepseek-v4-flash" /></div>
           <div class="config-field"><label for="ai-key">API key</label><input id="ai-key" type="password" autocomplete="new-password" placeholder="Leave blank to keep existing" /></div>
         </div>
         <label style="display:flex;align-items:center;gap:8px;margin:14px 0;font-size:14px;">
           <input type="checkbox" id="ai-enabled" checked /> Enabled
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin:0 0 14px;font-size:14px;">
+          <input type="checkbox" id="ai-is-default" /> Default provider
         </label>
         <div style="text-align:right;">
           <button type="button" class="btn btn-ghost btn-sm" onclick="closeAiModal()">Cancel</button>

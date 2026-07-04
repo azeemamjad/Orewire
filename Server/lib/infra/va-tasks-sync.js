@@ -228,21 +228,31 @@ async function collectActiveTasks() {
       SELECT id, name, exchange, ticker, symbol_flagged_reason, symbol_flagged_tv_symbol
         FROM companies
        WHERE symbol_flagged_at IS NOT NULL
+       ORDER BY symbol_flagged_at DESC NULLS LAST
+       LIMIT 20
     `);
-    for (const row of flagged.rows) {
-      const ex = row.exchange || '';
-      const tk = row.ticker || '';
+    const countRes = await db.query(
+      `SELECT COUNT(*)::int AS count FROM companies WHERE symbol_flagged_at IS NOT NULL`,
+    );
+    const count = countRes.rows[0]?.count || 0;
+    if (count > 0) {
+      const sample = flagged.rows
+        .map((row) => {
+          const ex = row.exchange || '';
+          const tk = row.ticker || '';
+          return `${row.name} (${ex}:${tk})`;
+        })
+        .join('; ');
       tasks.push({
-        sourceKey: `companies|symbol_invalid|${row.id}`,
+        sourceKey: 'companies|symbol_invalid',
         module: 'companies',
         errorType: 'symbol_invalid',
-        title: `Fix ticker: ${row.name} (${ex}:${tk})`,
-        description: row.symbol_flagged_reason
-          || `TradingView symbol ${row.symbol_flagged_tv_symbol || `${ex}:${tk}`} returned no price.`,
-        actionUrl: `/admin/companies.html?edit=${row.id}&tab=symbols`,
-        severity: 'medium',
-        occurrenceCount: 1,
-        sampleDetail: row.symbol_flagged_tv_symbol || `${ex}:${tk}`,
+        title: 'Invalid or stale ticker symbols',
+        description: `${count} compan${count === 1 ? 'y has' : 'ies have'} flagged TradingView symbols. Open Companies → Market Symbols to fix.`,
+        actionUrl: '/admin/market-symbols.html',
+        severity: count >= 50 ? 'high' : 'medium',
+        occurrenceCount: count,
+        sampleDetail: sample.slice(0, 500) || null,
       });
     }
   } catch {
@@ -345,6 +355,8 @@ async function syncVaTasks() {
     await upsertAutoTask(task);
   }
 
+  // Resolve auto tasks that are no longer active (includes legacy per-company
+  // keys like companies|symbol_invalid|<id> once we only keep the aggregate key).
   if (activeKeys.length) {
     await db.query(
       `UPDATE va_tasks
@@ -361,6 +373,16 @@ async function syncVaTasks() {
        WHERE auto_managed = TRUE AND status IN ('open', 'in_progress')`,
     );
   }
+
+  // Explicit cleanup of legacy one-row-per-company ticker tasks.
+  await db.query(
+    `UPDATE va_tasks
+     SET status = 'resolved', resolved_at = NOW(), resolved_by = 'system'
+     WHERE auto_managed = TRUE
+       AND status IN ('open', 'in_progress')
+       AND source_key LIKE 'companies|symbol_invalid|%'
+       AND source_key <> 'companies|symbol_invalid'`,
+  );
 
   return { synced: active.length, activeKeys };
 }

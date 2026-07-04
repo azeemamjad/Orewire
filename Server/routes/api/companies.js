@@ -164,6 +164,7 @@ router.get('/', async (req, res) => {
       headquarters:   `(headquarters IS NULL OR headquarters = '')`,
       transfer_agent: `(transfer_agent IS NULL OR transfer_agent = '')`,
       people:         noPeople,
+      flagged:        `symbol_flagged_at IS NOT NULL`,
     };
     if (missing === 'any') {
       where.push(`(${[checks.description, checks.website, checks.headquarters, checks.transfer_agent, checks.people].join(' OR ')})`);
@@ -358,6 +359,41 @@ router.post('/', express.json(), async (req, res) => {
   } catch (err) {
     console.error('Company create failed:', err?.message || err);
     res.status(503).json({ error: err.message || 'Database unavailable' });
+  }
+});
+
+const { previewMigration, migrateCompanyData } = require('../../lib/companies/migrate');
+
+// GET /api/companies/:id/migrate-preview — counts of data that would move
+router.get('/:id/migrate-preview', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
+    const preview = await previewMigration(id);
+    if (!preview) return res.status(404).json({ error: 'Company not found' });
+    res.json(preview);
+  } catch (err) {
+    console.error('Migrate preview failed:', err?.message || err);
+    res.status(503).json({ error: err.message || 'Database unavailable' });
+  }
+});
+
+// POST /api/companies/:id/migrate — move filings/news/etc. to another company
+// Body: { targetCompanyId, deleteSource?: boolean }
+router.post('/:id/migrate', express.json(), async (req, res) => {
+  try {
+    const sourceId = parseInt(req.params.id, 10);
+    const targetCompanyId = parseInt(req.body?.targetCompanyId, 10);
+    const deleteSource = !!req.body?.deleteSource;
+    if (!Number.isFinite(sourceId) || !Number.isFinite(targetCompanyId)) {
+      return res.status(400).json({ error: 'source id and targetCompanyId are required' });
+    }
+    const result = await migrateCompanyData(sourceId, targetCompanyId, { deleteSource });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('Company migrate failed:', err?.message || err);
+    const status = /not found|must be different|required/i.test(err.message || '') ? 400 : 503;
+    res.status(status).json({ error: err.message || 'Migration failed' });
   }
 });
 

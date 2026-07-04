@@ -31,6 +31,7 @@ import { useAuth } from "@/hooks/use-auth";
 import SymbolPicker from "@/features/markets/components/SymbolPicker";
 import { useInstrumentSymbols } from "@/hooks/use-instrument-symbols";
 import { useLiveQuote } from "@/hooks/use-live-quote";
+import { formatLiveLastLabel, formatPrice4, liveQuoteUpdatedAtMs } from "@/lib/live-quote-display";
 import { formatEmpty } from "@/lib/display";
 
 const INDEX_TV: Record<string, string> = {
@@ -87,7 +88,7 @@ const IndexDetail = () => {
   const entityKey = key.toLowerCase();
 
   const { symbols, selectedTvSymbol, setSelectedTvSymbol } = useInstrumentSymbols("index", entityKey);
-  const { data: liveQuote } = useLiveQuote(selectedTvSymbol);
+  const { data: liveQuote, dataUpdatedAt } = useLiveQuote(selectedTvSymbol);
   const fallbackTv = INDEX_TV[key] || null;
   const chartTvSymbol = selectedTvSymbol || fallbackTv;
 
@@ -103,8 +104,10 @@ const IndexDetail = () => {
   const about = index?.about ?? `Market index ${key}.`;
   const currency = liveQuote?.currency ?? index?.currency ?? "USD";
   const isUp = (changePct ?? 0) >= 0;
-  const changeAbs = liveQuote?.change_abs ?? (price && changePct ? +(price * changePct / 100).toFixed(2) : null);
-  const quoteSourceLabel = "TradingView";
+  const changeAbs = liveQuote?.change_abs ?? (price && changePct ? +(price * changePct / 100).toFixed(4) : null);
+  const liveLastLabel = formatLiveLastLabel(
+    liveQuoteUpdatedAtMs(liveQuote?.updatedAt, dataUpdatedAt),
+  );
 
   const prevClose = price != null && changeAbs != null ? +(price - changeAbs).toFixed(4) : null;
   const dayOpen = liveQuote?.open ?? null;
@@ -112,7 +115,7 @@ const IndexDetail = () => {
   const dayLow = liveQuote?.low ?? null;
   const dayVolume = liveQuote?.volume ?? null;
 
-  const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const fmt = (n: number) => formatPrice4(n);
   const fmtOpt = (n: number | null) => (n != null ? fmt(n) : formatEmpty(null));
 
   const [inWatchlist, setInWatchlist] = useState(false);
@@ -169,12 +172,12 @@ const IndexDetail = () => {
                       }`}
                     >
                       {isUp ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownRight className="h-4 w-4" />}
-                      {changeAbs !== null && `${isUp ? "+" : ""}${changeAbs.toFixed(2)}`} ({isUp ? "+" : ""}
+                      {changeAbs !== null && `${isUp ? "+" : ""}${formatPrice4(changeAbs)}`} ({isUp ? "+" : ""}
                       {changePct.toFixed(2)}%)
                     </span>
                   )}
                   <span className="text-xs text-muted-foreground font-mono">
-                    · {quoteSourceLabel} · Delayed · Day change vs prior close
+                    {liveLastLabel}
                   </span>
                 </div>
               )}

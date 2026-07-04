@@ -5,6 +5,13 @@ const pdfParse = require('pdf-parse');
 
 const { SYSTEM_PROMPT, buildUserPrompt } = require('./prompt');
 const { chatWithSystem } = require('../../ai/client');
+const { ocrPdfText } = require('./ocr');
+const { validateAnalysis } = require('./validate');
+const {
+  MIN_EXTRACT_CHARS,
+  extractionFailedAnalysis,
+  isExtractionFailed,
+} = require('./constants');
 
 async function extractText(pdfPath) {
   const buffer = fs.readFileSync(pdfPath);
@@ -12,43 +19,69 @@ async function extractText(pdfPath) {
   return data.text || '';
 }
 
-// ---------------------------------------------------------------------------
-// PDF text extraction
-// ---------------------------------------------------------------------------
-
 function parseJson(raw) {
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   return JSON.parse(cleaned);
 }
 
-// ---------------------------------------------------------------------------
-// Analyze a single PDF
-// ---------------------------------------------------------------------------
+/**
+ * Extract text; OCR if the text layer is empty/near-empty.
+ * @returns {{ text: string, usedOcr: boolean }}
+ */
+async function extractTextWithFallback(pdfPath) {
+  let text = await extractText(pdfPath);
+  let usedOcr = false;
 
-async function analyzePdf(pdfPath, meta = {}) {
+  if (text.trim().length < MIN_EXTRACT_CHARS) {
+    console.warn('  [AI] Warning: no text layer — attempting OCR…');
+    const ocrText = await ocrPdfText(pdfPath);
+    if (ocrText.trim().length >= MIN_EXTRACT_CHARS) {
+      text = ocrText;
+      usedOcr = true;
+      console.log(`  [AI] OCR recovered ${text.trim().length} characters`);
+    }
+  }
+
+  return { text, usedOcr };
+}
+
+/**
+ * Analyze a single PDF. Never calls the LLM on empty/near-empty text.
+ */
+async function analyzePdf(pdfPath, meta = {}, { model } = {}) {
   console.log(`  [AI] Extracting text from ${path.basename(pdfPath)}…`);
-  const text = await extractText(pdfPath);
+  const { text, usedOcr } = await extractTextWithFallback(pdfPath);
+  const textLength = text.trim().length;
 
-  if (!text.trim()) {
-    console.warn('  [AI] Warning: no text extracted (scanned image PDF?)');
+  if (textLength < MIN_EXTRACT_CHARS) {
+    console.warn('  [AI] Extraction failed — skipping LLM');
+    return extractionFailedAnalysis(
+      usedOcr
+        ? 'OCR did not recover readable text from this PDF.'
+        : 'PDF has no extractable text layer (image-only or corrupt).',
+    );
   }
 
   const userPrompt = buildUserPrompt(meta, text);
 
-  console.log(`  [AI] Sending to Ollama…`);
+  console.log(`  [AI] Sending to AI${model ? ` (${model})` : ''}…`);
   const { content: raw } = await chatWithSystem({
     feature: 'filing_analysis',
     system: SYSTEM_PROMPT,
     user: userPrompt,
+    model,
   });
-  const analysis = parseJson(raw);
 
-  return analysis;
+  let analysis;
+  try {
+    analysis = parseJson(raw);
+  } catch (err) {
+    console.error('  [AI] Invalid JSON from model:', err.message);
+    return extractionFailedAnalysis('Model returned invalid JSON');
+  }
+
+  return validateAnalysis(analysis, { textLength });
 }
-
-// ---------------------------------------------------------------------------
-// Analyze every PDF in a directory
-// ---------------------------------------------------------------------------
 
 async function analyzeDirectory(dirPath, meta = {}) {
   if (!fs.existsSync(dirPath)) {
@@ -69,7 +102,6 @@ async function analyzeDirectory(dirPath, meta = {}) {
     const pdfPath  = path.join(dirPath, file);
     const outPath  = path.join(dirPath, file.replace(/\.pdf$/i, '_analysis.json'));
 
-    // Skip if already analyzed
     if (fs.existsSync(outPath)) {
       console.log(`  [AI] Skipping ${file} (analysis exists)`);
       results.push({ file, skipped: true });
@@ -80,7 +112,7 @@ async function analyzeDirectory(dirPath, meta = {}) {
       const analysis = await analyzePdf(pdfPath, meta);
       fs.writeFileSync(outPath, JSON.stringify(analysis, null, 2));
       console.log(`  ✓ ${file} → verdict: ${analysis.verdict}`);
-      results.push({ file, analysis });
+      results.push({ file, analysis, failed: isExtractionFailed(analysis) });
     } catch (err) {
       console.error(`  ✗ Failed (${file}): ${err.message}`);
       results.push({ file, error: err.message });
@@ -90,4 +122,10 @@ async function analyzeDirectory(dirPath, meta = {}) {
   return results;
 }
 
-module.exports = { analyzePdf, analyzeDirectory, extractText };
+module.exports = {
+  analyzePdf,
+  analyzeDirectory,
+  extractText,
+  extractTextWithFallback,
+  isExtractionFailed,
+};

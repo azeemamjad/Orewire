@@ -1,14 +1,16 @@
 const express = require('express');
 const { chatWithSystem } = require('../../lib/ai/client');
 const {
-  listOllamaProviders,
-  getOllamaProviderById,
-  createOllamaProvider,
-  updateOllamaProvider,
+  ALLOWED_PROVIDERS,
+  listProviders,
+  getProviderById,
+  createProvider,
+  updateProvider,
+  setDefaultProvider,
   formatProviderRow,
   listRecentUsageEvents,
-  invalidateOllamaCache,
-  getActiveOllamaProvider,
+  invalidateProviderCache,
+  getActiveProvider,
   envFallbackProvider,
 } = require('../../lib/ai/ollama-store');
 const { retentionDays } = require('../../lib/usage-log-retention');
@@ -22,6 +24,14 @@ function validateBody(body, { isCreate = false } = {}) {
     const name = String(body.name || '').trim();
     if (!name) return { error: 'Name is required' };
     data.name = name;
+  }
+
+  if (body.provider !== undefined || isCreate) {
+    const provider = String(body.provider || 'ollama').toLowerCase().trim();
+    if (!ALLOWED_PROVIDERS.has(provider)) {
+      return { error: `provider must be one of: ${[...ALLOWED_PROVIDERS].join(', ')}` };
+    }
+    data.provider = provider;
   }
 
   if (body.host !== undefined || isCreate) {
@@ -42,6 +52,9 @@ function validateBody(body, { isCreate = false } = {}) {
   if (body.enabled !== undefined) {
     data.enabled = !!body.enabled;
   }
+  if (body.isDefault !== undefined || body.is_default !== undefined) {
+    data.is_default = !!(body.isDefault ?? body.is_default);
+  }
 
   return { data };
 }
@@ -49,8 +62,8 @@ function validateBody(body, { isCreate = false } = {}) {
 // GET /api/admin/ai
 router.get('/', async (_req, res) => {
   try {
-    const rows = await listOllamaProviders();
-    const active = await getActiveOllamaProvider();
+    const rows = await listProviders();
+    const active = await getActiveProvider();
     const envFallback = envFallbackProvider();
     res.json({
       active: active ? formatProviderRow(active) : null,
@@ -63,13 +76,29 @@ router.get('/', async (_req, res) => {
   }
 });
 
+// POST /api/admin/ai/:id/set-default — before /:id routes that might conflict
+router.post('/:id/set-default', async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
+
+  try {
+    const row = await setDefaultProvider(id);
+    if (!row) return res.status(404).json({ error: 'Provider not found' });
+    invalidateProviderCache();
+    res.json({ provider: formatProviderRow(row) });
+  } catch (err) {
+    console.error('Set default AI provider failed:', err?.message || err);
+    res.status(500).json({ error: err.message || 'Failed to set default' });
+  }
+});
+
 // GET /api/admin/ai/:id
 router.get('/:id', async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
 
   try {
-    const row = await getOllamaProviderById(id);
+    const row = await getProviderById(id);
     if (!row) return res.status(404).json({ error: 'Provider not found' });
     const events = await listRecentUsageEvents(id, 50);
     res.json({
@@ -101,22 +130,27 @@ router.post('/', express.json(), async (req, res) => {
   if (v.error) return res.status(400).json({ error: v.error });
 
   try {
-    const existing = await listOllamaProviders();
-    if (existing.length > 0) {
-      return res.status(409).json({ error: 'Ollama provider already exists — edit the existing row' });
+    const providerType = v.data.provider || 'ollama';
+    const existing = await listProviders();
+    if (existing.some((r) => r.provider === providerType)) {
+      return res.status(409).json({
+        error: `${providerType} provider already exists — edit the existing row`,
+      });
     }
-    const row = await createOllamaProvider({
+    const row = await createProvider({
       name: v.data.name,
+      provider: providerType,
       host: v.data.host,
       api_key: v.data.api_key,
       default_model: v.data.default_model,
       enabled: v.data.enabled !== false,
+      is_default: v.data.is_default === true || existing.length === 0,
     });
-    invalidateOllamaCache();
+    invalidateProviderCache();
     res.status(201).json({ provider: formatProviderRow(row) });
   } catch (err) {
     console.error('Create AI provider failed:', err?.message || err);
-    res.status(500).json({ error: 'Failed to create provider' });
+    res.status(500).json({ error: err.message || 'Failed to create provider' });
   }
 });
 
@@ -129,15 +163,15 @@ router.patch('/:id', express.json(), async (req, res) => {
   if (v.error) return res.status(400).json({ error: v.error });
 
   try {
-    const existing = await getOllamaProviderById(id);
+    const existing = await getProviderById(id);
     if (!existing) return res.status(404).json({ error: 'Provider not found' });
 
-    const row = await updateOllamaProvider(id, v.data);
-    invalidateOllamaCache();
+    const row = await updateProvider(id, v.data);
+    invalidateProviderCache();
     res.json({ provider: formatProviderRow(row) });
   } catch (err) {
     console.error('Update AI provider failed:', err?.message || err);
-    res.status(500).json({ error: 'Failed to update provider' });
+    res.status(500).json({ error: err.message || 'Failed to update provider' });
   }
 });
 
@@ -147,14 +181,15 @@ router.post('/:id/test', async (req, res) => {
   if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
 
   try {
-    const row = await getOllamaProviderById(id);
+    const row = await getProviderById(id);
     if (!row) return res.status(404).json({ error: 'Provider not found' });
 
-    invalidateOllamaCache();
+    invalidateProviderCache();
     const result = await chatWithSystem({
       feature: 'admin_test',
       system: 'Reply with exactly: OK',
       user: 'Say OK',
+      provider: row,
     });
 
     res.json({

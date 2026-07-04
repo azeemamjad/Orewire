@@ -1,13 +1,12 @@
 const path = require('path');
 
-const minio = require('./minio-storage');
 const aws = require('./aws-s3-storage');
 
-const { MINIO_PREFIX } = minio;
 const S3_PREFIX = 's3:';
+const LEGACY_MINIO_PREFIX = 'minio:';
 
 function getFilingPrefix() {
-  return (process.env.STORAGE_FILING_PREFIX || process.env.MINIO_FILING_PREFIX || 'filings').replace(/\/+$/, '');
+  return (process.env.STORAGE_FILING_PREFIX || 'filings').replace(/\/+$/, '');
 }
 
 function usePresignedUrls() {
@@ -27,17 +26,17 @@ function isS3Path(pdfPath) {
   return typeof pdfPath === 'string' && pdfPath.startsWith(S3_PREFIX);
 }
 
+/** Legacy DB values from the MinIO era — object key is still valid on S3. */
+function isLegacyMinioPath(pdfPath) {
+  return typeof pdfPath === 'string' && pdfPath.startsWith(LEGACY_MINIO_PREFIX);
+}
+
 function isPublicStorageUrl(pdfPath) {
   return typeof pdfPath === 'string' && pdfPath.startsWith('https://');
 }
 
 function isRemoteStoragePath(pdfPath) {
-  return minio.isMinioLegacyPath(pdfPath) || isS3Path(pdfPath) || isPublicStorageUrl(pdfPath);
-}
-
-/** @deprecated alias — true for legacy minio:, s3:, and public HTTPS URLs */
-function isMinioPath(pdfPath) {
-  return isRemoteStoragePath(pdfPath);
+  return isLegacyMinioPath(pdfPath) || isS3Path(pdfPath) || isPublicStorageUrl(pdfPath);
 }
 
 function toS3Path(objectKey) {
@@ -47,6 +46,11 @@ function toS3Path(objectKey) {
 function parseS3Path(pdfPath) {
   if (!isS3Path(pdfPath)) return null;
   return pdfPath.slice(S3_PREFIX.length);
+}
+
+function parseLegacyMinioPath(pdfPath) {
+  if (!isLegacyMinioPath(pdfPath)) return null;
+  return pdfPath.slice(LEGACY_MINIO_PREFIX.length);
 }
 
 function parsePublicUrlToKey(url) {
@@ -69,14 +73,9 @@ function parsePublicUrlToKey(url) {
 
 function parseStoragePath(pdfPath) {
   if (isS3Path(pdfPath)) return parseS3Path(pdfPath);
-  if (minio.isMinioLegacyPath(pdfPath)) return minio.parseMinioLegacyPath(pdfPath);
+  if (isLegacyMinioPath(pdfPath)) return parseLegacyMinioPath(pdfPath);
   if (isPublicStorageUrl(pdfPath)) return parsePublicUrlToKey(pdfPath);
   return null;
-}
-
-/** @deprecated alias for parseStoragePath */
-function parseMinioPath(pdfPath) {
-  return parseStoragePath(pdfPath);
 }
 
 function toStoragePath(objectKey) {
@@ -87,15 +86,9 @@ function toStoragePath(objectKey) {
   return aws.publicUrl(objectKey);
 }
 
-/** DB value after upload/migration */
+/** DB value after upload */
 function toDbStoragePath(objectKey) {
   return toStoragePath(objectKey);
-}
-
-/** @deprecated alias for toStoragePath when AWS is enabled; legacy minio: prefix otherwise */
-function toMinioPath(objectKey) {
-  if (isStorageEnabled()) return toStoragePath(objectKey);
-  return minio.toMinioPath(objectKey);
 }
 
 function localPathToObjectKey(localPath, downloadsDir) {
@@ -155,43 +148,44 @@ async function streamToResponse(objectKey, res, { filename = 'filing.pdf' } = {}
 
 async function resolveDocumentRedirect(pdfPath) {
   const objectKey = parseStoragePath(pdfPath);
-  if (!objectKey) return null;
+  if (!objectKey || !isStorageEnabled()) return null;
 
-  if (isStorageEnabled()) {
-    if (usePresignedUrls() || isS3Path(pdfPath) || minio.isMinioLegacyPath(pdfPath)) {
-      return aws.presignedGetUrl(objectKey, { expiresIn: presignExpiresSec() });
-    }
-    if (isPublicStorageUrl(pdfPath)) {
-      return aws.presignedGetUrl(objectKey, { expiresIn: presignExpiresSec() });
-    }
-    return aws.publicUrl(objectKey);
+  if (usePresignedUrls()) {
+    return aws.presignedGetUrl(objectKey, { expiresIn: presignExpiresSec() });
   }
-
-  if (minio.isMinioEnabled() && minio.isMinioLegacyPath(pdfPath)) return null;
-  return null;
+  return aws.publicUrl(objectKey);
 }
 
 module.exports = {
-  MINIO_PREFIX,
   S3_PREFIX,
+  LEGACY_MINIO_PREFIX,
   getFilingPrefix,
   usePresignedUrls,
   presignExpiresSec,
   isStorageEnabled,
   isAwsS3Enabled: aws.isAwsS3Enabled,
-  isMinioEnabled: minio.isMinioEnabled,
   isS3Path,
+  isLegacyMinioPath,
   isPublicStorageUrl,
   isRemoteStoragePath,
-  isMinioPath,
-  isMinioLegacyPath: minio.isMinioLegacyPath,
+  /** @deprecated use isRemoteStoragePath */
+  isMinioPath: isRemoteStoragePath,
+  /** @deprecated use isLegacyMinioPath */
+  isMinioLegacyPath: isLegacyMinioPath,
   toS3Path,
   toStoragePath,
   toDbStoragePath,
-  toMinioPath,
+  /** @deprecated use toStoragePath */
+  toMinioPath: toStoragePath,
+  /** @deprecated use toStoragePath */
+  toMinioLegacyPath: toStoragePath,
   parseStoragePath,
   parseS3Path,
-  parseMinioPath,
+  parseLegacyMinioPath,
+  /** @deprecated use parseStoragePath */
+  parseMinioPath: parseStoragePath,
+  /** @deprecated use parseLegacyMinioPath */
+  parseMinioLegacyPath: parseLegacyMinioPath,
   publicUrl: aws.publicUrl,
   presignedGetUrl: aws.presignedGetUrl,
   resolveDocumentRedirect,
@@ -204,15 +198,4 @@ module.exports = {
   getObjectStream,
   streamToResponse,
   describeAwsConfig: aws.describeClientConfig,
-  describeMinioConfig: minio.describeClientConfig,
-  getMinioClient: minio.getClient,
-  getMinioBucket: minio.getBucket,
-  minioObjectExists: minio.objectExists,
-  minioStatObject: minio.statObject,
-  minioUploadFile: minio.uploadFile,
-  minioGetObjectStream: minio.getObjectStream,
-  minioListObjects: minio.listObjects,
-  minioEnsureBucket: minio.ensureBucket,
-  parseMinioLegacyPath: minio.parseMinioLegacyPath,
-  toMinioLegacyPath: minio.toMinioPath,
 };

@@ -4,6 +4,14 @@ const path    = require('path');
 const fs      = require('fs');
 const db      = require('../../db');
 const { upsertInsiderData } = require('../../db/insiders');
+const { findCompanyForFiling } = require('../../lib/companies/match');
+const {
+  resolveFilingStatus,
+  analyzedFlagForAnalysis,
+  aiOutputParams,
+  AI_OUTPUT_SQL,
+} = require('../../lib/scraper/analyzer/persist');
+const { isExtractionFailed } = require('../../lib/scraper/analyzer/constants');
 const { DOWNLOADS_DIR } = require('../../lib/scraper/paths');
 const { applyScraperEnv, restoreScraperEnv, relayWiringEnabled } = require('../../lib/scraper/env');
 const { runSedarDownload } = require('../../lib/scraper/runners/sedar');
@@ -37,36 +45,9 @@ async function syncAnalyses() {
     const insFilin = `
       INSERT INTO filings
         (company_id, company_name, pdf_filename, pdf_path, commodity, exchange, analyzed, status)
-      VALUES ($1, $2, $3, $4, $5, $6, 1, 'analyzed')
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT (pdf_path) DO NOTHING
       RETURNING id
-    `;
-
-    const insAI = `
-      INSERT INTO ai_output
-        (filing_id, display_type, ticker_summary, summary, verdict, verdict_reason,
-         key_facts, context, grade_commentary, what_to_watch,
-         cash_position, burn_rate_quarterly, resource_estimate,
-         pp_amount, pp_price, insider_holdings, raw_response)
-      VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-      ON CONFLICT (filing_id) DO UPDATE SET
-        display_type = EXCLUDED.display_type,
-        ticker_summary = EXCLUDED.ticker_summary,
-        summary = EXCLUDED.summary,
-        verdict = EXCLUDED.verdict,
-        verdict_reason = EXCLUDED.verdict_reason,
-        key_facts = EXCLUDED.key_facts,
-        context = EXCLUDED.context,
-        grade_commentary = EXCLUDED.grade_commentary,
-        what_to_watch = EXCLUDED.what_to_watch,
-        cash_position = EXCLUDED.cash_position,
-        burn_rate_quarterly = EXCLUDED.burn_rate_quarterly,
-        resource_estimate = EXCLUDED.resource_estimate,
-        pp_amount = EXCLUDED.pp_amount,
-        pp_price = EXCLUDED.pp_price,
-        insider_holdings = EXCLUDED.insider_holdings,
-        raw_response = EXCLUDED.raw_response
     `;
 
     const dirs = fs.readdirSync(downloadsDir)
@@ -83,14 +64,14 @@ async function syncAnalyses() {
           if (existing.rows.length > 0) { stats.skipped++; continue; }
 
           const analysis = JSON.parse(fs.readFileSync(path.join(dp, jf), 'utf8'));
-          let company = await client.query('SELECT id, name, exchange FROM companies WHERE ticker = $1', [dir]);
-          let companyRow = company.rows[0];
-          if (!companyRow) {
-            company = await client.query('SELECT id, name, exchange FROM companies WHERE name ILIKE $1', [`%${dir.replace(/_/g, ' ')}%`]);
-            companyRow = company.rows[0];
-          }
+          const companyRow = await findCompanyForFiling(client, {
+            ticker: dir,
+            companyName: dir.replace(/_/g, ' '),
+          });
           const companyName = companyRow?.name || dir.replace(/_/g, ' ');
           const commodity = inferCommodity(analysis.summary, analysis.ticker_summary);
+          const status = resolveFilingStatus(analysis, companyName);
+          const analyzed = analyzedFlagForAnalysis(analysis);
 
           const fiResult = await client.query(insFilin, [
             companyRow?.id ?? null,
@@ -99,31 +80,17 @@ async function syncAnalyses() {
             pdfPath,
             commodity,
             companyRow?.exchange || null,
+            analyzed,
+            status,
           ]);
           const fid = fiResult.rows[0]?.id;
           if (!fid) { stats.skipped++; continue; }
 
           const ext = analysis.data_extracted || {};
-          await client.query(insAI, [
-            fid,
-            analysis.display_type ?? null,
-            analysis.ticker_summary ?? null,
-            analysis.summary ?? null,
-            analysis.verdict ?? null,
-            analysis.verdict_reason ?? null,
-            JSON.stringify(analysis.key_facts ?? []),
-            analysis.context ?? null,
-            analysis.grade_commentary ?? null,
-            analysis.what_to_watch ?? null,
-            ext.cash_position ?? null,
-            ext.burn_rate_quarterly ?? null,
-            JSON.stringify(ext.resource_estimates ?? null),
-            ext.pp_amount ?? null,
-            ext.pp_price ?? null,
-            JSON.stringify(ext.insider_holdings ?? null),
-            JSON.stringify(analysis),
-          ]);
-          await upsertInsiderData(client, companyRow?.id, fid, ext);
+          await client.query(AI_OUTPUT_SQL, aiOutputParams(fid, analysis));
+          if (!isExtractionFailed(analysis)) {
+            await upsertInsiderData(client, companyRow?.id, fid, ext);
+          }
           stats.imported++;
         } catch (err) { stats.errors.push({ file: jf, error: err.message }); }
       }

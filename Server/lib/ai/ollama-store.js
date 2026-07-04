@@ -1,6 +1,8 @@
 const db = require('../../db');
 const { retentionDays } = require('../usage-log-retention');
 
+const ALLOWED_PROVIDERS = new Set(['ollama', 'deepseek']);
+
 let _cache = { provider: null, loadedAt: 0 };
 
 function stripTrailingSlash(url) {
@@ -27,6 +29,7 @@ function envFallbackProvider() {
     api_key: apiKey || null,
     default_model: model || 'kimi',
     enabled: true,
+    is_default: false,
     request_count: 0,
     error_count: 0,
     prompt_tokens: 0,
@@ -46,6 +49,7 @@ function formatProviderRow(row, { includeApiKey = false } = {}) {
     apiKeySet: !!row.api_key,
     defaultModel: row.default_model,
     enabled: row.enabled,
+    isDefault: !!row.is_default,
     requestCount: row.request_count,
     errorCount: row.error_count,
     promptTokens: Number(row.prompt_tokens) || 0,
@@ -59,58 +63,95 @@ function formatProviderRow(row, { includeApiKey = false } = {}) {
   };
 }
 
-async function refreshOllamaCache() {
+async function refreshProviderCache() {
   const { rows } = await db.query(
-    `SELECT * FROM ai_providers WHERE provider = 'ollama' AND enabled = TRUE
-     ORDER BY id ASC LIMIT 1`,
+    `SELECT * FROM ai_providers WHERE enabled = TRUE
+     ORDER BY is_default DESC, id ASC LIMIT 1`,
   );
   _cache.provider = rows[0] || null;
   _cache.loadedAt = Date.now();
   return _cache.provider;
 }
 
-function invalidateOllamaCache() {
+function invalidateProviderCache() {
   _cache.provider = null;
   _cache.loadedAt = 0;
 }
 
-async function getActiveOllamaProvider() {
-  if (!_cache.provider) await refreshOllamaCache();
+/** @deprecated use invalidateProviderCache */
+function invalidateOllamaCache() {
+  invalidateProviderCache();
+}
+
+async function getActiveProvider() {
+  if (!_cache.provider) await refreshProviderCache();
   if (_cache.provider) return _cache.provider;
   return envFallbackProvider();
 }
 
-async function listOllamaProviders() {
+/** @deprecated use getActiveProvider */
+async function getActiveOllamaProvider() {
+  return getActiveProvider();
+}
+
+async function listProviders() {
   const { rows } = await db.query(
-    `SELECT * FROM ai_providers WHERE provider = 'ollama' ORDER BY id ASC`,
+    `SELECT * FROM ai_providers ORDER BY is_default DESC, id ASC`,
   );
-  await refreshOllamaCache();
+  await refreshProviderCache();
   return rows;
 }
 
-async function getOllamaProviderById(id) {
+/** @deprecated use listProviders */
+async function listOllamaProviders() {
+  return listProviders();
+}
+
+async function getProviderById(id) {
   const r = await db.query(`SELECT * FROM ai_providers WHERE id = $1`, [id]);
   return r.rows[0] || null;
 }
 
-async function createOllamaProvider(data) {
+/** @deprecated use getProviderById */
+async function getOllamaProviderById(id) {
+  return getProviderById(id);
+}
+
+async function createProvider(data) {
+  const provider = String(data.provider || 'ollama').toLowerCase();
+  if (!ALLOWED_PROVIDERS.has(provider)) {
+    throw new Error(`Unsupported provider: ${provider}`);
+  }
+
+  const isDefault = data.is_default === true;
+  if (isDefault) {
+    await db.query(`UPDATE ai_providers SET is_default = FALSE WHERE is_default = TRUE`);
+  }
+
   const r = await db.query(
-    `INSERT INTO ai_providers (name, provider, host, api_key, default_model, enabled)
-     VALUES ($1, 'ollama', $2, $3, $4, $5)
+    `INSERT INTO ai_providers (name, provider, host, api_key, default_model, enabled, is_default)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
     [
       data.name,
+      provider,
       stripTrailingSlash(data.host),
       data.api_key || null,
       data.default_model,
       data.enabled !== false,
+      isDefault,
     ],
   );
-  await refreshOllamaCache();
+  await refreshProviderCache();
   return r.rows[0];
 }
 
-async function updateOllamaProvider(id, data) {
+/** @deprecated use createProvider */
+async function createOllamaProvider(data) {
+  return createProvider({ ...data, provider: 'ollama' });
+}
+
+async function updateProvider(id, data) {
   const fields = [];
   const values = [];
   let i = 1;
@@ -125,8 +166,22 @@ async function updateOllamaProvider(id, data) {
   if (data.api_key !== undefined && data.api_key !== '') set('api_key', data.api_key);
   if (data.default_model !== undefined) set('default_model', data.default_model);
   if (data.enabled !== undefined) set('enabled', !!data.enabled);
+  if (data.provider !== undefined) {
+    const provider = String(data.provider).toLowerCase();
+    if (!ALLOWED_PROVIDERS.has(provider)) {
+      throw new Error(`Unsupported provider: ${provider}`);
+    }
+    set('provider', provider);
+  }
 
-  if (fields.length === 0) return getOllamaProviderById(id);
+  if (data.is_default === true) {
+    await db.query(`UPDATE ai_providers SET is_default = FALSE WHERE is_default = TRUE AND id <> $1`, [id]);
+    set('is_default', true);
+  } else if (data.is_default === false) {
+    set('is_default', false);
+  }
+
+  if (fields.length === 0) return getProviderById(id);
 
   fields.push('updated_at = NOW()');
   values.push(id);
@@ -135,8 +190,47 @@ async function updateOllamaProvider(id, data) {
     `UPDATE ai_providers SET ${fields.join(', ')} WHERE id = $${i} RETURNING *`,
     values,
   );
-  await refreshOllamaCache();
+  await refreshProviderCache();
   return r.rows[0] || null;
+}
+
+/** @deprecated use updateProvider */
+async function updateOllamaProvider(id, data) {
+  return updateProvider(id, data);
+}
+
+async function setDefaultProvider(id) {
+  const existing = await getProviderById(id);
+  if (!existing) return null;
+  await db.query(`UPDATE ai_providers SET is_default = FALSE WHERE is_default = TRUE`);
+  const r = await db.query(
+    `UPDATE ai_providers SET is_default = TRUE, enabled = TRUE, updated_at = NOW() WHERE id = $1 RETURNING *`,
+    [id],
+  );
+  await refreshProviderCache();
+  return r.rows[0] || null;
+}
+
+async function upsertProviderByType(data) {
+  const provider = String(data.provider || '').toLowerCase();
+  if (!ALLOWED_PROVIDERS.has(provider)) {
+    throw new Error(`Unsupported provider: ${provider}`);
+  }
+  const existing = await db.query(
+    `SELECT id FROM ai_providers WHERE provider = $1 ORDER BY id ASC LIMIT 1`,
+    [provider],
+  );
+  if (existing.rows[0]) {
+    return updateProvider(existing.rows[0].id, {
+      name: data.name,
+      host: data.host,
+      api_key: data.api_key,
+      default_model: data.default_model,
+      enabled: data.enabled !== false,
+      is_default: data.is_default === true,
+    });
+  }
+  return createProvider(data);
 }
 
 async function startUsageEvent(providerId, feature, model) {
@@ -194,7 +288,7 @@ async function finishUsageEvent(eventId, status, {
      WHERE id = $1`,
     [row.provider_id, isError ? 1 : 0, pt, ct, errorMessage],
   );
-  invalidateOllamaCache();
+  invalidateProviderCache();
 }
 
 async function listRecentUsageEvents(providerId, limit = 50) {
@@ -225,17 +319,27 @@ async function listAllRecentUsageEvents(limit = 100) {
 }
 
 module.exports = {
+  ALLOWED_PROVIDERS,
   stripTrailingSlash,
   maskApiKey,
   envFallbackProvider,
   formatProviderRow,
-  refreshOllamaCache,
+  refreshProviderCache,
+  refreshOllamaCache: refreshProviderCache,
+  invalidateProviderCache,
   invalidateOllamaCache,
+  getActiveProvider,
   getActiveOllamaProvider,
+  listProviders,
   listOllamaProviders,
+  getProviderById,
   getOllamaProviderById,
+  createProvider,
   createOllamaProvider,
+  updateProvider,
   updateOllamaProvider,
+  setDefaultProvider,
+  upsertProviderByType,
   startUsageEvent,
   finishUsageEvent,
   listRecentUsageEvents,

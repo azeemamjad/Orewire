@@ -1,7 +1,6 @@
 const db = require('../../db');
 const { fetchTvQuote } = require('./tv-quote');
 const { getDefaultTvSymbolForCompany } = require('./instrument-symbols-store');
-const { upsertAutoTask, resolveAutoTask } = require('../infra/va-tasks-sync');
 
 const healthCache = new Map();
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -36,22 +35,6 @@ async function isTvSymbolHealthy(tvSymbol) {
   }
 }
 
-function vaTaskForCompany(company, tvSymbol, reason) {
-  const ex = company.exchange || '';
-  const tk = company.ticker || '';
-  return {
-    sourceKey: `companies|symbol_invalid|${company.id}`,
-    module: 'companies',
-    errorType: 'symbol_invalid',
-    title: `Fix ticker: ${company.name} (${ex}:${tk})`,
-    description: reason || `TradingView symbol ${tvSymbol} returned no price. Add correct listings and set default.`,
-    actionUrl: `/admin/companies.html?edit=${company.id}&tab=symbols`,
-    severity: 'medium',
-    occurrenceCount: 1,
-    sampleDetail: tvSymbol,
-  };
-}
-
 async function flagCompanySymbolIssue(companyId, tvSymbol, reason) {
   const c = await db.query(
     `SELECT id, name, exchange, ticker, symbol_flagged_at FROM companies WHERE id = $1`,
@@ -60,6 +43,8 @@ async function flagCompanySymbolIssue(companyId, tvSymbol, reason) {
   const company = c.rows[0];
   if (!company) return;
 
+  // Only flag the company row. VA Tasks uses one aggregated "invalid tickers" task
+  // (built by syncVaTasks) — do not create one VA row per company.
   const msg = reason || `TV scanner: no price for ${tvSymbol}`;
   await db.query(
     `UPDATE companies SET
@@ -70,7 +55,6 @@ async function flagCompanySymbolIssue(companyId, tvSymbol, reason) {
      WHERE id = $1`,
     [companyId, msg, tvSymbol],
   );
-  await upsertAutoTask(vaTaskForCompany(company, tvSymbol, msg));
 }
 
 async function clearCompanySymbolFlag(companyId) {
@@ -83,7 +67,6 @@ async function clearCompanySymbolFlag(companyId) {
      WHERE id = $1`,
     [companyId],
   );
-  await resolveAutoTask(`companies|symbol_invalid|${companyId}`);
 }
 
 async function checkCompanySymbolHealth(company, { force = false } = {}) {

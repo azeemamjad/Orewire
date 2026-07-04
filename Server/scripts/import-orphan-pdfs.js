@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Register orphan PDFs (on disk, not in DB) with analyzed=0, dedupe by SHA-256,
- * upload unique files to S3, store public HTTPS URL in pdf_path
+ * upload unique files to S3, store s3: path (or public URL) in pdf_path
  *
  *   node scripts/import-orphan-pdfs.js --dry-run
  *   node scripts/import-orphan-pdfs.js
@@ -16,10 +16,10 @@ const migrate = require('../db/migrate');
 const {
   isStorageEnabled,
   isRemoteStoragePath,
-  isMinioLegacyPath,
+  isLegacyMinioPath,
   parseStoragePath,
   toStoragePath,
-  toMinioLegacyPath,
+  toS3Path,
   getFilingPrefix,
   localPathToObjectKey,
   ensureBucket,
@@ -30,7 +30,7 @@ const {
 const { DOWNLOADS_DIR } = require('../lib/scraper/paths');
 
 const DRY_RUN = process.argv.includes('--dry-run');
-const MINIO_OBJECT_PREFIX = getFilingPrefix();
+const OBJECT_PREFIX = getFilingPrefix();
 
 function fmtBytes(n) {
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)} GB`;
@@ -87,28 +87,18 @@ function parseFolderName(dirName) {
 }
 
 async function resolveCompany(client, folderName, pdfFilename = null) {
+  const { findCompanyForFiling } = require('../lib/companies/match');
   const { ticker, nameHint } = parseFolderName(folderName);
   const tickers = [ticker, tickerFromFilename(pdfFilename)].filter(Boolean);
   for (const t of [...new Set(tickers)]) {
-    const byTicker = await client.query(
-      `SELECT id, name, exchange FROM companies
-       WHERE UPPER(ticker) = $1 OR UPPER(sedar_ticker) = $1
-       LIMIT 1`,
-      [t],
-    );
-    if (byTicker.rows[0]) return byTicker.rows[0];
+    const row = await findCompanyForFiling(client, {
+      ticker: t,
+      companyName: nameHint || folderName,
+    });
+    if (row) return row;
   }
   if (nameHint) {
-    const exact = await client.query(
-      `SELECT id, name, exchange FROM companies WHERE name ILIKE $1 LIMIT 1`,
-      [nameHint],
-    );
-    if (exact.rows[0]) return exact.rows[0];
-    const fuzzy = await client.query(
-      `SELECT id, name, exchange FROM companies WHERE name ILIKE $1 ORDER BY market_cap DESC NULLS LAST LIMIT 1`,
-      [`%${nameHint}%`],
-    );
-    if (fuzzy.rows[0]) return fuzzy.rows[0];
+    return findCompanyForFiling(client, { companyName: nameHint });
   }
   return null;
 }
@@ -128,7 +118,7 @@ function addKnownPath(knownPaths, pdfPath) {
 
 function isKnownPath(knownPaths, objectKey, localAbs) {
   if (knownPaths.has(localAbs) || knownPaths.has(objectKey)) return true;
-  if (knownPaths.has(toMinioLegacyPath(objectKey))) return true;
+  if (knownPaths.has(toS3Path(objectKey))) return true;
   if (isStorageEnabled()) {
     return knownPaths.has(toStoragePath(objectKey));
   }
@@ -150,7 +140,7 @@ async function indexExistingFilings(client, knownPaths, knownHashes) {
     }
 
     let localPath = null;
-    if (isMinioLegacyPath(row.pdf_path)) {
+    if (isLegacyMinioPath(row.pdf_path) || row.pdf_path.startsWith('s3:')) {
       localPath = path.join(DOWNLOADS_DIR, parseStoragePath(row.pdf_path));
     } else if (fs.existsSync(path.resolve(row.pdf_path))) {
       localPath = path.resolve(row.pdf_path);
@@ -180,7 +170,7 @@ async function indexExistingFilings(client, knownPaths, knownHashes) {
 }
 
 function objectKeyForHash(hash) {
-  return `${MINIO_OBJECT_PREFIX}/${hash}.pdf`;
+  return `${OBJECT_PREFIX}/${hash}.pdf`;
 }
 
 async function main() {
@@ -320,7 +310,7 @@ async function main() {
   console.log(`  Errors:                     ${stats.errors}`);
 
   if (DRY_RUN) {
-    console.log('\n[import] Dry run — re-run without --dry-run to write DB + MinIO.');
+    console.log('\n[import] Dry run — re-run without --dry-run to write DB + S3.');
   }
 
   await db.end();

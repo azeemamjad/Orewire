@@ -227,6 +227,45 @@ context to help readers understand the filing's significance within the broader
 corporate narrative.
 
 ═══════════════════════════════════════════════════════════════════
+GROUNDING — NO FABRICATION (CRITICAL)
+═══════════════════════════════════════════════════════════════════
+
+- ONLY state facts explicitly present in the filing text. Do NOT invent:
+  • Titles beyond what is written (say "Director" not "Non-Executive Director"
+    unless the filing says Non-Executive)
+  • Commodities (do not say gold/silver/copper unless the filing names them)
+  • Geographic relationships ("adjacent to X project") unless stated
+  • Corporate structure ("CEO or board") unless those roles are named
+- Issuer metadata (Company / Ticker) provided below is a HINT only. Prefer issuer
+  names stated IN THE DOCUMENT. If they conflict, trust the document and list
+  document issuers in issuer_names_from_document.
+- Percentage semantics:
+  • A change in an insider's own holdings must be phrased as "X% increase in his/her
+    personal holdings" — NEVER imply % of the company unless shares outstanding is
+    disclosed and you compute ownership % of the company.
+  • If shares outstanding is unknown, do not invent company-level ownership %.
+- Pre- vs post-issuance share math: when a filing says shares equal X% of outstanding
+  "as of the Closing Date" or "post-closing", treat that as POST-issuance. Pre-transaction
+  outstanding = post_total − shares_issued.
+- Private placement fields (pp_amount, pp_price, pp_dilution_pct) are ONLY for equity
+  financings / private placements. For acquisitions, use data_extracted.acquisition
+  (and related JV / lockup fields). Never put acquisition share consideration in pp_*.
+- Options and warrants: always extract into insider_ownership[].other_securities when
+  disclosed (quantity, exercise_price, expiry).
+- Acquisitions / SPAs: extract cash deposit already paid vs balance due at closing,
+  deemed share price, implied deal value, lockup/resale schedule, JV partner and
+  retained interest %. Title registration / regulatory approvals that are closing
+  conditions must be stated as completion risk in key_facts or verdict_reason.
+
+EMPTY / FAILED EXTRACTION:
+- If the filing text is empty or near-empty, you MUST set verdict to "extraction_failed"
+  (not "routine"). key_facts must be a single failure line. what_to_watch must be
+  user-facing only (e.g. "View the original PDF for details.") — never pipeline/debug
+  instructions like "Re-submit the filing".
+
+what_to_watch must be grounded only in catalysts supported by the filing.
+
+═══════════════════════════════════════════════════════════════════
 RULES
 ═══════════════════════════════════════════════════════════════════
 
@@ -252,12 +291,13 @@ OUTPUT SCHEMA
   "display_type": "ticker" | "expand",
   "ticker_summary": "One-line summary for the news ticker (max 140 chars)",
   "summary": "2-3 sentence plain-English summary",
-  "verdict": "noteworthy" | "watch" | "routine",
+  "verdict": "noteworthy" | "watch" | "routine" | "extraction_failed",
   "verdict_reason": "One sentence explaining why this verdict",
   "key_facts": ["fact 1", "fact 2", "fact 3"],
   "context": "1-2 sentences comparing to similar projects or industry norms",
   "grade_commentary": "Is this grade/result good, mediocre, or poor and why — null if not applicable",
-  "what_to_watch": "Next expected catalyst or event",
+  "what_to_watch": "Next expected catalyst or event (user-facing only)",
+  "issuer_names_from_document": ["Issuer names explicitly stated in the filing"] or null,
   "data_extracted": {
     "cash_position": {
       "amount": number or null,
@@ -330,18 +370,38 @@ OUTPUT SCHEMA
     "pp_amount": number or null,
     "pp_price": number or null,
     "pp_dilution_pct": number or null,
+    "acquisition": {
+      "cash_total": number or null,
+      "cash_deposit_paid": number or null,
+      "cash_due_at_closing": number or null,
+      "shares_issued": number or null,
+      "deemed_price_per_share": number or null,
+      "implied_deal_value": number or null,
+      "dilution_pct_post": number or null,
+      "currency": "AUD" | "CAD" | "USD" | null,
+      "note": "string" or null
+    } or null,
+    "resale_restrictions": [
+      { "pct_released": number or null, "months_after_closing": number or null, "note": "string" or null }
+    ] or null,
+    "lockup_schedule": [
+      { "pct_released": number or null, "months_after_closing": number or null, "note": "string" or null }
+    ] or null,
+    "jv_partner": "string" or null,
+    "jv_partner_interest_pct": number or null,
     "insider_holdings": [
       { "name": "string", "title": "string", "shares": number }
     ] or null,
     "insider_transactions": [
       {
         "insider_name": "string",
-        "title": "string — e.g. 'CEO', 'Director', 'CFO', '10% Holder'" or null,
+        "title": "string — only as stated in filing" or null,
         "transaction_type": "purchase" | "sale" | "grant" | "exercise" | "disposition" | null,
         "shares": number or null,
         "price": number or null,
         "transaction_date": "YYYY-MM-DD" or null,
-        "total_holdings_after": number or null
+        "total_holdings_after": number or null,
+        "prior_notice_date": "YYYY-MM-DD" or null
       }
     ] or null,
     "insider_ownership": [
@@ -349,7 +409,15 @@ OUTPUT SCHEMA
         "insider_name": "string",
         "title": "string" or null,
         "total_shares": number or null,
-        "percent_ownership": number or null
+        "percent_ownership": number or null,
+        "other_securities": [
+          {
+            "type": "option" | "warrant" | "other",
+            "quantity": number or null,
+            "exercise_price": number or null,
+            "expiry": "string" or null
+          }
+        ] or null
       }
     ] or null
   }
@@ -385,14 +453,17 @@ function buildUserPrompt(meta, extractedText) {
   const text = smartTruncate(extractedText);
 
   return `Filing type: ${filing_type}
-Exchange: ${exchange}
-Company: ${company_name}
-Ticker: ${ticker}
+Exchange (metadata hint): ${exchange}
+Company (metadata hint — may be wrong; prefer names in the document): ${company_name}
+Ticker (metadata hint): ${ticker}
 Market cap: $${market_cap}M (if available)
 Shares outstanding: ${shares_out} (if available)
-Commodity: ${commodity}
+Commodity (metadata hint): ${commodity}
 
 IMPORTANT REMINDERS FOR THIS FILING:
+- Metadata Company/Ticker/Commodity are HINTS only. Issuer names in the document
+  override them. Populate issuer_names_from_document with names stated in the text.
+- Never invent titles, commodities, geography, or corporate roles not in the text.
 - If this is a financial filing: you MUST extract cash_position, total_debt,
   shares_outstanding, and segment_performance if the data exists. Search the
   balance sheet, notes, AND cash flow statement. Do NOT leave these null if
@@ -402,7 +473,9 @@ IMPORTANT REMINDERS FOR THIS FILING:
 - If this filing references a parent operation's resource as context, extract
   it as a separate resource_estimates entry.
 - Ensure display_type is consistent with verdict (expand ↔ noteworthy/watch,
-  ticker ↔ routine).
+  ticker ↔ routine; extraction_failed uses ticker).
+- Acquisitions use data_extracted.acquisition — never pp_* for share consideration.
+- Insider options/warrants go in insider_ownership[].other_securities.
 
 [EXTRACTED TEXT FROM FILING]
 ${text}`;

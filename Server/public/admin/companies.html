@@ -48,6 +48,7 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
       </select>
       <select id="co-missing" onchange="_coPage=1;loadCompanies()" title="Filter companies missing enrichment data">
         <option value="">All companies</option>
+        <option value="flagged">Flagged symbols (rename / ticker change)</option>
         <option value="any">Missing any field</option>
         <option value="description">Missing description</option>
         <option value="website">Missing website</option>
@@ -62,8 +63,8 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
 
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Name</th><th>Exchange</th><th>Ticker</th><th>SEDAR Ticker</th><th>Market Cap (C$M)</th><th>Enrichment</th><th>Actions</th></tr></thead>
-        <tbody id="companies-body"><tr class="empty-row"><td colspan="7">Loading…</td></tr></tbody>
+        <thead><tr><th>Name</th><th>Exchange</th><th>Ticker</th><th>SEDAR Ticker</th><th>Market Cap (C$M)</th><th>Status</th><th>Enrichment</th><th>Actions</th></tr></thead>
+        <tbody id="companies-body"><tr class="empty-row"><td colspan="8">Loading…</td></tr></tbody>
       </table>
     </div>
     <div id="co-pagination" style="display:flex;align-items:center;gap:10px;margin-top:14px;justify-content:flex-end;">
@@ -94,6 +95,17 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
       <button class="modal-close" onclick="closeProfileModal()">✕</button>
     </div>
     <div class="modal-body" id="profile-modal-body">Loading…</div>
+  </div>
+</div>
+
+<!-- ── MIGRATE COMPANY DATA MODAL ── -->
+<div class="modal-backdrop" id="migrate-modal" onclick="if(event.target===this)closeMigrateModal()">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-header">
+      <h2 id="migrate-modal-title">Migrate company data</h2>
+      <button class="modal-close" onclick="closeMigrateModal()">✕</button>
+    </div>
+    <div class="modal-body" id="migrate-modal-body">Loading…</div>
   </div>
 </div>
 
