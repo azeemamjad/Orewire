@@ -31,6 +31,7 @@ import SymbolPicker from "@/features/markets/components/SymbolPicker";
 import { useInstrumentSymbols } from "@/hooks/use-instrument-symbols";
 import { useLiveQuote } from "@/hooks/use-live-quote";
 import { formatEmpty } from "@/lib/display";
+import { formatLiveLastLabel, formatPrice4, liveQuoteUpdatedAtMs } from "@/lib/live-quote-display";
 
 const COMMODITY_TV: Record<string, string> = {
   GOLD: "TVC:GOLD",
@@ -166,7 +167,7 @@ const CommodityDetail = () => {
   const [inWatchlist, setInWatchlist] = useState(false);
 
   const { symbols, selectedTvSymbol, setSelectedTvSymbol } = useInstrumentSymbols("commodity", apiKey);
-  const { data: liveQuote } = useLiveQuote(selectedTvSymbol);
+  const { data: liveQuote, dataUpdatedAt } = useLiveQuote(selectedTvSymbol);
   const fallbackTv = COMMODITY_TV[key] || null;
   const chartTvSymbol = selectedTvSymbol || fallbackTv;
 
@@ -204,12 +205,13 @@ const CommodityDetail = () => {
   const isUp = (changePct ?? 0) >= 0;
   const isDown = changePct != null && changePct < 0;
   const priceCcy = ccyPrefix(liveQuote?.currency ?? commodity?.currency);
-  const providerLabel = commodity?.provider === "yahoo" ? "Yahoo Finance" : "TradingView";
+  const liveLastLabel = formatLiveLastLabel(
+    liveQuoteUpdatedAtMs(liveQuote?.updatedAt, dataUpdatedAt),
+  );
   const prevClose =
-    price != null && changeAbs != null ? +(price - changeAbs).toFixed(key === "GOLD" || key === "SLVR" ? 2 : 4) : null;
+    price != null && changeAbs != null ? +(price - changeAbs).toFixed(4) : null;
 
-  const fmtPrice = (n: number) =>
-    n.toLocaleString(undefined, { maximumFractionDigits: key === "GOLD" || key === "SLVR" ? 1 : 2 });
+  const fmtPrice = (n: number) => formatPrice4(n);
   const px = (n: number | null | undefined) => (n != null ? `${priceCcy}${fmtPrice(n)}` : formatEmpty(null));
 
   return (
@@ -258,7 +260,7 @@ const CommodityDetail = () => {
                     </span>
                   )}
                   <span className="text-xs text-muted-foreground font-mono">
-                    · {providerLabel} · Delayed · Day change vs prior close
+                    {liveLastLabel}
                   </span>
                 </div>
               ) : null}

@@ -75,7 +75,7 @@ async function main() {
     fs.unlinkSync(tmpPath);
   }
 
-  console.log('\nAWS S3 connection is working. Safe to run migrate-minio-to-aws.js');
+  console.log('\nAWS S3 connection is working.');
 }
 
 function printHints(err) {

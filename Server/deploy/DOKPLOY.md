@@ -50,7 +50,7 @@ The server container mounts a volume at `/app/data` for scraper downloads and co
 8. **Shared memory:** ≥ 1 GB if Relay is enabled
 9. **Redeploy** after git pull when `Server/Dockerfile` or `playwright` version changes
 
-Production filing storage uses **AWS S3** (`AWS_S3_ENABLED=true`). MinIO env is only needed during migration (`migrate-minio-to-aws.js`); use the MinIO service hostname on the Dokploy Docker network (e.g. `MINIO_ENDPOINT=minio`, `MINIO_PORT=9000`, `MINIO_USE_SSL=false`).
+Production filing storage uses **AWS S3 only** (`AWS_S3_ENABLED=true`). Keep the bucket private and use presigned URLs (`AWS_S3_PRESIGNED_URLS=true`).
 
 ### Dokploy — frontend
 
@@ -82,7 +82,7 @@ Production filing storage uses **AWS S3** (`AWS_S3_ENABLED=true`). MinIO env is 
 |---------|--------|-------|
 | **Backend** | `Server/` | Node app, Playwright image, listens on port `8070` |
 | **Frontend** | `frontend/` | Static build (`npm run build` → nginx on port `8080`) |
-| **MinIO** | Dokploy MinIO template | Filing PDF storage (~25 GB+) |
+| **AWS S3** | AWS account | Filing PDF storage (private bucket + presigned URLs) |
 | **Postgres** | Supabase (external) or Dokploy Postgres | `DATABASE_URL` |
 
 ## Backend env (Dokploy)
@@ -118,68 +118,25 @@ AWS_S3_PRESIGN_EXPIRES_SEC=3600
 - IAM user/role for the app: `s3:PutObject`, `s3:GetObject`, `s3:ListBucket`, `s3:HeadObject`, `s3:DeleteObject` on the bucket prefix.
 - Never commit keys — use Dokploy secrets or an IAM role on EC2.
 
-MinIO (legacy — migration source only; remove after cutover):
-
-```env
-MINIO_ENABLED=true
-MINIO_ENDPOINT=minio
-MINIO_PORT=9000
-MINIO_USE_SSL=false
-MINIO_PATH_STYLE=true
-MINIO_ACCESS_KEY=...
-MINIO_SECRET_KEY=...
-MINIO_BUCKET=orewire-filings
-```
-
-## Filing storage migration (MinIO → AWS S3)
-
-### Admin UI (recommended)
-
-1. Deploy with both `MINIO_*` and `AWS_*` env vars set.
-2. Open **Admin → Storage** (`/admin/storage.html`).
-3. Review analytics (object counts, volume, pending `minio:` rows).
-4. Click **Dry run**, then **Start migration** (optional: include local paths / orphan objects).
-5. Watch live progress until complete.
-6. Spot-check a filing PDF on the public site (`/api/filings/:id/document` → presigned S3 redirect).
-7. Remove `MINIO_ENABLED`, decommission MinIO.
-
-### CLI (alternative)
-
-```bash
-docker exec -it <server-container> node scripts/test-aws-s3-connection.js
-docker exec -it <server-container> node scripts/migrate-minio-to-aws.js --dry-run
-docker exec -it <server-container> node scripts/migrate-minio-to-aws.js
-docker exec -it <server-container> node scripts/migrate-minio-to-aws.js --include-local
-```
-
-Optional flags: `--include-orphans`
-
-### Legacy: local disk → MinIO (pre-S3)
-
-If filings are still on local disk with `minio:` not yet in DB, run the older script first (requires MinIO):
-
-```bash
-node scripts/test-minio-connection.js
-node scripts/migrate-filings-to-minio.js --dry-run
-node scripts/migrate-filings-to-minio.js
-```
-
-Then migrate via Admin → Storage or `migrate-minio-to-aws.js`.
+Do **not** set `MINIO_*` — MinIO is no longer used.
 
 ## pdf_path format
 
-| Before | After S3 migration |
-|--------|---------------------|
-| `/app/data/downloads/Co (T)/file.pdf` | `s3:filings/<hash>.pdf` |
-| `minio:filings/abc.pdf` (legacy) | `s3:filings/abc.pdf` |
+| Value | Meaning |
+|--------|---------|
+| `s3:TICKER/file.pdf` | Object key in the AWS bucket (presigned on request) |
+| `https://…` | Public URL mode (`AWS_S3_PRESIGNED_URLS=false`) |
+| Local path | Staging only — upload via pipeline when S3 is enabled |
 
-`GET /api/filings/:id/document` generates a **presigned redirect** (default) so the bucket can stay private. Local paths still stream from disk until migrated.
+`GET /api/filings/:id/document` generates a **presigned redirect** (default) so the bucket can stay private. Local paths still stream from disk until uploaded.
+
+Admin → **Storage** (`/admin/storage.html`) shows S3 connection status and bucket volume.
 
 ## Volumes
 
 - Mount a small volume at `Server/data/downloads` for scraper staging (PDFs upload to S3 on save when `AWS_S3_ENABLED=true`).
-- MinIO bucket holds production filing PDFs.
+- Production filing PDFs live in the AWS S3 bucket.
 
 ## Scraper note
 
-Browser scrapers run in-process under `Server/lib/scraper/`. Downloads land in `data/downloads` first; use MinIO import scripts to persist unique filings.
+Browser scrapers run in-process under `Server/lib/scraper/`. Downloads land in `data/downloads` first, then upload to S3 when storage is enabled.

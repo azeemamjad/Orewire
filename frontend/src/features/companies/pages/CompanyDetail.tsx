@@ -38,6 +38,7 @@ import { companyBackState } from "@/lib/detail-navigation";
 import SymbolPicker from "@/features/markets/components/SymbolPicker";
 import { useInstrumentSymbols } from "@/hooks/use-instrument-symbols";
 import { useLiveQuote } from "@/hooks/use-live-quote";
+import { formatLiveLastLabel, formatPrice4, liveQuoteUpdatedAtMs } from "@/lib/live-quote-display";
 
 
 function timeAgo(dateStr: string): string {
@@ -72,7 +73,7 @@ const CompanyDetail = () => {
     companyId > 0 ? String(companyId) : undefined,
     { initial: data?.symbols, enabled: companyId > 0 },
   );
-  const { data: liveQuote } = useLiveQuote(selectedTvSymbol);
+  const { data: liveQuote, dataUpdatedAt } = useLiveQuote(selectedTvSymbol);
 
   const { data: snapshotView, isLoading: snapshotLoading } = useQuery({
     queryKey: ["company-snapshot", companyId],
@@ -115,7 +116,9 @@ const CompanyDetail = () => {
 
   const isUp = displayChangePct != null && displayChangePct >= 0;
   const isDown = displayChangePct != null && displayChangePct < 0;
-  const quoteSourceLabel = md?.source === "yahoo" ? "Yahoo Finance" : "TradingView";
+  const liveLastLabel = formatLiveLastLabel(
+    liveQuoteUpdatedAtMs(liveQuote?.updatedAt, dataUpdatedAt),
+  );
 
   return (
     <SiteLayout>
@@ -168,7 +171,7 @@ const CompanyDetail = () => {
               <h1 className="font-display text-4xl md:text-5xl tracking-tight">{data.name}</h1>
               {displayPrice != null && (
                 <div className="mt-3 flex items-baseline gap-3 flex-wrap">
-                  <span className="font-mono text-3xl font-semibold">{priceCcy}{displayPrice.toFixed(Math.abs(displayPrice) < 1 ? 4 : 3)}</span>
+                  <span className="font-mono text-3xl font-semibold">{priceCcy}{formatPrice4(displayPrice)}</span>
                   {displayChangePct != null && (
                     <span
                       className={`font-mono text-sm flex items-center gap-1 ${
@@ -176,12 +179,12 @@ const CompanyDetail = () => {
                       }`}
                     >
                       {isUp ? <ArrowUpRight className="h-4 w-4" /> : isDown ? <ArrowDownRight className="h-4 w-4" /> : <Minus className="h-4 w-4" />}
-                      {displayChangeAbs != null && `${displayChangeAbs >= 0 ? "+" : ""}${displayChangeAbs.toFixed(Math.abs(displayPrice) < 1 ? 4 : 3)}`}
+                      {displayChangeAbs != null && `${displayChangeAbs >= 0 ? "+" : ""}${formatPrice4(displayChangeAbs)}`}
                       {" "}({displayChangePct >= 0 ? "+" : ""}{displayChangePct.toFixed(2)}%)
                     </span>
                   )}
                   <span className="text-xs text-muted-foreground font-mono">
-                    · {quoteSourceLabel} · Delayed · Day change vs prior close
+                    {liveLastLabel}
                   </span>
                 </div>
               )}

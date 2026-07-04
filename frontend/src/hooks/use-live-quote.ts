@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchTvQuoteBySymbol } from '@/features/markets/instrument-symbols';
 
-const REFETCH_MS = 30_000;
+const REFETCH_MS = 5_000;
 
 export function useLiveQuote(tvSymbol: string | null | undefined) {
   return useQuery({
@@ -9,9 +9,8 @@ export function useLiveQuote(tvSymbol: string | null | undefined) {
     queryFn: () => fetchTvQuoteBySymbol(tvSymbol!),
     enabled: !!tvSymbol,
     retry: false,
-    refetchOnWindowFocus: false,
-    refetchInterval: (query) =>
-      query.state.data?.price != null ? REFETCH_MS : false,
+    refetchOnWindowFocus: true,
+    refetchInterval: REFETCH_MS,
     staleTime: REFETCH_MS / 2,
     placeholderData: (prev) => prev,
   });

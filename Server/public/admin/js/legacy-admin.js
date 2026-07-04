@@ -55,33 +55,48 @@ function toast(msg, type = 'ok') {
 
 // ── Dashboard ──
 async function loadDashboard() {
+  const tbody = document.getElementById('recent-filings-body');
+
   try {
     const s = await fetch(`${API}/api/filings/stats`).then(r => r.json());
+    if (s.error) throw new Error(s.error);
+    const total = s.filings ?? 0;
+    const analyzed = s.analyzed ?? 0;
+    const pending = s.pending ?? Math.max(0, total - analyzed);
     document.getElementById('stat-companies').textContent   = s.companies ?? 0;
-    document.getElementById('stat-filings').textContent     = s.filings ?? 0;
-    document.getElementById('stat-analyzed').textContent    = s.analyzed ?? 0;
+    document.getElementById('stat-filings').textContent     = total;
+    document.getElementById('stat-analyzed').textContent    = analyzed;
+    document.getElementById('stat-pending').textContent     = pending;
     document.getElementById('stat-noteworthy').textContent  = s.noteworthy ?? 0;
     document.getElementById('stat-watch').textContent       = s.watch ?? 0;
     document.getElementById('stat-routine').textContent     = s.routine ?? 0;
-  } catch { /* ignore */ }
+  } catch (err) {
+    console.error('Dashboard stats failed:', err);
+  }
 
   try {
     const rows = await fetch(`${API}/api/filings`).then(r => r.json());
-    const tbody = document.getElementById('recent-filings-body');
+    if (!Array.isArray(rows)) {
+      throw new Error(rows?.error || 'Unexpected filings response');
+    }
     const recent = rows.slice(0, 15);
     if (!recent.length) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No filings yet. Import company data and run the scraper.</td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No filings yet. Import company data and run the scraper.</td></tr>';
       return;
     }
     tbody.innerHTML = recent.map(f => `
       <tr>
         <td>${esc(f.company_name)}</td>
         <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(f.pdf_filename)}">${esc(f.pdf_filename ?? '-')}</td>
+        <td><span class="badge ${f.analyzed ? 'badge-analyzed' : 'badge-pending'}">${f.analyzed ? 'Analyzed' : 'Pending'}</span></td>
         <td>${verdictBadge(f.verdict)}</td>
         <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);" title="${esc(f.ticker_summary)}">${esc(f.ticker_summary ?? '-')}</td>
         <td><button class="btn btn-ghost btn-sm" onclick="showFiling(${f.id})">View</button></td>
       </tr>`).join('');
-  } catch { /* ignore */ }
+  } catch (err) {
+    console.error('Dashboard filings failed:', err);
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="6">Failed to load recent filings: ${esc(err.message)}</td></tr>`;
+  }
 }
 
 // ── Companies ──
@@ -113,7 +128,7 @@ async function loadCompanies() {
   params.set('limit', '20');
 
   const tbody = document.getElementById('companies-body');
-  tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Loading…</td></tr>';
+  tbody.innerHTML = '<tr class="empty-row"><td colspan="8">Loading…</td></tr>';
 
   try {
     const res = await fetch(`${API}/api/companies?${params}`);
@@ -130,7 +145,7 @@ async function loadCompanies() {
     document.getElementById('co-next').disabled = !pg.hasNext;
 
     if (!rows.length) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No companies found. Import an Excel file first.</td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No companies found. Import an Excel file first.</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(c => {
@@ -143,6 +158,13 @@ async function loadCompanies() {
       };
       const badge = (ok, label) =>
         `<span class="badge ${ok ? 'badge-analyzed' : 'badge-pending'}" style="font-size:10px;${ok ? '' : 'opacity:0.55;'}" title="${label}: ${ok ? 'set' : 'missing'}">${ok ? '✓' : '·'} ${label}</span>`;
+      const flagged = !!c.symbol_flagged_at;
+      const statusCell = flagged
+        ? `<span class="badge badge-noteworthy" title="${esc(c.symbol_flagged_reason || 'Symbol flagged')}">Flagged</span>`
+        : `<span class="badge badge-pending">OK</span>`;
+      const migrateBtn = flagged
+        ? `<button class="btn btn-primary btn-sm" title="Move filings &amp; news to the renamed company" onclick="openMigrateModal(${c.id})">⇄ Migrate</button>`
+        : '';
       return `
       <tr>
         <td><strong>${esc(c.name)}</strong></td>
@@ -150,10 +172,12 @@ async function loadCompanies() {
         <td>${esc(c.ticker ?? '-')}</td>
         <td>${esc(c.sedar_ticker ?? '-')}</td>
         <td>${c.market_cap != null ? Number(c.market_cap).toLocaleString() : '-'}</td>
+        <td>${statusCell}</td>
         <td style="display:flex;gap:4px;flex-wrap:wrap;">
           ${badge(has.desc, 'Desc')}${badge(has.web, 'Web')}${badge(has.hq, 'HQ')}${badge(has.ta, 'TA')}${badge(has.ppl, 'People')}
         </td>
-        <td style="display:flex;gap:6px;">
+        <td style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${migrateBtn}
           <button class="btn btn-ghost btn-sm" onclick="openEditProfile(${c.id})">✎ Edit</button>
           ${c.ticker ? `<button class="btn btn-primary btn-sm" title="Pull profile from ${esc(c.exchange ?? 'exchange')} listing" onclick="quickProfile('${esc(c.ticker).replace(/'/g,"\\'")}')">▶ Profile</button>` : ''}
           <button class="btn btn-ghost btn-sm" title="Scrape SEDAR/ASX filings" onclick="quickScrape('${esc(c.name).replace(/'/g,"\\'")}','${esc(c.exchange??'')}','${esc(c.ticker??'')}')">📄 Filings</button>
@@ -162,7 +186,7 @@ async function loadCompanies() {
       </tr>`;
     }).join('');
   } catch (e) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Error: ${esc(e.message)}</td></tr>`;
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="8">Error: ${esc(e.message)}</td></tr>`;
   }
 }
 
@@ -202,6 +226,187 @@ async function deleteCompany(id) {
   await fetch(`${API}/api/companies/${id}`, { method: 'DELETE' });
   toast('Company deleted');
   loadCompanies();
+}
+
+// ── Migrate flagged company data → renamed / new company ─────────────────
+
+let _migrateSourceId = null;
+let _migrateTarget = null;
+let _migrateSearchTimer = null;
+let _migrateSearchCache = {};
+
+function closeMigrateModal() {
+  document.getElementById('migrate-modal')?.classList.remove('open');
+  _migrateSourceId = null;
+  _migrateTarget = null;
+  if (_migrateSearchTimer) {
+    clearTimeout(_migrateSearchTimer);
+    _migrateSearchTimer = null;
+  }
+}
+
+function fmtMigrateCounts(counts) {
+  if (!counts) return '';
+  const rows = [
+    ['Filings', counts.filings],
+    ['News releases', counts.newsReleases],
+    ['Market news', counts.marketNews],
+    ['Discussions', counts.discussions],
+    ['People', counts.people],
+    ['Insider ownership', counts.insiderOwnership],
+    ['Insider transactions', counts.insiderTransactions],
+    ['Snapshots', counts.snapshots],
+    ['Watchlist entries', counts.watchlist],
+    ['Listings / symbols', counts.instrumentSymbols],
+  ].filter(([, n]) => n > 0);
+  if (!rows.length) return '<p style="color:var(--muted);font-size:13px;">No related data found on this company.</p>';
+  return `<ul style="margin:8px 0 0;padding-left:18px;font-size:13px;line-height:1.6;">
+    ${rows.map(([label, n]) => `<li><strong>${n}</strong> ${esc(label)}</li>`).join('')}
+  </ul>`;
+}
+
+async function openMigrateModal(sourceId) {
+  _migrateSourceId = sourceId;
+  _migrateTarget = null;
+  const modal = document.getElementById('migrate-modal');
+  const body = document.getElementById('migrate-modal-body');
+  if (!modal || !body) return;
+  modal.classList.add('open');
+  body.innerHTML = '<div class="loading">Loading…</div>';
+
+  try {
+    const preview = await fetch(`${API}/api/companies/${sourceId}/migrate-preview`).then((r) => r.json());
+    if (preview.error) throw new Error(preview.error);
+    const s = preview.source || {};
+    document.getElementById('migrate-modal-title').textContent = `Migrate: ${s.name || 'Company'}`;
+
+    body.innerHTML = `
+      <div style="font-size:13px;line-height:1.5;margin-bottom:12px;">
+        <div><strong>${esc(s.name || '')}</strong>
+          <span class="badge badge-pending">${esc(s.exchange || '-')}</span>
+          ${esc(s.ticker || '')}
+        </div>
+        ${s.symbol_flagged_reason ? `<div style="color:var(--muted);margin-top:4px;">${esc(s.symbol_flagged_reason)}</div>` : ''}
+        <div style="margin-top:10px;font-weight:600;">Data to move</div>
+        ${fmtMigrateCounts(preview.counts)}
+      </div>
+      <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Search target company (new name / ticker)</label>
+      <input type="search" id="migrate-search" placeholder="Name or ticker…" autocomplete="off"
+        style="width:100%;padding:8px 10px;font:inherit;border:1px solid var(--border);border-radius:6px;background:var(--bg);" />
+      <div id="migrate-search-results" style="margin-top:8px;max-height:200px;overflow:auto;border:1px solid var(--border);border-radius:6px;"></div>
+      <div id="migrate-selected" style="margin-top:12px;font-size:13px;color:var(--muted);">No target selected.</div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;">
+        <input type="checkbox" id="migrate-delete-source" />
+        Delete the old (flagged) company after migrate
+      </label>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+        <button type="button" class="btn btn-ghost" onclick="closeMigrateModal()">Cancel</button>
+        <button type="button" class="btn btn-primary" id="migrate-confirm-btn" disabled onclick="confirmMigrateCompany()">Migrate data</button>
+      </div>`;
+
+    const searchInput = document.getElementById('migrate-search');
+    searchInput?.addEventListener('input', () => {
+      if (_migrateSearchTimer) clearTimeout(_migrateSearchTimer);
+      _migrateSearchTimer = setTimeout(() => searchMigrateTargets(searchInput.value), 250);
+    });
+    searchInput?.focus();
+  } catch (err) {
+    body.innerHTML = `<p style="color:var(--danger);">${esc(err.message)}</p>`;
+  }
+}
+
+async function searchMigrateTargets(q) {
+  const box = document.getElementById('migrate-search-results');
+  if (!box) return;
+  const query = (q || '').trim();
+  if (query.length < 1) {
+    box.innerHTML = '';
+    return;
+  }
+  box.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--muted);">Searching…</div>';
+  try {
+    const params = new URLSearchParams({ search: query, page: '1', limit: '15' });
+    const result = await fetch(`${API}/api/companies?${params}`).then((r) => r.json());
+    const rows = (result.data || []).filter((c) => c.id !== _migrateSourceId);
+    _migrateSearchCache = {};
+    for (const c of rows) {
+      _migrateSearchCache[c.id] = {
+        id: c.id,
+        name: c.name,
+        exchange: c.exchange,
+        ticker: c.ticker,
+      };
+    }
+    if (!rows.length) {
+      box.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--muted);">No companies found.</div>';
+      return;
+    }
+    box.innerHTML = rows.map((c) => `
+      <button type="button" class="btn btn-ghost"
+        style="display:block;width:100%;text-align:left;border-radius:0;border:none;border-bottom:1px solid var(--border);padding:10px 12px;"
+        onclick="selectMigrateTarget(${c.id})">
+        <strong>${esc(c.name)}</strong>
+        <span style="color:var(--muted);font-size:12px;"> · ${esc(c.exchange || '-')} ${esc(c.ticker || '')}</span>
+      </button>`).join('');
+  } catch (err) {
+    box.innerHTML = `<div style="padding:10px;font-size:12px;color:var(--danger);">${esc(err.message)}</div>`;
+  }
+}
+
+function selectMigrateTarget(id) {
+  const target = _migrateSearchCache[id];
+  if (!target) return;
+  _migrateTarget = target;
+  const el = document.getElementById('migrate-selected');
+  const btn = document.getElementById('migrate-confirm-btn');
+  if (el) {
+    el.innerHTML = `Target: <strong>${esc(target.name)}</strong>
+      <span class="badge badge-pending">${esc(target.exchange || '-')}</span>
+      ${esc(target.ticker || '')}`;
+  }
+  if (btn) btn.disabled = false;
+  const box = document.getElementById('migrate-search-results');
+  if (box) box.innerHTML = '';
+  const search = document.getElementById('migrate-search');
+  if (search) search.value = `${target.name} (${target.ticker || target.id})`;
+}
+
+async function confirmMigrateCompany() {
+  if (!_migrateSourceId || !_migrateTarget) return;
+  const deleteSource = !!document.getElementById('migrate-delete-source')?.checked;
+  const label = `${_migrateTarget.name} (${_migrateTarget.exchange || ''}:${_migrateTarget.ticker || ''})`;
+  const msg = deleteSource
+    ? `Move all data to "${label}" and DELETE the old company? This cannot be undone.`
+    : `Move all filings, news, and related data to "${label}"?`;
+  if (!confirm(msg)) return;
+
+  const btn = document.getElementById('migrate-confirm-btn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Migrating…';
+  }
+  try {
+    const r = await fetch(`${API}/api/companies/${_migrateSourceId}/migrate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        targetCompanyId: _migrateTarget.id,
+        deleteSource,
+      }),
+    }).then((x) => x.json());
+    if (r.error) throw new Error(r.error);
+    const moved = r.moved || {};
+    const total = Object.values(moved).reduce((s, n) => s + (n || 0), 0);
+    toast(`Migrated ${total} record(s) to ${r.target?.name || 'target'}`);
+    closeMigrateModal();
+    loadCompanies();
+  } catch (err) {
+    toast(err.message, 'err');
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Migrate data';
+    }
+  }
 }
 
 // ── Edit Profile (manual enrichment) ──────────────────────────────────────
@@ -421,19 +626,59 @@ async function saveProfile() {
 }
 
 // ── Filings ──
+const PAGE_SIZE_OPTIONS = [20, 25, 50, 75, 100];
+const DEFAULT_PAGE_SIZE = 25;
+
+function adminPageLimit(selectId) {
+  const raw = parseInt(document.getElementById(selectId)?.value, 10);
+  if (PAGE_SIZE_OPTIONS.includes(raw)) return raw;
+  return DEFAULT_PAGE_SIZE;
+}
+
+let _fiPage = 1;
+
+function fiChangePage(delta) {
+  _fiPage = Math.max(1, _fiPage + delta);
+  loadFilings();
+}
+
 async function loadFilings() {
   const search  = document.getElementById('fi-search').value;
   const verdict = document.getElementById('fi-verdict').value;
+  const limit   = adminPageLimit('fi-limit');
   const params  = new URLSearchParams();
   if (search)  params.set('search', search);
   if (verdict) params.set('verdict', verdict);
+  params.set('page', _fiPage);
+  params.set('limit', limit);
 
   const tbody = document.getElementById('filings-body');
   tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Loading…</td></tr>';
 
   try {
-    const rows = await fetch(`${API}/api/filings?${params}`).then(r => r.json());
-    document.getElementById('fi-count').textContent = `${rows.length} filings`;
+    const data = await fetch(`${API}/api/filings?${params}`).then(r => r.json());
+    const rows = Array.isArray(data) ? data : (data.items || []);
+    const pg = data.pagination || {
+      page: 1,
+      totalPages: 1,
+      total: rows.length,
+      hasPrev: false,
+      hasNext: false,
+    };
+
+    if (pg.page && pg.page !== _fiPage) _fiPage = pg.page;
+    if (pg.page > pg.totalPages) {
+      _fiPage = pg.totalPages;
+      return loadFilings();
+    }
+
+    document.getElementById('fi-count').textContent = `${pg.total ?? rows.length} filings`;
+    const pageInfo = document.getElementById('fi-page-info');
+    const prevBtn = document.getElementById('fi-prev');
+    const nextBtn = document.getElementById('fi-next');
+    if (pageInfo) pageInfo.textContent = `Page ${pg.page ?? 1} of ${pg.totalPages ?? 1}`;
+    if (prevBtn) prevBtn.disabled = !pg.hasPrev;
+    if (nextBtn) nextBtn.disabled = !pg.hasNext;
 
     if (!rows.length) {
       tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No filings found. Run the scraper or sync analysis files.</td></tr>';
@@ -446,7 +691,11 @@ async function loadFilings() {
         <td>${esc(f.filing_type ?? '-')}</td>
         <td>${verdictBadge(f.verdict)}</td>
         <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);" title="${esc(f.ticker_summary)}">${esc(f.ticker_summary ?? '-')}</td>
-        <td><span class="badge ${f.analyzed ? 'badge-analyzed' : 'badge-pending'}">${f.analyzed ? 'Analyzed' : 'Pending'}</span></td>
+        <td><span class="badge ${f.analyzed ? 'badge-analyzed' : 'badge-pending'}">${
+          f.status === 'extraction_failed' ? 'Extraction failed'
+            : f.status === 'company_mismatch' ? 'Company mismatch'
+            : f.analyzed ? 'Analyzed' : 'Pending'
+        }</span></td>
         <td><button class="btn btn-ghost btn-sm" onclick="showFiling(${f.id})">View</button></td>
       </tr>`).join('');
   } catch (e) {
@@ -1088,8 +1337,15 @@ function esc(str) {
 
 function verdictBadge(v) {
   if (!v) return '<span class="badge badge-pending">-</span>';
-  const cls = v === 'noteworthy' ? 'badge-noteworthy' : v === 'watch' ? 'badge-watch' : 'badge-routine';
-  return `<span class="badge ${cls}">${esc(v)}</span>`;
+  const lower = String(v).toLowerCase();
+  const cls = lower === 'noteworthy' ? 'badge-noteworthy'
+    : lower === 'watch' ? 'badge-watch'
+    : lower === 'extraction_failed' || lower === 'company_mismatch' ? 'badge-pending'
+    : 'badge-routine';
+  const label = lower === 'extraction_failed' ? 'Extraction failed'
+    : lower === 'company_mismatch' ? 'Company mismatch'
+    : v;
+  return `<span class="badge ${cls}">${esc(label)}</span>`;
 }
 
 // ── Init ──
@@ -2181,17 +2437,24 @@ async function rebuildProxyPool() {
   } catch (err) { toast(err.message, 'err'); }
 }
 
-// ── AI / Ollama (admin) ──
+// ── AI providers (admin) ──
 let _aiProvider = null;
 
 function openAiModal() {
   const p = _aiProvider;
   document.getElementById('ai-id').value = p?.id ? String(p.id) : '';
-  document.getElementById('ai-name').value = p?.name || 'Ollama Cloud';
-  document.getElementById('ai-host').value = p?.host || 'https://ollama.com';
-  document.getElementById('ai-model').value = p?.defaultModel || '';
+  document.getElementById('ai-name').value = p?.name || 'DeepSeek';
+  const providerSel = document.getElementById('ai-provider');
+  if (providerSel) {
+    providerSel.value = p?.provider || 'deepseek';
+    providerSel.disabled = !!p?.id;
+  }
+  document.getElementById('ai-host').value = p?.host || 'https://api.deepseek.com';
+  document.getElementById('ai-model').value = p?.defaultModel || 'deepseek-v4-flash';
   document.getElementById('ai-key').value = '';
   document.getElementById('ai-enabled').checked = p ? !!p.enabled : true;
+  const defEl = document.getElementById('ai-is-default');
+  if (defEl) defEl.checked = p ? !!p.isDefault : true;
   document.getElementById('ai-modal')?.classList.add('open');
 }
 
@@ -2211,6 +2474,22 @@ async function loadAi() {
     if (data.error) throw new Error(data.error);
 
     _aiProvider = data.active || data.items?.[0] || null;
+
+    const activeLabel = document.getElementById('ai-active-label');
+    if (activeLabel) {
+      if (_aiProvider) {
+        const def = _aiProvider.isDefault ? ' · default' : '';
+        activeLabel.innerHTML = `Active: <strong>${esc(_aiProvider.name)}</strong>
+          <span class="badge badge-pending">${esc(_aiProvider.provider || 'ollama')}</span>
+          <code>${esc(_aiProvider.defaultModel || '')}</code>${def}`;
+      } else {
+        activeLabel.textContent = 'No active provider';
+      }
+    }
+    const setDefBtn = document.getElementById('ai-set-default-btn');
+    if (setDefBtn) {
+      setDefBtn.hidden = !_aiProvider?.id || !!_aiProvider.isDefault;
+    }
 
     if (banner) {
       if (data.envFallback && !_aiProvider?.id) {
@@ -2271,7 +2550,9 @@ async function submitAi(e) {
     host: document.getElementById('ai-host')?.value.trim(),
     defaultModel: document.getElementById('ai-model')?.value.trim(),
     enabled: document.getElementById('ai-enabled')?.checked,
+    isDefault: document.getElementById('ai-is-default')?.checked,
   };
+  if (!id) body.provider = document.getElementById('ai-provider')?.value || 'ollama';
   const key = document.getElementById('ai-key')?.value;
   if (key) body.apiKey = key;
 
@@ -2291,12 +2572,22 @@ async function submitAi(e) {
 
 async function testAiProvider() {
   if (!_aiProvider?.id) { toast('Save a DB provider first', 'err'); return; }
-  toast('Testing Ollama…');
+  toast(`Testing ${_aiProvider.provider || 'AI'}…`);
   try {
     const r = await fetch(`${API}/api/admin/ai/${_aiProvider.id}/test`, { method: 'POST' }).then((x) => x.json());
     if (r.error) { toast(r.error, 'err'); return; }
     const t = r.test;
     toast(`OK — ${t.content} (${t.durationMs}ms, model ${t.model})`);
+    loadAi();
+  } catch (err) { toast(err.message, 'err'); }
+}
+
+async function setAiDefault() {
+  if (!_aiProvider?.id) return;
+  try {
+    const r = await fetch(`${API}/api/admin/ai/${_aiProvider.id}/set-default`, { method: 'POST' }).then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    toast('Default provider updated');
     loadAi();
   } catch (err) { toast(err.message, 'err'); }
 }
@@ -2547,6 +2838,8 @@ async function addMarketSymbolRow() {
 let _vaFilter = 'open';
 let _vaSelectedId = null;
 let _vaTasksCache = [];
+let _vaPage = 1;
+let _vaLoadSeq = 0;
 
 function initVaTasks() {
   const filterSel = document.getElementById('va-filter');
@@ -2554,12 +2847,26 @@ function initVaTasks() {
     filterSel.value = _vaFilter;
     filterSel.addEventListener('change', () => {
       _vaFilter = filterSel.value;
+      _vaPage = 1;
       _vaSelectedId = null;
       renderVaTaskDetailEmpty();
       loadVaTasks();
     });
   }
-  syncVaTasks().then(() => loadVaTasks());
+  // Sync first so the list is stable (avoids 25 legacy rows → 2 after sync).
+  const tbody = document.getElementById('va-tasks-body');
+  if (tbody) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Syncing tasks…</td></tr>';
+  }
+  syncVaTasks().then(() => {
+    _vaPage = 1;
+    return loadVaTasks();
+  });
+}
+
+function vaChangePage(delta) {
+  _vaPage = Math.max(1, _vaPage + delta);
+  loadVaTasks();
 }
 
 function renderVaTaskDetailEmpty() {
@@ -2574,26 +2881,62 @@ function vaSeverityClass(sev) {
 
 async function syncVaTasks() {
   try {
-    await fetch(`${API}/api/admin/va-tasks/sync`, { method: 'POST' });
+    const r = await fetch(`${API}/api/admin/va-tasks/sync`, { method: 'POST' });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || `Sync failed (${r.status})`);
     if (typeof refreshVaTasksBadge === 'function') refreshVaTasksBadge();
-  } catch {
-    /* ignore */
+    return data;
+  } catch (err) {
+    console.error('VA tasks sync failed:', err);
+    toast(err.message || 'VA sync failed', 'err');
   }
 }
 
 async function loadVaTasks() {
   const tbody = document.getElementById('va-tasks-body');
   if (!tbody) return;
+  const seq = ++_vaLoadSeq;
   tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Loading…</td></tr>';
   try {
-    const data = await fetch(`${API}/api/admin/va-tasks?filter=${encodeURIComponent(_vaFilter)}`).then((r) => r.json());
+    const limit = adminPageLimit('va-limit');
+    const params = new URLSearchParams({
+      filter: _vaFilter,
+      page: String(_vaPage),
+      limit: String(limit),
+    });
+    const data = await fetch(`${API}/api/admin/va-tasks?${params}`).then((r) => r.json());
+    if (seq !== _vaLoadSeq) return;
+    if (data.error) throw new Error(data.error);
     _vaTasksCache = data.items || [];
-    const openEl = document.getElementById('va-open-count');
-    if (openEl && _vaFilter === 'open') {
-      openEl.textContent = `${_vaTasksCache.length} open task(s)`;
-    } else if (openEl) {
-      openEl.textContent = '';
+    const pg = data.pagination || {
+      page: 1,
+      totalPages: 1,
+      total: data.total ?? _vaTasksCache.length,
+      hasPrev: false,
+      hasNext: false,
+    };
+
+    if (pg.page && pg.page !== _vaPage) _vaPage = pg.page;
+    if (pg.totalPages > 0 && pg.page > pg.totalPages) {
+      _vaPage = pg.totalPages;
+      return loadVaTasks();
     }
+
+    const openEl = document.getElementById('va-open-count');
+    if (openEl) {
+      const total = pg.total ?? _vaTasksCache.length;
+      if (_vaFilter === 'open') openEl.textContent = `${total} open task(s)`;
+      else if (_vaFilter === 'done') openEl.textContent = `${total} closed task(s)`;
+      else openEl.textContent = `${total} task(s)`;
+    }
+
+    const pageInfo = document.getElementById('va-page-info');
+    const prevBtn = document.getElementById('va-prev');
+    const nextBtn = document.getElementById('va-next');
+    if (pageInfo) pageInfo.textContent = `Page ${pg.page ?? 1} of ${pg.totalPages ?? 1}`;
+    if (prevBtn) prevBtn.disabled = !pg.hasPrev;
+    if (nextBtn) nextBtn.disabled = !pg.hasNext;
+
     if (!_vaTasksCache.length) {
       tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No tasks in this filter. Click Sync now to scan the system.</td></tr>';
       return;
@@ -2601,7 +2944,8 @@ async function loadVaTasks() {
     tbody.innerHTML = _vaTasksCache.map((t) => {
       const when = t.lastSeenAt ? new Date(t.lastSeenAt).toLocaleString() : 'N/A';
       const open = t.status === 'open' || t.status === 'in_progress';
-      return `<tr class="${open ? 'va-task-row-open' : ''}" style="cursor:pointer" onclick="selectVaTask(${t.id})">
+      const selected = t.id === _vaSelectedId ? ' outline:2px solid var(--accent);' : '';
+      return `<tr class="${open ? 'va-task-row-open' : ''}" style="cursor:pointer;${selected}" onclick="selectVaTask(${t.id})">
         <td class="${vaSeverityClass(t.severity)}">${esc(t.severity)}</td>
         <td style="font-size:12px;">${esc(t.module)}</td>
         <td>${esc(t.title)}</td>
@@ -2762,9 +3106,7 @@ async function selectContactMessage(id) {
   }
 }
 
-// ── Storage (MinIO → S3) ──
-let _storagePollId = null;
-
+// ── Storage (AWS S3) ──
 function fmtStorageBytes(n) {
   if (n == null || Number.isNaN(n)) return '—';
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)} GB`;
@@ -2775,7 +3117,6 @@ function fmtStorageBytes(n) {
 
 function storageInit() {
   loadStorageSummary();
-  pollStorageMigrationStatus();
 }
 
 async function loadStorageSummary() {
@@ -2783,15 +3124,7 @@ async function loadStorageSummary() {
     const data = await fetch(`${API}/api/admin/storage/summary`).then((r) => r.json());
     if (data.error) throw new Error(data.error);
 
-    const minioConn = data.connections?.minio;
     const s3Conn = data.connections?.s3;
-    document.getElementById('conn-minio').innerHTML = minioConn?.ok
-      ? '<span class="conn-ok">Connected</span>'
-      : `<span class="conn-fail">Offline</span>`;
-    document.getElementById('conn-minio-sub').textContent = minioConn?.ok
-      ? (data.config?.minioBucket || '')
-      : (minioConn?.error || 'Not configured');
-
     document.getElementById('conn-s3').innerHTML = s3Conn?.ok
       ? '<span class="conn-ok">Connected</span>'
       : `<span class="conn-fail">Offline</span>`;
@@ -2804,18 +3137,10 @@ async function loadStorageSummary() {
       ? `Expires ${data.config?.presignExpiresSec || 3600}s per request`
       : 'Direct HTTPS links in DB';
 
-    document.getElementById('db-minio').textContent = data.db?.minio_rows ?? 0;
     document.getElementById('db-s3').textContent = data.db?.s3_rows ?? 0;
     document.getElementById('db-https').textContent = data.db?.https_rows ?? 0;
     document.getElementById('db-local').textContent = data.db?.local_rows ?? 0;
-
-    if (data.minio && !data.minio.error) {
-      document.getElementById('minio-objects').textContent = data.minio.objects ?? 0;
-      document.getElementById('minio-bytes').textContent = fmtStorageBytes(data.minio.bytes);
-    } else {
-      document.getElementById('minio-objects').textContent = '—';
-      document.getElementById('minio-bytes').textContent = data.minio?.error || '';
-    }
+    document.getElementById('db-legacy-minio').textContent = data.db?.legacy_minio_rows ?? 0;
 
     if (data.s3 && !data.s3.error) {
       document.getElementById('s3-objects').textContent = data.s3.objects ?? 0;
@@ -2826,105 +3151,6 @@ async function loadStorageSummary() {
     }
 
     document.getElementById('storage-updated').textContent = `Updated ${new Date().toLocaleTimeString()}`;
-
-    if (data.migration?.running) setMigrationControls(true);
-  } catch (err) {
-    toast(err.message, 'err');
-  }
-}
-
-function setMigrationControls(running) {
-  document.getElementById('migrate-dry-btn').disabled = running;
-  document.getElementById('migrate-start-btn').disabled = running;
-  document.getElementById('migrate-cancel-btn').disabled = !running;
-}
-
-function renderMigrationStatus(job) {
-  if (!job || job.status === 'idle') return;
-
-  const phaseLabels = {
-    init: 'Initializing',
-    minio_rows: 'Phase A: MinIO DB rows',
-    orphans: 'Phase B: Orphan objects',
-    local_rows: 'Phase C: Local disk rows',
-    done: 'Complete',
-  };
-  document.getElementById('migrate-phase').textContent = phaseLabels[job.phase] || job.phase || job.status;
-
-  const total = job.total || 0;
-  const processed = job.processed || 0;
-  document.getElementById('migrate-progress-text').textContent = total > 0 ? `${processed} / ${total}` : job.status;
-  const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : (job.status === 'done' ? 100 : 0);
-  document.getElementById('migrate-progress-bar').style.width = `${pct}%`;
-
-  const s = job.stats || {};
-  document.getElementById('migrate-stats').textContent = [
-    s.copied != null ? `copied: ${s.copied}` : null,
-    s.skippedExists != null ? `skipped: ${s.skippedExists}` : null,
-    s.dbUpdated != null ? `db updated: ${s.dbUpdated}` : null,
-    s.wouldUpdateDb != null ? `would update: ${s.wouldUpdateDb}` : null,
-    s.errors != null ? `errors: ${s.errors}` : null,
-    s.bytes != null ? `transferred: ${fmtStorageBytes(s.bytes)}` : null,
-  ].filter(Boolean).join(' · ');
-
-  if (Array.isArray(job.logs) && job.logs.length > 0) {
-    document.getElementById('migrate-log').innerHTML = job.logs.map((line) => {
-      const cls = line.level === 'error' ? 'err' : '';
-      return `<span class="${cls}">[${line.t}] ${esc(line.message)}</span>`;
-    }).join('\n');
-    const logEl = document.getElementById('migrate-log');
-    logEl.scrollTop = logEl.scrollHeight;
-  }
-
-  const running = job.status === 'running';
-  setMigrationControls(running);
-
-  if (!running && _storagePollId) {
-    clearInterval(_storagePollId);
-    _storagePollId = null;
-    loadStorageSummary();
-  }
-}
-
-async function pollStorageMigrationStatus() {
-  try {
-    const job = await fetch(`${API}/api/admin/storage/migrate/status`).then((r) => r.json());
-    renderMigrationStatus(job);
-    if (job.status === 'running' && !_storagePollId) {
-      _storagePollId = setInterval(pollStorageMigrationStatus, 2000);
-    }
-  } catch { /* ignore */ }
-}
-
-async function startStorageMigration(dryRun) {
-  const includeLocal = document.getElementById('migrate-include-local')?.checked;
-  const includeOrphans = document.getElementById('migrate-include-orphans')?.checked;
-  setMigrationControls(true);
-  document.getElementById('migrate-log').textContent = dryRun ? 'Starting dry run…' : 'Starting migration…';
-
-  try {
-    const r = await fetch(`${API}/api/admin/storage/migrate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dryRun, includeLocal, includeOrphans }),
-    }).then((x) => x.json());
-    if (r.error) throw new Error(r.error);
-    toast(dryRun ? 'Dry run started' : 'Migration started');
-    if (!_storagePollId) {
-      _storagePollId = setInterval(pollStorageMigrationStatus, 2000);
-    }
-    pollStorageMigrationStatus();
-  } catch (err) {
-    setMigrationControls(false);
-    toast(err.message, 'err');
-  }
-}
-
-async function cancelStorageMigration() {
-  try {
-    const r = await fetch(`${API}/api/admin/storage/migrate/cancel`, { method: 'POST' }).then((x) => x.json());
-    if (r.error) throw new Error(r.error);
-    toast('Cancel requested');
   } catch (err) {
     toast(err.message, 'err');
   }

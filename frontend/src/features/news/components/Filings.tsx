@@ -9,6 +9,8 @@ const verdictStyle: Record<string, string> = {
   Noteworthy: "bg-[hsl(var(--noteworthy))] text-[hsl(var(--noteworthy-foreground))]",
   Watch: "bg-[hsl(var(--watch))] text-[hsl(var(--watch-foreground))]",
   Routine: "bg-[hsl(var(--routine))] text-[hsl(var(--routine-foreground))]",
+  "Extraction failed": "bg-muted text-muted-foreground",
+  "Company mismatch": "bg-amber-500/15 text-amber-800 dark:text-amber-200",
 };
 
 const placeholderFilings: Filing[] = [

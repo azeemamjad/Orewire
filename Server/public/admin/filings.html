@@ -42,13 +42,23 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
     </div>
 
     <div class="toolbar">
-      <input type="search" id="fi-search" placeholder="Search company…" oninput="loadFilings()" />
-      <select id="fi-verdict" onchange="loadFilings()">
+      <input type="search" id="fi-search" placeholder="Search company…" oninput="_fiPage=1;loadFilings()" />
+      <select id="fi-verdict" onchange="_fiPage=1;loadFilings()">
         <option value="">All verdicts</option>
         <option value="noteworthy">Noteworthy</option>
         <option value="watch">Watch</option>
         <option value="routine">Routine</option>
       </select>
+      <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;">
+        Per page
+        <select id="fi-limit" onchange="_fiPage=1;loadFilings()">
+          <option value="20">20</option>
+          <option value="25" selected>25</option>
+          <option value="50">50</option>
+          <option value="75">75</option>
+          <option value="100">100</option>
+        </select>
+      </label>
       <button class="btn btn-ghost btn-sm" onclick="loadFilings()">↻ Refresh</button>
       <span id="fi-count" class="text-muted" style="margin-left:auto;font-size:12px;"></span>
     </div>
@@ -58,6 +68,11 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
         <thead><tr><th>Company</th><th>File</th><th>Type</th><th>Verdict</th><th>Ticker Summary</th><th>Status</th><th></th></tr></thead>
         <tbody id="filings-body"><tr class="empty-row"><td colspan="7">Loading…</td></tr></tbody>
       </table>
+    </div>
+    <div id="fi-pagination" style="display:flex;align-items:center;gap:10px;margin-top:14px;justify-content:flex-end;">
+      <span id="fi-page-info" style="font-size:12px;color:var(--muted);"></span>
+      <button class="btn btn-ghost btn-sm" id="fi-prev" onclick="fiChangePage(-1)">← Prev</button>
+      <button class="btn btn-ghost btn-sm" id="fi-next" onclick="fiChangePage(1)">Next →</button>
     </div>
   </div>
 

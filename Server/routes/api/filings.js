@@ -26,18 +26,23 @@ function inferCommodity(summary, tickerSummary) {
 
 router.get('/stats', async (req, res) => {
   try {
-    const [companies, filings, analyzed, noteworthy, watch, routine] = await Promise.all([
+    const [companies, filings, analyzed, pending, noteworthy, watch, routine] = await Promise.all([
       db.query('SELECT COUNT(*) as c FROM companies').then(r => parseInt(r.rows[0].c, 10)),
+      // Total filings = every row in filings (analyzed or not).
       db.query('SELECT COUNT(*) as c FROM filings').then(r => parseInt(r.rows[0].c, 10)),
       db.query('SELECT COUNT(*) as c FROM filings WHERE analyzed = 1').then(r => parseInt(r.rows[0].c, 10)),
+      db.query('SELECT COUNT(*) as c FROM filings WHERE COALESCE(analyzed, 0) = 0').then(r => parseInt(r.rows[0].c, 10)),
       db.query("SELECT COUNT(*) as c FROM ai_output WHERE verdict = 'noteworthy'").then(r => parseInt(r.rows[0].c, 10)),
       db.query("SELECT COUNT(*) as c FROM ai_output WHERE verdict = 'watch'").then(r => parseInt(r.rows[0].c, 10)),
       db.query("SELECT COUNT(*) as c FROM ai_output WHERE verdict = 'routine'").then(r => parseInt(r.rows[0].c, 10)),
     ]);
-    res.json({ companies, filings, analyzed, noteworthy, watch, routine });
+    res.json({ companies, filings, analyzed, pending, noteworthy, watch, routine });
   } catch (err) {
     console.error('Stats query failed:', err?.message || err);
-    res.status(503).json({ error: 'Database unavailable', companies: 0, filings: 0, analyzed: 0, noteworthy: 0, watch: 0, routine: 0 });
+    res.status(503).json({
+      error: 'Database unavailable',
+      companies: 0, filings: 0, analyzed: 0, pending: 0, noteworthy: 0, watch: 0, routine: 0,
+    });
   }
 });
 
@@ -97,16 +102,24 @@ router.get('/', async (req, res) => {
       LEFT JOIN companies c ON c.id = f.company_id
     `;
 
+    const formatVerdict = (v) => {
+      if (!v) return null;
+      const lower = String(v).toLowerCase();
+      if (lower === 'extraction_failed') return 'Extraction failed';
+      if (lower === 'company_mismatch') return 'Company mismatch';
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    };
+
     const enrich = (rows) => rows.map(row => ({
       ...row,
       commodity: row.commodity || inferCommodity(row.summary, row.ticker_summary),
-      verdict: row.verdict ? row.verdict.charAt(0).toUpperCase() + row.verdict.slice(1) : null,
+      verdict: formatVerdict(row.verdict),
     }));
 
     // --- Paginated mode: return an envelope with total/totalPages. -----------
     if (page !== undefined) {
       const parsedPage = Math.max(1, parseInt(page, 10) || 1);
-      const pageLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 10));
+      const pageLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 25));
       const offset = (parsedPage - 1) * pageLimit;
 
       const fromJoins = `FROM filings f LEFT JOIN ai_output a ON a.filing_id = f.id LEFT JOIN companies c ON c.id = f.company_id`;

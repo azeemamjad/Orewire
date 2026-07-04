@@ -31,6 +31,7 @@ import { useAuth } from "@/hooks/use-auth";
 import SymbolPicker from "@/features/markets/components/SymbolPicker";
 import { useInstrumentSymbols } from "@/hooks/use-instrument-symbols";
 import { useLiveQuote } from "@/hooks/use-live-quote";
+import { formatLiveLastLabel, formatPrice4, liveQuoteUpdatedAtMs } from "@/lib/live-quote-display";
 import { formatEmpty } from "@/lib/display";
 
 function currencyTvSymbol(key: string): string | null {
@@ -108,7 +109,7 @@ const CurrencyDetail = () => {
   const meta = CURRENCY_META[key] || { name: key, fullName: key, quote: "", about: `Spot rate for ${key}.` };
 
   const { symbols, selectedTvSymbol, setSelectedTvSymbol } = useInstrumentSymbols("currency", entityKey);
-  const { data: liveQuote } = useLiveQuote(selectedTvSymbol);
+  const { data: liveQuote, dataUpdatedAt } = useLiveQuote(selectedTvSymbol);
   const fallbackTv = currencyTvSymbol(key);
   const chartTvSymbol = selectedTvSymbol || fallbackTv;
 
@@ -122,13 +123,15 @@ const CurrencyDetail = () => {
   const changePct = liveQuote?.change_pct ?? currency?.change_pct ?? null;
   const isUp = (changePct ?? 0) >= 0;
   const changeAbs = liveQuote?.change_abs ?? (price && changePct ? +(price * changePct / 100).toFixed(4) : null);
-  const quoteSourceLabel = "TradingView";
+  const liveLastLabel = formatLiveLastLabel(
+    liveQuoteUpdatedAtMs(liveQuote?.updatedAt, dataUpdatedAt),
+  );
 
   const prevClose = price != null && changeAbs != null ? +(price - changeAbs).toFixed(4) : null;
   const dayOpen = liveQuote?.open ?? null;
   const dayHigh = liveQuote?.high ?? null;
   const dayLow = liveQuote?.low ?? null;
-  const fmt4 = (n: number | null) => (n != null ? n.toFixed(4) : formatEmpty(null));
+  const fmt4 = (n: number | null) => (n != null ? formatPrice4(n) : formatEmpty(null));
 
   const [inWatchlist, setInWatchlist] = useState(false);
   useEffect(() => {
@@ -175,7 +178,7 @@ const CurrencyDetail = () => {
               {price !== null && (
                 <div className="mt-3 flex items-baseline gap-3 flex-wrap">
                   <span className="font-mono text-3xl font-semibold">
-                    {price.toFixed(4)} {meta.quote}
+                    {formatPrice4(price)} {meta.quote}
                   </span>
                   {changePct !== null && (
                     <span
@@ -184,12 +187,12 @@ const CurrencyDetail = () => {
                       }`}
                     >
                       {isUp ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownRight className="h-4 w-4" />}
-                      {changeAbs !== null && `${isUp ? "+" : ""}${changeAbs.toFixed(4)}`} ({isUp ? "+" : ""}
+                      {changeAbs !== null && `${isUp ? "+" : ""}${formatPrice4(changeAbs)}`} ({isUp ? "+" : ""}
                       {changePct.toFixed(2)}%)
                     </span>
                   )}
                   <span className="text-xs text-muted-foreground font-mono">
-                    · {quoteSourceLabel} · Delayed · Day change vs prior close
+                    {liveLastLabel}
                   </span>
                 </div>
               )}

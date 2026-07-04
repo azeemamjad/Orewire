@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Delete all files under DOWNLOADS_DIR after verifying every DB filing exists in MinIO.
+ * Delete all files under DOWNLOADS_DIR after verifying every DB filing exists in S3.
  *
  *   node scripts/wipe-local-downloads.js --dry-run
  *   node scripts/wipe-local-downloads.js --confirm
@@ -11,9 +11,9 @@ const fs = require('fs');
 const path = require('path');
 const db = require('../db');
 const {
-  isMinioEnabled,
-  isMinioPath,
-  parseMinioPath,
+  isStorageEnabled,
+  isRemoteStoragePath,
+  parseStoragePath,
   objectExists,
 } = require('../lib/infra/object-storage');
 
@@ -50,26 +50,26 @@ function removeEmptyDirs(dir) {
   }
 }
 
-async function verifyMinioFilings(rows) {
-  const minioRows = rows.filter((r) => isMinioPath(r.pdf_path));
+async function verifyRemoteFilings(rows) {
+  const remoteRows = rows.filter((r) => isRemoteStoragePath(r.pdf_path));
   let missing = 0;
   const missingSamples = [];
 
-  for (let i = 0; i < minioRows.length; i++) {
-    const row = minioRows[i];
-    const key = parseMinioPath(row.pdf_path);
-    if (!(await objectExists(key))) {
+  for (let i = 0; i < remoteRows.length; i++) {
+    const row = remoteRows[i];
+    const key = parseStoragePath(row.pdf_path);
+    if (!key || !(await objectExists(key))) {
       missing++;
       if (missingSamples.length < 10) {
         missingSamples.push({ id: row.id, key });
       }
     }
     if ((i + 1) % 2000 === 0) {
-      console.log(`[wipe] verified ${i + 1}/${minioRows.length} MinIO object(s)…`);
+      console.log(`[wipe] verified ${i + 1}/${remoteRows.length} S3 object(s)…`);
     }
   }
 
-  return { minioRows: minioRows.length, missing, missingSamples };
+  return { remoteRows: remoteRows.length, missing, missingSamples };
 }
 
 async function main() {
@@ -77,8 +77,8 @@ async function main() {
     console.error('Pass --dry-run to preview or --confirm to delete (irreversible).');
     process.exit(1);
   }
-  if (!isMinioEnabled()) {
-    console.error('MINIO_ENABLED=true required before wiping local copies.');
+  if (!isStorageEnabled()) {
+    console.error('AWS_S3_ENABLED=true required before wiping local copies.');
     process.exit(1);
   }
   if (!fs.existsSync(DOWNLOADS_DIR)) {
@@ -96,22 +96,22 @@ async function main() {
   const { rows } = await db.query(
     `SELECT id, pdf_path FROM filings WHERE pdf_path IS NOT NULL ORDER BY id`,
   );
-  const localDbRows = rows.filter((r) => !isMinioPath(r.pdf_path));
+  const localDbRows = rows.filter((r) => !isRemoteStoragePath(r.pdf_path));
   if (localDbRows.length > 0) {
-    console.error(`[wipe] ${localDbRows.length} filing(s) still use local pdf_path — migrate to MinIO first.`);
+    console.error(`[wipe] ${localDbRows.length} filing(s) still use local pdf_path — upload to S3 first.`);
     process.exit(1);
   }
 
-  console.log(`[wipe] verifying ${rows.length} MinIO-backed filing(s)…`);
-  const check = await verifyMinioFilings(rows);
+  console.log(`[wipe] verifying ${rows.length} S3-backed filing(s)…`);
+  const check = await verifyRemoteFilings(rows);
   if (check.missing > 0) {
-    console.error(`[wipe] ${check.missing} DB filing(s) missing from MinIO — aborting.`);
+    console.error(`[wipe] ${check.missing} DB filing(s) missing from S3 — aborting.`);
     for (const s of check.missingSamples) {
       console.error(`  id=${s.id} key=${s.key}`);
     }
     process.exit(1);
   }
-  console.log(`[wipe] all ${check.minioRows} MinIO object(s) present`);
+  console.log(`[wipe] all ${check.remoteRows} S3 object(s) present`);
 
   if (DRY_RUN) {
     console.log(`\n[wipe] Would delete ${files.length} file(s) (${fmtBytes(totalBytes)}).`);
@@ -120,23 +120,11 @@ async function main() {
     return;
   }
 
-  let deleted = 0;
-  let freed = 0;
-  for (const { full, size } of files) {
-    fs.unlinkSync(full);
-    deleted++;
-    freed += size;
-    if (deleted % 5000 === 0) {
-      console.log(`[wipe] … ${deleted} removed (${fmtBytes(freed)})`);
-    }
+  for (const f of files) {
+    fs.unlinkSync(f.full);
   }
   removeEmptyDirs(DOWNLOADS_DIR);
-  fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
-
-  console.log('\n[wipe] Summary');
-  console.log(`  Files removed: ${deleted} (${fmtBytes(freed)})`);
-  console.log(`  Empty downloads dir recreated at: ${DOWNLOADS_DIR}`);
-
+  console.log(`[wipe] deleted ${files.length} file(s) (${fmtBytes(totalBytes)})`);
   await db.end();
 }
 

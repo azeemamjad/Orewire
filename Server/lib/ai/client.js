@@ -1,8 +1,9 @@
 /**
- * Central Ollama chat client — loads config from DB, logs usage events.
+ * Central AI chat client — loads active provider from DB, logs usage events.
+ * Supports Ollama (/api/chat) and DeepSeek (OpenAI-compatible /chat/completions).
  */
 const {
-  getActiveOllamaProvider,
+  getActiveProvider,
   startUsageEvent,
   finishUsageEvent,
   stripTrailingSlash,
@@ -17,22 +18,66 @@ async function readHttpBody(res) {
   }
 }
 
-function formatOllamaHttpError(res, body) {
+function formatHttpError(res, body, label = 'AI') {
   const snippet = body.slice(0, 500);
   const status = res.status;
   if (status === 429) return `HTTP 429 Too Many Requests (rate limited): ${snippet}`;
   if (status === 401) return `HTTP 401 Unauthorized (check API key): ${snippet}`;
   if (status === 403) return `HTTP 403 Forbidden: ${snippet}`;
   if (status >= 500) return `HTTP ${status} Server Error: ${snippet}`;
-  return `HTTP ${status}: ${snippet}`;
+  return `${label} HTTP ${status}: ${snippet}`;
 }
 
-function extractTokenCounts(data) {
+/** @deprecated use formatHttpError */
+function formatOllamaHttpError(res, body) {
+  return formatHttpError(res, body, 'Ollama');
+}
+
+function extractTokenCounts(data, providerType) {
+  if (providerType === 'deepseek' || data?.usage) {
+    const promptTokens = data?.usage?.prompt_tokens ?? null;
+    const completionTokens = data?.usage?.completion_tokens ?? null;
+    return {
+      promptTokens: Number.isFinite(promptTokens) ? promptTokens : null,
+      completionTokens: Number.isFinite(completionTokens) ? completionTokens : null,
+    };
+  }
   const promptTokens = data?.prompt_eval_count ?? data?.prompt_tokens ?? null;
   const completionTokens = data?.eval_count ?? data?.completion_tokens ?? null;
   return {
     promptTokens: Number.isFinite(promptTokens) ? promptTokens : null,
     completionTokens: Number.isFinite(completionTokens) ? completionTokens : null,
+  };
+}
+
+function buildRequest(provider, messages, model) {
+  const type = provider.provider || 'ollama';
+  const base = stripTrailingSlash(provider.host || (type === 'deepseek' ? 'https://api.deepseek.com' : 'https://ollama.com'));
+  const headers = { 'Content-Type': 'application/json' };
+  if (provider.api_key) headers.Authorization = `Bearer ${provider.api_key}`;
+
+  if (type === 'deepseek') {
+    return {
+      url: `${base}/chat/completions`,
+      headers,
+      body: {
+        model,
+        stream: false,
+        messages,
+        // Faster JSON analysis — disable thinking mode on V4 Flash.
+        thinking: { type: 'disabled' },
+      },
+      parseContent: (data) => (data.choices?.[0]?.message?.content || '').trim(),
+      parseModel: (data) => data.model || model,
+    };
+  }
+
+  return {
+    url: `${base}/api/chat`,
+    headers,
+    body: { model, stream: false, messages },
+    parseContent: (data) => (data.message?.content || '').trim(),
+    parseModel: (data) => data.model || model,
   };
 }
 
@@ -42,22 +87,23 @@ function extractTokenCounts(data) {
  * @param {Array<{role:string,content:string}>} opts.messages
  * @param {string} [opts.model] - override default model
  * @param {number} [opts.timeoutMs] - abort after N ms
+ * @param {object} [opts.provider] - force a specific provider row (admin test)
  */
-async function chat({ feature, messages, model: modelOverride, timeoutMs }) {
-  const provider = await getActiveOllamaProvider();
+async function chat({ feature, messages, model: modelOverride, timeoutMs, provider: providerOverride }) {
+  const provider = providerOverride || await getActiveProvider();
   if (!provider) {
-    throw new Error('Ollama not configured — add a provider in Admin → AI or set OLLAMA_* in .env');
+    throw new Error('AI not configured — add a provider in Admin → AI');
   }
   if (!provider.enabled && !provider._fromEnv) {
-    throw new Error('Ollama provider is disabled');
+    throw new Error('AI provider is disabled');
   }
 
-  const base = stripTrailingSlash(provider.host || 'https://ollama.com');
-  const model = modelOverride || provider.default_model || 'kimi';
-  const apiKey = provider.api_key;
+  const type = provider.provider || 'ollama';
+  const model = modelOverride
+    || provider.default_model
+    || (type === 'deepseek' ? 'deepseek-v4-flash' : 'kimi');
 
-  const headers = { 'Content-Type': 'application/json' };
-  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  const req = buildRequest(provider, messages, model);
 
   const eventId = provider.id
     ? await startUsageEvent(provider.id, feature, model)
@@ -70,27 +116,27 @@ async function chat({ feature, messages, model: modelOverride, timeoutMs }) {
     : null;
 
   try {
-    const res = await fetch(`${base}/api/chat`, {
+    const res = await fetch(req.url, {
       method: 'POST',
-      headers,
+      headers: req.headers,
       signal: ctrl?.signal,
-      body: JSON.stringify({ model, stream: false, messages }),
+      body: JSON.stringify(req.body),
     });
 
     const body = await readHttpBody(res);
     if (!res.ok) {
-      throw new Error(formatOllamaHttpError(res, body));
+      throw new Error(formatHttpError(res, body, type === 'deepseek' ? 'DeepSeek' : 'Ollama'));
     }
 
     let data;
     try {
       data = JSON.parse(body);
     } catch {
-      throw new Error(`Ollama response not JSON (HTTP ${res.status}): ${body.slice(0, 300)}`);
+      throw new Error(`AI response not JSON (HTTP ${res.status}): ${body.slice(0, 300)}`);
     }
 
-    const content = (data.message?.content || '').trim();
-    const tokens = extractTokenCounts(data);
+    const content = req.parseContent(data);
+    const tokens = extractTokenCounts(data, type);
     const durationMs = Date.now() - started;
 
     await finishUsageEvent(eventId, 'success', {
@@ -101,7 +147,8 @@ async function chat({ feature, messages, model: modelOverride, timeoutMs }) {
 
     return {
       content,
-      model: data.model || model,
+      model: req.parseModel(data),
+      provider: type,
       promptTokens: tokens.promptTokens,
       completionTokens: tokens.completionTokens,
       durationMs,
@@ -109,7 +156,7 @@ async function chat({ feature, messages, model: modelOverride, timeoutMs }) {
   } catch (err) {
     const durationMs = Date.now() - started;
     const message = err.name === 'AbortError'
-      ? `Ollama request timed out after ${timeoutMs}ms`
+      ? `AI request timed out after ${timeoutMs}ms`
       : (err.message || String(err));
 
     await finishUsageEvent(eventId, 'error', {
@@ -124,15 +171,16 @@ async function chat({ feature, messages, model: modelOverride, timeoutMs }) {
 }
 
 /** Convenience: system + user messages */
-async function chatWithSystem({ feature, system, user, model, timeoutMs }) {
+async function chatWithSystem({ feature, system, user, model, timeoutMs, provider }) {
   const messages = [];
   if (system) messages.push({ role: 'system', content: system });
   messages.push({ role: 'user', content: user });
-  return chat({ feature, messages, model, timeoutMs });
+  return chat({ feature, messages, model, timeoutMs, provider });
 }
 
 module.exports = {
   chat,
   chatWithSystem,
   formatOllamaHttpError,
+  formatHttpError,
 };

@@ -76,7 +76,7 @@ function publicUrl(objectKey) {
 }
 
 function uploadDelayMs() {
-  const raw = process.env.AWS_S3_UPLOAD_DELAY_MS || process.env.MINIO_UPLOAD_DELAY_MS || '75';
+  const raw = process.env.AWS_S3_UPLOAD_DELAY_MS || '75';
   return Math.max(0, parseInt(raw, 10));
 }
 

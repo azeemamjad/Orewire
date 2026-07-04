@@ -58,16 +58,38 @@ router.get('/', async (req, res) => {
     else if (filter === 'done') clause = "WHERE status IN ('done', 'resolved', 'dismissed')";
     else if (filter === 'open') clause = "WHERE status IN ('open', 'in_progress')";
 
-    const r = await db.query(
-      `SELECT * FROM va_tasks ${clause}
-       ORDER BY
-         CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
-         last_seen_at DESC
-       LIMIT 500`,
-    );
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 25));
+    const offset = (page - 1) * limit;
+
+    const orderBy = `
+      ORDER BY
+        CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+        last_seen_at DESC
+    `;
+
+    const [countResult, dataResult] = await Promise.all([
+      db.query(`SELECT COUNT(*)::int AS total FROM va_tasks ${clause}`),
+      db.query(
+        `SELECT * FROM va_tasks ${clause} ${orderBy} LIMIT $1 OFFSET $2`,
+        [limit, offset],
+      ),
+    ]);
+
+    const total = countResult.rows[0]?.total || 0;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+
     res.json({
-      total: r.rows.length,
-      items: r.rows.map(formatTask),
+      total,
+      items: dataResult.rows.map(formatTask),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrev: page > 1,
+      },
     });
   } catch (err) {
     console.error('VA tasks list failed:', err?.message || err);
