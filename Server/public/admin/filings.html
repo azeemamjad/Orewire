@@ -12,33 +12,34 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
 </style>
 </head>
 <body data-page="filings">
-<aside class="sidebar">
-  <div class="logo"><a href="dashboard.html" class="brand-link" aria-label="OreWire Admin home"><span class="brand-mark" aria-hidden="true">O</span><span class="brand-copy"><span class="brand-title">OreWire Admin</span><span class="brand-subtitle">Mining intelligence operations</span></span></a></div>
-  <nav><ul>
-      <li><a href="dashboard.html"><span class="icon">📊</span>Dashboard</a></li>
-      <li><a href="companies.html"><span class="icon">🏢</span>Companies</a></li>
-      <li class="active"><a href="filings.html"><span class="icon">📄</span>Filings</a></li>
-      <li><a href="import.html"><span class="icon">📥</span>Import Data</a></li>
-      <li><a href="scraper.html"><span class="icon">🤖</span>Run Scraper</a></li>
-      <li><a href="pipeline.html"><span class="icon">⚙️</span>Pipeline</a></li>
-      <li><a href="relay.html"><span class="icon">🌐</span>Relay</a></li>
-      <li><a href="proxies.html"><span class="icon">🔌</span>Proxies</a></li>
-      <li><a href="ai.html"><span class="icon">🧠</span>AI</a></li>
-      <li><a href="va-tasks.html"><span class="icon">📋</span>VA Tasks<span class="nav-badge" data-va-tasks-badge hidden></span></a></li>
-      <li><a href="users.html"><span class="icon">👤</span>Users</a></li>
-      <li><a href="contact-messages.html"><span class="icon">📧</span>Contact<span class="nav-badge" data-contact-unread-badge hidden></span></a></li>
-      <li><a href="processes.html"><span class="icon">🖥</span>System</a></li>
-  </ul></nav>
-  <div class="sidebar-footer">
-    <a href="/admin/logout" class="logout-link">🚪 Logout</a>
-  </div>
-</aside>
+<aside class="sidebar"></aside>
 <main class="main">
 <!-- ── FILINGS ── -->
   <div id="page-filings" class="tab-content active">
     <div class="page-header">
       <h1>Filings</h1>
       <p>All downloaded and analyzed PDF filings</p>
+    </div>
+
+    <div class="preview-box" id="fi-pending-panel" style="margin-bottom:20px;">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;">
+        <div style="flex:1;min-width:200px;">
+          <div style="font-weight:600;margin-bottom:4px;">Process unanalyzed on disk</div>
+          <div id="fi-pending-summary" style="font-size:13px;color:var(--muted);">Checking downloads…</div>
+          <div id="fi-pending-job" style="font-size:12px;color:var(--muted);margin-top:6px;"></div>
+        </div>
+        <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;">
+          Batch size
+          <select id="fi-process-limit">
+            <option value="10">10</option>
+            <option value="25" selected>25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </label>
+        <button class="btn btn-primary btn-sm" type="button" id="fi-process-btn" onclick="startProcessPendingFilings()">Process pending</button>
+        <button class="btn btn-ghost btn-sm" type="button" onclick="loadPendingOnDisk()">↻</button>
+      </div>
     </div>
 
     <div class="toolbar">
@@ -48,6 +49,7 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
         <option value="noteworthy">Noteworthy</option>
         <option value="watch">Watch</option>
         <option value="routine">Routine</option>
+        <option value="extraction_failed">Extraction failed</option>
       </select>
       <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;">
         Per page

@@ -21,7 +21,10 @@ function initAdminPage() {
       if (editId) openEditProfile(parseInt(editId, 10));
     });
   }
-  if (page === 'filings') loadFilings();
+  if (page === 'filings') {
+    loadFilings();
+    loadPendingOnDisk();
+  }
   if (page === 'import') { loadCseStatus(); loadAsxStatus(); }
   if (page === 'scraper') {
     loadRuns();
@@ -700,6 +703,95 @@ async function loadFilings() {
       </tr>`).join('');
   } catch (e) {
     tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Error: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+// ── Process unanalyzed filings on disk ──
+let _fiProcessPollId = null;
+
+async function loadPendingOnDisk() {
+  const summary = document.getElementById('fi-pending-summary');
+  const jobEl = document.getElementById('fi-pending-job');
+  const btn = document.getElementById('fi-process-btn');
+  if (!summary) return;
+  try {
+    const data = await fetch(`${API}/api/admin/filings/pending-on-disk`).then((r) => r.json());
+    if (data.error) throw new Error(data.error);
+    summary.textContent = `${data.onDisk ?? 0} unanalyzed filing(s) have PDFs on disk`
+      + (data.pendingInDb != null ? ` (${data.pendingInDb} pending in DB total)` : '')
+      + `. Downloads: ${data.downloadsDir || ''}`;
+    if (data.job?.status === 'running') {
+      renderPendingJob(data.job);
+      if (!_fiProcessPollId) {
+        _fiProcessPollId = setInterval(pollProcessPendingJob, 2000);
+      }
+      if (btn) btn.disabled = true;
+    } else if (data.job?.status === 'done' || data.job?.status === 'error') {
+      renderPendingJob(data.job);
+      if (btn) btn.disabled = false;
+    } else if (jobEl && !jobEl.dataset.sticky) {
+      jobEl.textContent = '';
+    }
+  } catch (err) {
+    summary.textContent = err.message || 'Could not load pending-on-disk status';
+  }
+}
+
+function renderPendingJob(job) {
+  const jobEl = document.getElementById('fi-pending-job');
+  const btn = document.getElementById('fi-process-btn');
+  if (!jobEl || !job) return;
+  if (job.status === 'running') {
+    jobEl.dataset.sticky = '1';
+    jobEl.textContent = `Processing ${job.processed ?? 0}/${job.total ?? '?'}…`
+      + (job.currentFile ? ` (${job.currentFile})` : '')
+      + ` · ok ${job.ok ?? 0} · extraction failed ${job.extractionFailed ?? 0} · errors ${job.errors ?? 0}`;
+    if (btn) btn.disabled = true;
+  } else if (job.status === 'done') {
+    jobEl.dataset.sticky = '1';
+    jobEl.textContent = `Done: ${job.ok ?? 0} analyzed, ${job.extractionFailed ?? 0} extraction failed, ${job.errors ?? 0} errors (batch ${job.processed ?? 0}).`;
+    if (btn) btn.disabled = false;
+  } else if (job.status === 'error') {
+    jobEl.dataset.sticky = '1';
+    jobEl.textContent = `Failed: ${job.error || 'unknown error'}`;
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function pollProcessPendingJob() {
+  try {
+    const job = await fetch(`${API}/api/admin/filings/process-pending/status`).then((r) => r.json());
+    renderPendingJob(job);
+    if (job.status !== 'running') {
+      if (_fiProcessPollId) {
+        clearInterval(_fiProcessPollId);
+        _fiProcessPollId = null;
+      }
+      loadPendingOnDisk();
+      loadFilings();
+    }
+  } catch { /* ignore */ }
+}
+
+async function startProcessPendingFilings() {
+  const limit = parseInt(document.getElementById('fi-process-limit')?.value, 10) || 25;
+  const btn = document.getElementById('fi-process-btn');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch(`${API}/api/admin/filings/process-pending`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit }),
+    }).then((x) => x.json());
+    if (r.error) throw new Error(r.error);
+    toast(`Processing up to ${limit} filing(s)…`);
+    renderPendingJob(r.job || { status: 'running', processed: 0, total: limit });
+    if (!_fiProcessPollId) {
+      _fiProcessPollId = setInterval(pollProcessPendingJob, 2000);
+    }
+  } catch (err) {
+    toast(err.message, 'err');
+    if (btn) btn.disabled = false;
   }
 }
 
