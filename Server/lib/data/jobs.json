@@ -4,9 +4,9 @@
     "label": "Company quote refresh",
     "type": "in-process",
     "pid": 627545,
-    "status": "running",
+    "status": "stale",
     "startedAt": 1783166400014,
-    "endedAt": null,
+    "endedAt": 1783246570621,
     "meta": {
       "limit": null,
       "exchange": null,
