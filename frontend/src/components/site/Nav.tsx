@@ -80,7 +80,7 @@ const Nav = ({ showSiteTopBar = true }: NavProps) => {
             <div className="relative w-8 h-8 bg-foreground grid place-items-center">
               <span className="font-display text-background text-base font-extrabold leading-none">O</span>
             </div>
-            <div className="hidden sm:flex items-baseline gap-1.5">
+            <div className="flex items-baseline gap-1.5">
               <span className="font-display text-lg font-extrabold tracking-tight">OreWire</span>
             </div>
           </Link>
