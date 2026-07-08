@@ -17,7 +17,8 @@ import {
   type Company,
 } from "@/lib/api";
 import { parseCompanySearchQuery, parsedExchangeToMarket } from "@/lib/company-search-parse";
-import { API_BASE } from "@/lib/api-client";
+import { companyListQuoteKey, useCompanyListQuotes } from "@/hooks/use-company-list-quotes";
+import type { LiveTvQuote } from "@/features/markets/instrument-symbols";
 
 type Selected = {
   market: string | null;
@@ -150,6 +151,7 @@ const Companies = () => {
 
   const companies = data?.data ?? [];
   const pagination = data?.pagination;
+  const quoteMap = useCompanyListQuotes(companies);
 
   const scrollToTop = () => {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
@@ -290,7 +292,13 @@ const Companies = () => {
                 No companies match your filters. Try clearing some.
               </div>
             ) : (
-              companies.map((c) => <CompanyRow key={c.id} c={c} />)
+              companies.map((c) => (
+                <CompanyRow
+                  key={c.id}
+                  c={c}
+                  quote={quoteMap.get(companyListQuoteKey(c.exchange, c.ticker) ?? "") ?? null}
+                />
+              ))
             )}
           </div>
 
@@ -394,29 +402,14 @@ const WatchStar = ({ companyId }: { companyId: number }) => {
   );
 };
 
-const CompanyRow = ({ c }: { c: Company }) => {
-  const exForTv = c.exchange === "TSXV" ? "TSXV" : c.exchange;
-  const enabled = !!(exForTv && c.ticker);
-  const { data: quote } = useQuery({
-    queryKey: ["company-row-quote", exForTv, c.ticker],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/market/quote/${exForTv}/${c.ticker}`);
-      if (!res.ok) return null;
-      return res.json() as Promise<{
-        price: number | null;
-        change_pct: number | null;
-        change_abs: number | null;
-        volume: number | null;
-      }>;
-    },
-    enabled,
-    staleTime: 5 * 60 * 1000,
-  });
-
+const CompanyRow = ({ c, quote }: { c: Company; quote: LiveTvQuote | null }) => {
   const price = quote?.price ?? null;
   const change = quote?.change_pct ?? null;
   const changeAbs = quote?.change_abs ?? null;
   const volume = quote?.volume ?? null;
+  const sharesOut = c.shares_outstanding ?? c.total_float ?? null;
+  const computedMcap = price != null && sharesOut != null ? price * sharesOut : null;
+  const marketCap = computedMcap ?? c.market_cap ?? null;
   const up = change != null && change >= 0;
   const exLabel = c.exchange === "TSXV" ? "TSX-V" : c.exchange;
   const commodityTags = expandTags(c.commodities ?? []).slice(0, 3);
@@ -466,7 +459,7 @@ const CompanyRow = ({ c }: { c: Company }) => {
       <span className="md:text-right font-mono text-sm text-muted-foreground">{fmtVol(volume)}</span>
 
       {/* Mkt Cap */}
-      <span className="md:text-right font-mono text-sm font-semibold">{fmtMcap(c.market_cap)}</span>
+      <span className="md:text-right font-mono text-sm font-semibold">{fmtMcap(marketCap)}</span>
 
       {/* Tags */}
       <div className="flex flex-wrap gap-1">

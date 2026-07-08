@@ -1,10 +1,11 @@
 import { useEffect, useRef } from "react";
+import { defaultChartInterval } from "@/lib/tradingview-intervals";
 
 // Embeds TradingView's Advanced Chart widget for a given symbol
 // (e.g. "TVC:GOLD", "FX:USDCAD", "AMEX:GDXJ"). Re-embeds when the symbol changes.
 export default function TradingViewChart({
   symbol,
-  interval = "1",
+  interval,
   className,
 }: {
   symbol: string | null;
@@ -12,6 +13,7 @@ export default function TradingViewChart({
   className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const resolvedInterval = interval ?? defaultChartInterval(symbol);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -31,7 +33,7 @@ export default function TradingViewChart({
     script.innerHTML = JSON.stringify({
       autosize: true,
       symbol,
-      interval,
+      interval: resolvedInterval,
       timezone: "Etc/UTC",
       theme: "light",
       style: "1",
@@ -49,7 +51,7 @@ export default function TradingViewChart({
     return () => {
       container.innerHTML = "";
     };
-  }, [symbol, interval]);
+  }, [symbol, resolvedInterval]);
 
   const box = `w-full aspect-[16/9] min-h-[340px] ${className || ""}`;
 

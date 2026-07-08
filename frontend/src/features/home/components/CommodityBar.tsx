@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { fetchCommodities, type CommoditySpot } from "@/lib/api";
+import { commoditySlugFromKey } from "@/lib/commodity-slugs";
 
 const REFETCH_MS = 30 * 60 * 1000;
 
@@ -16,16 +17,11 @@ function fmtPct(n: number | null): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 }
 
-const slugMap: Record<string, string> = {
-  gold: "GOLD", silver: "SLVR", copper: "COPR", lithium: "LITH", uranium: "URAN", nickel: "NICK",
-};
-
 const FALLBACK: CommoditySpot[] = [
   { key: "gold",    label: "Gold",     unit: "oz", price: null, change_pct: null },
   { key: "silver",  label: "Silver",   unit: "oz", price: null, change_pct: null },
   { key: "copper",  label: "Copper",   unit: "lb", price: null, change_pct: null },
   { key: "lithium", label: "Lithium",  unit: "t",  price: null, change_pct: null },
-  { key: "uranium", label: "U₃O₈", unit: "lb", price: null, change_pct: null },
   { key: "nickel",  label: "Nickel",   unit: "t",  price: null, change_pct: null },
 ];
 
@@ -45,7 +41,7 @@ const CommodityBar = () => {
         <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground shrink-0">Spot</span>
         {items.map((c) => {
           const up = (c.change_pct ?? 0) >= 0;
-          const slug = slugMap[c.key] || c.key.toUpperCase();
+          const slug = commoditySlugFromKey(c.key);
           return (
             <a key={c.key} href={`/market/commodity/${slug}`} className="flex items-center gap-2 shrink-0 font-mono text-[11px] hover:opacity-80 transition-opacity">
               <span className="text-muted-foreground">{c.label}</span>
@@ -60,7 +56,7 @@ const CommodityBar = () => {
             </a>
           );
         })}
-        <span className="ml-auto font-mono text-[10px] text-muted-foreground shrink-0 hidden lg:inline">Powered by TradingView · Delayed</span>
+        <span className="ml-auto font-mono text-[10px] text-muted-foreground shrink-0 hidden lg:inline">Spot · metals.live / TradingView</span>
       </div>
     </div>
   );

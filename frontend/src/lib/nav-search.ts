@@ -5,6 +5,7 @@ import {
   type CurrencySpot,
   type IndexSpot,
 } from "@/lib/api";
+import { commoditySlugFromKey } from "@/lib/commodity-slugs";
 
 export type SearchCategory = "companies" | "commodities" | "indexes" | "currencies";
 
@@ -24,32 +25,13 @@ export const CATEGORY_LABELS: Record<SearchCategory, string> = {
 
 const DEFAULT_ORDER: SearchCategory[] = ["companies", "commodities", "indexes", "currencies"];
 
-const commoditySlugMap: Record<string, string> = {
-  gold: "GOLD",
-  silver: "SLVR",
-  copper: "COPR",
-  uranium: "URAN",
-  lithium: "LITH",
-  iron_ore: "IRON",
-  nickel: "NICK",
-  zinc: "ZINC",
-  brent: "BRENT",
-  wti: "WTI",
-  tin: "TIN",
-  cobalt: "COBALT",
-  lead: "LEAD",
-  platinum: "PLAT",
-  palladium: "PALL",
-  natgas: "NATGAS",
-};
-
 const COMMODITY_ALIASES: Record<string, string[]> = {
   gold: ["au", "xau"],
   silver: ["ag", "xag", "slvr"],
-  copper: ["cu", "copr"],
-  uranium: ["u3o8", "ura"],
-  lithium: ["lit"],
-  platinum: ["plat"],
+  copper: ["cu", "copr", "cpr"],
+  lithium: ["lit", "lith"],
+  nickel: ["nick"],
+  platinum: ["plat", "palt"],
   palladium: ["pall"],
   wti: ["crude", "oil"],
   brent: ["crude", "oil"],
@@ -102,7 +84,7 @@ function scoreCompany(query: string, c: Company): number {
 }
 
 function commoditySlug(key: string): string {
-  return commoditySlugMap[key.toLowerCase()] || key.toUpperCase().replace(/_/g, "");
+  return commoditySlugFromKey(key);
 }
 
 function rankHits<T>(

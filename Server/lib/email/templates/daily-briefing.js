@@ -14,7 +14,7 @@ const {
 } = require('./layout');
 
 const COMMODITY_CODES = {
-  gold: 'GOLDSPOT', silver: 'SLVRSPOT', copper: 'COPRLME', uranium: 'URANUXC',
+  gold: 'GOLDSPOT', silver: 'SILVERSPOT', copper: 'COPPERLME',
   lithium: 'LITHSHFE', iron_ore: 'IRONSGX', nickel: 'NICKLME', zinc: 'ZINCLME',
   brent: 'BRNTICE', wti: 'WTINYM', tin: 'TINLME', cobalt: 'COBALME', lead: 'LEADLME',
   platinum: 'PLATSPOT', palladium: 'PALLSPOT',

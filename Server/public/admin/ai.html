@@ -20,6 +20,16 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
   word-break: break-word;
   line-height: 1.4;
 }
+.ai-pause-card {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 18px; margin: 4px 0 20px; flex-wrap: wrap;
+}
+.ai-pause-card .pause-copy { font-size: 13px; color: var(--muted); }
+.ai-pause-status { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; }
+.ai-pause-status .dot { width: 10px; height: 10px; border-radius: 50%; background: #16a34a; }
+.ai-pause-status.paused .dot { background: #f59e0b; }
+.ai-pause-status.paused { color: #b45309; }
 </style>
 </head>
 <body data-page="ai">
@@ -33,6 +43,14 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
   <div id="ai-env-banner" class="relay-proxy-banner" style="display:none;"></div>
 
   <div id="ai-active-label" style="font-size:13px;margin-bottom:12px;color:var(--muted);"></div>
+
+  <div class="ai-pause-card">
+    <div>
+      <span class="ai-pause-status" id="ai-pause-status"><span class="dot"></span><span id="ai-pause-text">Running</span></span>
+      <div class="pause-copy" id="ai-pause-copy">All background AI processing (filing analysis, snapshots, news enrichment) is active.</div>
+    </div>
+    <button class="btn btn-sm" type="button" id="ai-pause-btn" onclick="toggleAiPause()">Pause AI</button>
+  </div>
 
   <div class="ai-stats" id="ai-stats" hidden>
     <div class="ai-stat"><div class="label">Requests</div><div class="value" id="ai-stat-requests">0</div></div>
@@ -107,5 +125,52 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
 <div id="toast"></div>
 <script src="/admin/js/admin-sidebar.js"></script>
 <script src="/admin/js/legacy-admin.js"></script>
+<script>
+  let aiPaused = false;
+
+  function renderAiPause() {
+    const statusEl = document.getElementById('ai-pause-status');
+    const textEl = document.getElementById('ai-pause-text');
+    const copyEl = document.getElementById('ai-pause-copy');
+    const btn = document.getElementById('ai-pause-btn');
+    statusEl.classList.toggle('paused', aiPaused);
+    textEl.textContent = aiPaused ? 'Paused' : 'Running';
+    copyEl.textContent = aiPaused
+      ? 'Background AI is paused. Scheduled analyses will error and retry after you resume. Manual testing (Admin → Testing) still runs.'
+      : 'All background AI processing (filing analysis, snapshots, news enrichment) is active.';
+    btn.textContent = aiPaused ? 'Resume AI' : 'Pause AI';
+    btn.className = 'btn btn-sm ' + (aiPaused ? 'btn-primary' : 'btn-ghost');
+  }
+
+  async function loadAiPause() {
+    try {
+      const r = await fetch('/api/admin/ai/pause-state');
+      if (!r.ok) return;
+      const data = await r.json();
+      aiPaused = !!data.paused;
+      renderAiPause();
+    } catch { /* ignore */ }
+  }
+
+  async function toggleAiPause() {
+    const btn = document.getElementById('ai-pause-btn');
+    const next = !aiPaused;
+    btn.disabled = true;
+    try {
+      const r = await fetch('/api/admin/ai/' + (next ? 'pause' : 'resume'), { method: 'POST' });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || 'Request failed');
+      aiPaused = !!data.paused;
+      renderAiPause();
+      if (typeof toast === 'function') toast(aiPaused ? 'AI paused' : 'AI resumed');
+    } catch (err) {
+      if (typeof toast === 'function') toast(err.message || 'Failed', 'err');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', loadAiPause);
+</script>
 </body>
 </html>

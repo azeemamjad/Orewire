@@ -27,9 +27,8 @@ const COMMODITY_SYMBOLS = [
   { key: 'gold',      label: 'Gold',            unit: 'oz',  y: ['GC=F', 'GLD'],        tv: ['COMEX:GC1!', 'TVC:GOLD', 'OANDA:XAUUSD'] },
   { key: 'silver',    label: 'Silver',          unit: 'oz',  y: ['SI=F', 'SLV'],        tv: ['COMEX:SI1!', 'TVC:SILVER', 'OANDA:XAGUSD'] },
   { key: 'copper',    label: 'Copper',          unit: 'lb',  y: ['HG=F', 'CPER'],       tv: ['COMEX:HG1!', 'TVC:COPPER', 'CAPITALCOM:COPPER'] },
-  { key: 'uranium',   label: 'Uranium',         unit: 'lb',  y: ['URA'],                tv: ['NYMEX:UX1!', 'AMEX:URA', 'NYSEARCA:URA'] },
   { key: 'lithium',   label: 'Lithium',         unit: 't',   y: ['LIT'],                tv: ['TVC:LITHIUM', 'AMEX:LIT', 'NYSEARCA:LIT'] },
-  { key: 'iron_ore',  label: 'Iron Ore',        unit: 't',   y: [],                     tv: ['TVC:IRONORE', 'SGX:FEF1!', 'NYMEX:TIO1!'] },
+  { key: 'iron_ore',  label: 'Iron Ore',        unit: 't',   y: [],                     tv: ['SGX:FEF1!', 'TVC:IRONORE', 'NYMEX:TIO1!'] },
   { key: 'nickel',    label: 'Nickel',          unit: 't',   y: [],                     tv: ['LME:NI1!', 'SHFE:NI1!', 'NYMEX:LN1!', 'TVC:NICKEL'] },
   { key: 'zinc',      label: 'Zinc',            unit: 't',   y: [],                     tv: ['LME:ZN1!', 'SHFE:ZN1!'] },
   { key: 'brent',     label: 'Brent Crude Oil', unit: 'bbl', y: ['BZ=F'],               tv: ['NYMEX:BB1!', 'TVC:UKOIL', 'ICEEUR:BRN1!'] },
@@ -71,7 +70,7 @@ function commodityConfig(key) {
 }
 
 async function buildCommodityItem(c, { preferTv = false } = {}) {
-  const r = await fetchListQuote(c.y, c.tv, { preferTv });
+  const r = await fetchListQuote(c.y, c.tv, { preferTv, metalsLiveKey: c.key });
   if (!r) {
     return {
       key: c.key,

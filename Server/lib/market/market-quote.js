@@ -11,6 +11,7 @@
 
 const { fetchYahooQuote, fetchYahooByExchange, yahooSymbolForCompany } = require('./yahoo-quote');
 const { fetchTvQuote, tvSymbolForCompany } = require('./tv-quote');
+const { fetchMetalsLiveQuote, metalsLiveSupported } = require('./metals-live-quote');
 
 function hasPrice(q) {
   return q && q.close != null;
@@ -70,7 +71,16 @@ async function fetchCompanyQuote(exchange, ticker, opts = {}) {
  * price, or null if none resolved.
  */
 async function fetchListQuote(yahooSymbols = [], tvSymbols = [], opts = {}) {
-  const { preferTv = false } = opts;
+  const { preferTv = false, metalsLiveKey = null } = opts;
+
+  async function tryMetalsLive() {
+    if (!metalsLiveKey || !metalsLiveSupported(metalsLiveKey)) return null;
+    try {
+      const q = await fetchMetalsLiveQuote(metalsLiveKey);
+      if (hasPrice(q)) return { quote: q, symbol: `metals.live:${metalsLiveKey}`, provider: 'metals.live' };
+    } catch { /* fall through */ }
+    return null;
+  }
 
   async function tryYahoo() {
     for (const s of yahooSymbols) {
@@ -95,11 +105,15 @@ async function fetchListQuote(yahooSymbols = [], tvSymbols = [], opts = {}) {
   if (preferTv) {
     const tv = await tryTv();
     if (tv) return tv;
+    const ml = await tryMetalsLive();
+    if (ml) return ml;
     return tryYahoo();
   }
 
   const yh = await tryYahoo();
   if (yh) return yh;
+  const ml = await tryMetalsLive();
+  if (ml) return ml;
   return tryTv();
 }
 
