@@ -1,4 +1,4 @@
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import {
@@ -32,19 +32,28 @@ import { useInstrumentSymbols } from "@/hooks/use-instrument-symbols";
 import { useLiveQuote } from "@/hooks/use-live-quote";
 import { formatEmpty } from "@/lib/display";
 import { formatLiveLastLabel, formatPrice4, liveQuoteUpdatedAtMs } from "@/lib/live-quote-display";
+import {
+  canonicalCommoditySlug,
+  commodityApiKeyFromSlug,
+  isLegacyCommoditySlug,
+} from "@/lib/commodity-slugs";
 
 const COMMODITY_TV: Record<string, string> = {
   GOLD: "TVC:GOLD",
-  SLVR: "TVC:SILVER",
-  COPR: "COMEX:HG1!",
-  LITH: "AMEX:LIT",
-  URAN: "AMEX:URA",
-  NICK: "TVC:NICKEL",
+  SILVER: "TVC:SILVER",
+  COPPER: "COMEX:HG1!",
+  LITHIUM: "AMEX:LIT",
+  NICKEL: "TVC:NICKEL",
+  IRON: "SGX:FEF1!",
+  ZINC: "LME:ZN1!",
+  TIN: "LME:SN1!",
+  COBALT: "LME:CA1!",
+  LEAD: "LME:PB1!",
   WTI: "TVC:USOIL",
   BRENT: "TVC:UKOIL",
   NATGAS: "TVC:NATURALGAS",
-  PLAT: "TVC:PLATINUM",
-  PALL: "TVC:PALLADIUM",
+  PLATINUM: "TVC:PLATINUM",
+  PALLADIUM: "TVC:PALLADIUM",
 };
 
 const COMMODITY_META: Record<string, { name: string; fullName: string; unit: string; currency: string; about: string }> = {
@@ -56,7 +65,7 @@ const COMMODITY_META: Record<string, { name: string; fullName: string; unit: str
     about:
       "Spot gold price (XAU/USD) reflecting the per-ounce value of physical gold bullion. Driven by real yields, USD strength, central-bank demand and global risk sentiment.",
   },
-  SLVR: {
+  SILVER: {
     name: "Silver",
     fullName: "Silver Spot",
     unit: "oz",
@@ -64,7 +73,7 @@ const COMMODITY_META: Record<string, { name: string; fullName: string; unit: str
     about:
       "Spot silver price (XAG/USD). Silver is both a precious and industrial metal, influenced by monetary demand, solar panel manufacturing, and electronics.",
   },
-  COPR: {
+  COPPER: {
     name: "Copper",
     fullName: "Copper Spot",
     unit: "lb",
@@ -72,7 +81,7 @@ const COMMODITY_META: Record<string, { name: string; fullName: string; unit: str
     about:
       "Copper futures price. Often called 'Dr. Copper' for its ability to predict economic health. Key driver of mining sector performance.",
   },
-  LITH: {
+  LITHIUM: {
     name: "Lithium",
     fullName: "Lithium Carbonate",
     unit: "t",
@@ -80,15 +89,7 @@ const COMMODITY_META: Record<string, { name: string; fullName: string; unit: str
     about:
       "Lithium carbonate equivalent price, key battery mineral. Driven by EV demand, supply from Australia and South America, and battery technology shifts.",
   },
-  URAN: {
-    name: "Uranium",
-    fullName: "Uranium U₃O₈",
-    unit: "lb",
-    currency: "USD / lb",
-    about:
-      "Uranium oxide (U₃O₈) spot price. Nuclear energy demand, reactor restarts, and enrichment capacity drive this market.",
-  },
-  NICK: {
+  NICKEL: {
     name: "Nickel",
     fullName: "Nickel Spot",
     unit: "t",
@@ -96,15 +97,62 @@ const COMMODITY_META: Record<string, { name: string; fullName: string; unit: str
     about:
       "LME nickel price. Used in stainless steel and EV batteries. Indonesian supply and Chinese demand are key price drivers.",
   },
-};
-
-const keyToApi: Record<string, string> = {
-  GOLD: "gold",
-  SLVR: "silver",
-  COPR: "copper",
-  LITH: "lithium",
-  URAN: "uranium",
-  NICK: "nickel",
+  IRON: {
+    name: "Iron Ore",
+    fullName: "Iron Ore Spot",
+    unit: "t",
+    currency: "USD / t",
+    about:
+      "Iron ore benchmark price. Steel demand from China and global construction activity are the primary drivers of this market.",
+  },
+  ZINC: {
+    name: "Zinc",
+    fullName: "Zinc Spot",
+    unit: "t",
+    currency: "USD / t",
+    about:
+      "LME zinc price. Galvanizing steel and die-casting are the main uses. Mine supply disruptions and smelter capacity drive volatility.",
+  },
+  TIN: {
+    name: "Tin",
+    fullName: "Tin Spot",
+    unit: "t",
+    currency: "USD / t",
+    about:
+      "LME tin price. Solder, electronics, and tinplate demand. Concentrated mine supply in Southeast Asia makes this market sensitive to disruptions.",
+  },
+  COBALT: {
+    name: "Cobalt",
+    fullName: "Cobalt Spot",
+    unit: "t",
+    currency: "USD / t",
+    about:
+      "Cobalt spot price. EV battery cathodes and aerospace alloys are key demand drivers. DRC supply concentration is a structural risk.",
+  },
+  LEAD: {
+    name: "Lead",
+    fullName: "Lead Spot",
+    unit: "t",
+    currency: "USD / t",
+    about:
+      "LME lead price. Lead-acid batteries dominate demand. Recycling rates are high, linking prices to scrap supply and automotive replacement cycles.",
+  },
+  PLATINUM: {
+    name: "Platinum",
+    fullName: "Platinum Spot",
+    unit: "oz",
+    currency: "USD / oz",
+    about:
+      "Platinum spot price. Auto catalysts, jewelry, and industrial applications. South African supply constraints influence the market.",
+  },
+  PALLADIUM: {
+    name: "Palladium",
+    fullName: "Palladium Spot",
+    unit: "oz",
+    currency: "USD / oz",
+    about:
+      "Palladium spot price. Primarily used in automotive catalytic converters. Russian supply and emissions standards drive pricing.",
+  },
 };
 
 function timeAgo(dateStr: string): string {
@@ -155,7 +203,10 @@ function ccyPrefix(currency: string | null | undefined): string {
 
 const CommodityDetail = () => {
   const { slug } = useParams();
-  const key = (slug || "GOLD").toUpperCase();
+  const rawSlug = (slug || "GOLD").toUpperCase();
+  const legacyRedirect = isLegacyCommoditySlug(rawSlug);
+  const key = canonicalCommoditySlug(rawSlug);
+  const apiKey = commodityApiKeyFromSlug(key);
   const meta = COMMODITY_META[key] || {
     name: key,
     fullName: `${key} Spot`,
@@ -163,7 +214,6 @@ const CommodityDetail = () => {
     currency: "USD / unit",
     about: `Spot price for ${key}.`,
   };
-  const apiKey = keyToApi[key] || key.toLowerCase();
   const [inWatchlist, setInWatchlist] = useState(false);
 
   const { symbols, selectedTvSymbol, setSelectedTvSymbol } = useInstrumentSymbols("commodity", apiKey);
@@ -213,6 +263,10 @@ const CommodityDetail = () => {
 
   const fmtPrice = (n: number) => formatPrice4(n);
   const px = (n: number | null | undefined) => (n != null ? `${priceCcy}${fmtPrice(n)}` : formatEmpty(null));
+
+  if (legacyRedirect) {
+    return <Navigate to={`/market/commodity/${key}`} replace />;
+  }
 
   return (
     <SiteLayout morningBrief>

@@ -10,6 +10,7 @@ const ADMIN_NAV = [
   { page: 'relay', href: 'relay.html', icon: '🌐', label: 'Relay' },
   { page: 'proxies', href: 'proxies.html', icon: '🔌', label: 'Proxies' },
   { page: 'ai', href: 'ai.html', icon: '🧠', label: 'AI' },
+  { page: 'testing', href: 'testing.html', icon: '🧪', label: 'Testing' },
   { page: 'va-tasks', href: 'va-tasks.html', icon: '📋', label: 'VA Tasks', badge: 'va' },
   { page: 'users', href: 'users.html', icon: '👤', label: 'Users' },
   { page: 'contact-messages', href: 'contact-messages.html', icon: '📧', label: 'Contact', badge: 'contact' },

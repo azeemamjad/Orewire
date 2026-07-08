@@ -14,6 +14,7 @@ const {
   envFallbackProvider,
 } = require('../../lib/ai/ollama-store');
 const { retentionDays } = require('../../lib/usage-log-retention');
+const { getAiPaused, setAiPaused } = require('../../lib/ai/ai-settings');
 
 const router = express.Router();
 
@@ -73,6 +74,37 @@ router.get('/', async (_req, res) => {
   } catch (err) {
     console.error('List AI providers failed:', err?.message || err);
     res.status(500).json({ error: 'Failed to load AI config' });
+  }
+});
+
+// GET /api/admin/ai/pause-state — global AI pause switch (before /:id routes)
+router.get('/pause-state', async (_req, res) => {
+  try {
+    res.json({ paused: await getAiPaused() });
+  } catch (err) {
+    console.error('Get AI pause state failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to read pause state' });
+  }
+});
+
+// POST /api/admin/ai/pause  and  /api/admin/ai/resume
+router.post('/pause', async (_req, res) => {
+  try {
+    await setAiPaused(true);
+    res.json({ paused: true });
+  } catch (err) {
+    console.error('Pause AI failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to pause AI' });
+  }
+});
+
+router.post('/resume', async (_req, res) => {
+  try {
+    await setAiPaused(false);
+    res.json({ paused: false });
+  } catch (err) {
+    console.error('Resume AI failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to resume AI' });
   }
 });
 
@@ -190,6 +222,7 @@ router.post('/:id/test', async (req, res) => {
       system: 'Reply with exactly: OK',
       user: 'Say OK',
       provider: row,
+      bypassPause: true,
     });
 
     res.json({

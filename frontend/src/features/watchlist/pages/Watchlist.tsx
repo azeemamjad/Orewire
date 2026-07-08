@@ -7,16 +7,19 @@ import { fetchCompanies, fetchCommodities, fetchCurrencies, fetchIndexes, fetchW
 import { useAuth } from "@/hooks/use-auth";
 
 import { API_BASE } from '@/lib/api-client';
+import {
+  commodityApiKeyFromSlug,
+  COMMODITY_SLUG_LABELS,
+} from "@/lib/commodity-slugs";
 
-const COMMODITY_SLUG_TO_KEY: Record<string, string> = {
-  GOLD: "gold", SLVR: "silver", COPR: "copper", PLAT: "platinum", PALL: "palladium",
-  LITH: "lithium", NICK: "nickel", COBALT: "cobalt", URAN: "uranium", IRON: "iron_ore",
-  ZINC: "zinc", WTI: "wti", BRENT: "brent", NATGAS: "natgas",
-};
 const COMMODITY_SLUG_TO_LABEL: Record<string, string> = {
-  GOLD: "Gold", SLVR: "Silver", COPR: "Copper", PLAT: "Platinum", PALL: "Palladium",
-  LITH: "Lithium", NICK: "Nickel", COBALT: "Cobalt", URAN: "Uranium U₃O₈", IRON: "Iron Ore",
-  ZINC: "Zinc", WTI: "Crude (WTI)", BRENT: "Brent", NATGAS: "Natural Gas",
+  ...COMMODITY_SLUG_LABELS,
+  SLVR: "Silver",
+  COPR: "Copper",
+  LITH: "Lithium",
+  NICK: "Nickel",
+  PLAT: "Platinum",
+  PALL: "Palladium",
 };
 
 const CURRENCY_LABELS: Record<string, { name: string; subtitle: string }> = {
@@ -299,7 +302,7 @@ const Watchlist = () => {
               refetch={refetch}
               rows={commodityItems.map((it) => {
                 const slug = it.itemKey.toUpperCase();
-                const apiKey = COMMODITY_SLUG_TO_KEY[slug] || slug.toLowerCase();
+                const apiKey = commodityApiKeyFromSlug(slug);
                 const data = commodityByKey.get(apiKey);
                 const price = data?.price ?? null;
                 const abs = deriveChangeAbs(price, data?.change_pct);

@@ -4,23 +4,9 @@ const {
   getIndexesPayload,
   getCurrenciesPayload,
 } = require('../market/payloads');
+const { commodityApiKeyFromSlug } = require('../market/commodity-slugs');
 
 const MAJOR_MOVE_PCT = parseFloat(process.env.ALERT_MAJOR_MOVE_PCT || '2', 10);
-
-/** Frontend commodity slugs → API keys */
-const COMMODITY_SLUG_TO_API = {
-  GOLD: 'gold',
-  SLVR: 'silver',
-  COPR: 'copper',
-  LITH: 'lithium',
-  URAN: 'uranium',
-  NICK: 'nickel',
-  WTI: 'wti',
-  BRENT: 'brent',
-  NATGAS: 'naturalgas',
-  PLAT: 'platinum',
-  PALL: 'palladium',
-};
 
 function todayUtc() {
   return new Date().toISOString().slice(0, 10);
@@ -36,7 +22,7 @@ function marketHref(itemType, itemKey) {
 function findSpot(itemType, itemKey, commodities, indexes, currencies) {
   const key = itemKey.toUpperCase();
   if (itemType === 'commodity') {
-    const apiKey = COMMODITY_SLUG_TO_API[key] || key.toLowerCase();
+    const apiKey = commodityApiKeyFromSlug(itemKey);
     return commodities.items.find((i) => i.key === apiKey) || null;
   }
   if (itemType === 'index') {
@@ -85,7 +71,6 @@ async function appendMarketMoveAlerts(userId, alerts) {
 
     const label = spot.label || w.item_key;
     const pct = spot.change_pct;
-    const sign = pct >= 0 ? '+' : '';
     const at = new Date().toISOString();
     const id = `market-${w.item_type}-${w.item_key}-${today}`;
 

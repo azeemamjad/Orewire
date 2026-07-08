@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Testing | OreWire Admin</title>
+<link rel="stylesheet" href="/admin/css/admin.css" />
+<style>
+  .test-subnav { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 0 0 22px; flex-wrap: wrap; }
+  .test-tab {
+    appearance: none; background: none; border: none; border-bottom: 2px solid transparent;
+    padding: 10px 16px; font-size: 14px; font-weight: 600; color: var(--muted); cursor: pointer;
+    margin-bottom: -1px;
+  }
+  .test-tab:hover { color: var(--text); }
+  .test-tab.active { color: var(--text); border-bottom-color: var(--accent-gold); }
+
+  .test-step { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 16px; }
+  .test-step-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .test-step-head h2 { font-size: 16px; margin: 0; }
+  .test-step-n {
+    width: 24px; height: 24px; border-radius: 50%; background: var(--primary-soft); color: var(--accent-gold);
+    display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex: 0 0 auto;
+  }
+  .test-hint { font-size: 13px; color: var(--muted); margin: 2px 0 12px; }
+
+  .ai-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 0 0 20px; }
+  .ai-stat { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .ai-stat .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .ai-stat .value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+
+  #test-prompt { width: 100%; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; line-height: 1.5;
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); resize: vertical; }
+  #test-model { min-width: 220px; }
+
+  .test-progress-bar { height: 8px; background: var(--surface-2, #eef2f7); border-radius: 999px; overflow: hidden; margin: 8px 0; }
+  .test-progress-bar > i { display: block; height: 100%; width: 0; background: var(--accent-gold); transition: width .25s ease; }
+
+  .result-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+  .result-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .result-top .idx { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); }
+  .result-title { font-weight: 700; font-size: 14px; }
+  .result-sub { font-size: 12px; color: var(--muted); }
+  .result-meta { margin-left: auto; font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); }
+  .result-summary { font-size: 13px; color: var(--text-2); margin: 8px 0 6px; }
+  .result-facts { margin: 6px 0 0 18px; font-size: 12.5px; color: var(--text-2); }
+  .result-facts li { margin-bottom: 3px; }
+  .result-card details { margin-top: 8px; }
+  .result-card summary { cursor: pointer; font-size: 12px; color: var(--accent-gold); }
+  .result-card pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+    font-size: 11.5px; overflow-x: auto; max-height: 340px; }
+  .badge-error { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+  .badge-status { background: var(--surface-2); color: var(--muted); border-color: var(--border); }
+
+  .sel-table td, .sel-table th { font-size: 12.5px; }
+  .under-dev { background: var(--card); border: 1px dashed var(--border-strong); border-radius: var(--radius);
+    padding: 40px; text-align: center; color: var(--muted); }
+  .under-dev .big { font-size: 15px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
+</style>
+</head>
+<body data-page="testing">
+<aside class="sidebar"></aside>
+<main class="main">
+  <div class="page-header">
+    <h1>Testing</h1>
+    <p>Exercise the analysis pipeline against sample data with a custom prompt and model, then export the results.</p>
+  </div>
+
+  <div class="test-subnav">
+    <button class="test-tab active" type="button" data-tab="filings" onclick="switchTab('filings')">Filings</button>
+    <button class="test-tab" type="button" data-tab="news" onclick="switchTab('news')">News Releases</button>
+    <button class="test-tab" type="button" data-tab="snapshots" onclick="switchTab('snapshots')">Snapshots</button>
+  </div>
+
+  <!-- ───────── FILINGS ───────── -->
+  <section class="test-panel" data-panel="filings">
+    <div class="ai-stats">
+      <div class="ai-stat"><div class="label">Filings tested</div><div class="value" id="stat-tested">–</div></div>
+      <div class="ai-stat"><div class="label">Untested remaining</div><div class="value" id="stat-untested">–</div></div>
+      <div class="ai-stat"><div class="label">Total filings</div><div class="value" id="stat-total">–</div></div>
+      <div class="ai-stat"><div class="label">Test runs logged</div><div class="value" id="stat-runs">–</div></div>
+    </div>
+
+    <!-- Step 1 -->
+    <div class="test-step">
+      <div class="test-step-head"><span class="test-step-n">1</span><h2>Select filings</h2></div>
+      <p class="test-hint">Pick a random sample of filings that have never been tested before. Previously tested filings are skipped automatically.</p>
+      <div class="toolbar">
+        <label style="font-size:13px;display:inline-flex;align-items:center;gap:6px;">
+          How many
+          <input id="test-count" type="number" value="19" min="1" max="100" style="width:74px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);" />
+        </label>
+        <button class="btn btn-primary btn-sm" type="button" id="test-select-btn" onclick="selectFilings()">Select random filings</button>
+      </div>
+      <div id="test-selected" style="margin-top:12px;"></div>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="test-step" id="test-step2" hidden>
+      <div class="test-step-head"><span class="test-step-n">2</span><h2>Prompt &amp; model</h2></div>
+      <p class="test-hint">Adjust the system prompt and choose the model. DeepSeek models are listed; the active provider default is selected.</p>
+      <div class="config-field" style="max-width:320px;margin-bottom:12px;">
+        <label for="test-model">Model</label>
+        <select id="test-model"></select>
+      </div>
+      <div class="config-field">
+        <label for="test-prompt" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>System prompt</span>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="resetPrompt()">Reset to default</button>
+        </label>
+        <textarea id="test-prompt" rows="12" spellcheck="false"></textarea>
+      </div>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="test-step" id="test-step3" hidden>
+      <div class="test-step-head"><span class="test-step-n">3</span><h2>Analyze</h2></div>
+      <p class="test-hint">Runs each filing through the AI one at a time. This can take a few minutes for a full batch.</p>
+      <div class="toolbar">
+        <button class="btn btn-primary btn-sm" type="button" id="test-analyze-btn" onclick="analyzeAll()">Analyze filings</button>
+        <button class="btn btn-secondary btn-sm" type="button" id="test-download-btn" onclick="downloadResults()" hidden>Download results (ZIP)</button>
+      </div>
+      <div id="test-progress" hidden style="margin-top:12px;">
+        <div class="test-progress-bar"><i id="test-progress-fill"></i></div>
+        <div id="test-progress-label" style="font-size:12px;color:var(--muted);"></div>
+      </div>
+    </div>
+
+    <div id="test-results" style="margin-top:8px;"></div>
+  </section>
+
+  <!-- ───────── NEWS RELEASES ───────── -->
+  <section class="test-panel" data-panel="news" hidden>
+    <div class="under-dev">
+      <div class="big">News Releases testing</div>
+      <div>🚧 Under development — coming soon.</div>
+    </div>
+  </section>
+
+  <!-- ───────── SNAPSHOTS ───────── -->
+  <section class="test-panel" data-panel="snapshots" hidden>
+    <div class="under-dev">
+      <div class="big">Snapshots testing</div>
+      <div>🚧 Under development — coming soon.</div>
+    </div>
+  </section>
+</main>
+
+<div id="toast"></div>
+<script src="/admin/js/admin-sidebar.js"></script>
+<script src="/admin/js/legacy-admin.js"></script>
+<script>
+  const T = {
+    batchId: null,
+    filings: [],
+    defaultPrompt: '',
+    analyzing: false,
+    anyDone: false,
+  };
+
+  function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, (c) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+  function notify(msg, type) {
+    if (typeof toast === 'function') toast(msg, type === 'err' ? 'err' : 'ok');
+  }
+
+  function switchTab(tab) {
+    document.querySelectorAll('.test-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+    document.querySelectorAll('.test-panel').forEach((p) => { p.hidden = p.dataset.panel !== tab; });
+  }
+
+  async function loadStats() {
+    try {
+      const r = await fetch('/api/admin/testing/filings/stats');
+      if (!r.ok) return;
+      const s = await r.json();
+      document.getElementById('stat-tested').textContent = s.testedFilings ?? 0;
+      document.getElementById('stat-untested').textContent = s.untested ?? 0;
+      document.getElementById('stat-total').textContent = s.totalFilings ?? 0;
+      document.getElementById('stat-runs').textContent = s.totalRuns ?? 0;
+    } catch { /* ignore */ }
+  }
+
+  function verdictBadge(verdict, ok, error) {
+    if (ok === false) return `<span class="badge badge-error">error</span>`;
+    const v = String(verdict || '').toLowerCase();
+    if (v === 'noteworthy') return `<span class="badge badge-noteworthy">noteworthy</span>`;
+    if (v === 'watch') return `<span class="badge badge-watch">watch</span>`;
+    if (v === 'routine') return `<span class="badge badge-routine">routine</span>`;
+    if (v === 'extraction_failed') return `<span class="badge badge-pending">extraction failed</span>`;
+    return `<span class="badge badge-status">${esc(verdict || '—')}</span>`;
+  }
+
+  async function selectFilings() {
+    const btn = document.getElementById('test-select-btn');
+    const count = parseInt(document.getElementById('test-count').value, 10) || 19;
+    btn.disabled = true;
+    btn.textContent = 'Selecting…';
+    try {
+      const r = await fetch('/api/admin/testing/filings/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ count }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Failed to select');
+
+      T.batchId = data.batchId;
+      T.filings = data.filings || [];
+      T.defaultPrompt = data.defaultPrompt || '';
+      T.anyDone = false;
+
+      // Model select
+      const modelSel = document.getElementById('test-model');
+      modelSel.innerHTML = (data.models || []).map((m) =>
+        `<option value="${esc(m)}"${m === data.activeModel ? ' selected' : ''}>${esc(m)}</option>`).join('');
+
+      // Prompt
+      document.getElementById('test-prompt').value = T.defaultPrompt;
+
+      renderSelected();
+      document.getElementById('test-step2').hidden = false;
+      document.getElementById('test-step3').hidden = T.filings.length === 0;
+      document.getElementById('test-results').innerHTML = '';
+      document.getElementById('test-download-btn').hidden = true;
+      document.getElementById('test-progress').hidden = true;
+
+      if (data.stats) {
+        document.getElementById('stat-tested').textContent = data.stats.testedFilings ?? 0;
+        document.getElementById('stat-untested').textContent = data.stats.untested ?? 0;
+        document.getElementById('stat-total').textContent = data.stats.totalFilings ?? 0;
+        document.getElementById('stat-runs').textContent = data.stats.totalRuns ?? 0;
+      }
+
+      if (T.filings.length === 0) notify('No untested filings left', 'err');
+      else if (T.filings.length < count) notify(`Only ${T.filings.length} untested filings remain`, 'ok');
+    } catch (err) {
+      notify(err.message || 'Failed', 'err');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Select random filings';
+    }
+  }
+
+  function renderSelected() {
+    const el = document.getElementById('test-selected');
+    if (!T.filings.length) { el.innerHTML = '<p class="test-hint">No filings selected.</p>'; return; }
+    const rows = T.filings.map((f, i) => `
+      <tr>
+        <td style="color:var(--muted);font-family:ui-monospace,monospace;">${i + 1}</td>
+        <td>${esc(f.company_name || '—')}${f.ticker ? ` <span style="color:var(--muted);">(${esc(f.ticker)})</span>` : ''}</td>
+        <td>${esc(f.exchange || '—')}</td>
+        <td>${esc(f.filing_type || '—')}</td>
+        <td style="color:var(--muted);">#${f.id}</td>
+      </tr>`).join('');
+    el.innerHTML = `
+      <div style="font-size:13px;margin-bottom:8px;color:var(--text-2);"><strong>${T.filings.length}</strong> filings selected for this batch.</div>
+      <div class="table-wrap"><table class="sel-table">
+        <thead><tr><th>#</th><th>Company</th><th>Exchange</th><th>Filing type</th><th>ID</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+  }
+
+  function resetPrompt() {
+    document.getElementById('test-prompt').value = T.defaultPrompt;
+    notify('Prompt reset to default');
+  }
+
+  function resultCard(index, res) {
+    const title = `${esc(res.company_name || 'Filing')}${res.ticker ? ` (${esc(res.ticker)})` : ''}`;
+    const a = res.analysis || {};
+    const dur = res.durationMs ? `${(res.durationMs / 1000).toFixed(1)}s` : '';
+    const tok = (res.promptTokens != null || res.completionTokens != null)
+      ? `${res.promptTokens ?? '?'}→${res.completionTokens ?? '?'} tok` : '';
+    let bodyHtml;
+    if (res.ok === false) {
+      bodyHtml = `<div class="result-summary" style="color:#b91c1c;">${esc(res.error || 'Analysis failed')}</div>`
+        + (res.raw ? `<details><summary>Raw response</summary><pre>${esc(res.raw)}</pre></details>` : '');
+    } else {
+      const facts = Array.isArray(a.key_facts) ? a.key_facts : [];
+      bodyHtml = `
+        <div class="result-summary">${esc(a.summary || a.ticker_summary || '—')}</div>
+        ${facts.length ? `<ul class="result-facts">${facts.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
+        <details><summary>View full JSON</summary><pre>${esc(JSON.stringify(a, null, 2))}</pre></details>`;
+    }
+    return `
+      <div class="result-card" id="result-${res.filingId}">
+        <div class="result-top">
+          <span class="idx">${String(index + 1).padStart(2, '0')}</span>
+          ${verdictBadge(res.verdict, res.ok, res.error)}
+          <span class="result-title">${title}</span>
+          <span class="result-sub">${esc(res.filing_type || '')} · ${esc(res.exchange || '')}</span>
+          <span class="result-meta">${[res.model, dur, tok].filter(Boolean).map(esc).join(' · ')}</span>
+        </div>
+        ${bodyHtml}
+      </div>`;
+  }
+
+  function pendingCard(index, f) {
+    return `
+      <div class="result-card" id="result-${f.id}">
+        <div class="result-top">
+          <span class="idx">${String(index + 1).padStart(2, '0')}</span>
+          <span class="badge badge-status">queued</span>
+          <span class="result-title">${esc(f.company_name || 'Filing')}</span>
+          <span class="result-sub">${esc(f.filing_type || '')} · ${esc(f.exchange || '')}</span>
+        </div>
+      </div>`;
+  }
+
+  function setProgress(done, total) {
+    const wrap = document.getElementById('test-progress');
+    wrap.hidden = false;
+    document.getElementById('test-progress-fill').style.width = total ? `${(done / total) * 100}%` : '0';
+    document.getElementById('test-progress-label').textContent = `Analyzed ${done} / ${total}`;
+  }
+
+  async function analyzeAll() {
+    if (T.analyzing || !T.filings.length) return;
+    T.analyzing = true;
+    const analyzeBtn = document.getElementById('test-analyze-btn');
+    const selectBtn = document.getElementById('test-select-btn');
+    analyzeBtn.disabled = true;
+    selectBtn.disabled = true;
+    analyzeBtn.textContent = 'Analyzing…';
+    document.getElementById('test-download-btn').hidden = true;
+
+    const prompt = document.getElementById('test-prompt').value;
+    const model = document.getElementById('test-model').value;
+
+    // Seed pending cards
+    document.getElementById('test-results').innerHTML = T.filings.map((f, i) => pendingCard(i, f)).join('');
+    setProgress(0, T.filings.length);
+
+    let done = 0;
+    for (let i = 0; i < T.filings.length; i++) {
+      const f = T.filings[i];
+      const card = document.getElementById(`result-${f.id}`);
+      if (card) card.querySelector('.badge').outerHTML = '<span class="badge badge-status">analyzing…</span>';
+      try {
+        const r = await fetch('/api/admin/testing/filings/analyze-one', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ batchId: T.batchId, filingId: f.id, prompt, model }),
+        });
+        const res = await r.json();
+        if (!r.ok) throw new Error(res.error || 'Analysis failed');
+        const merged = { company_name: f.company_name, ticker: f.ticker, exchange: f.exchange, filing_type: f.filing_type, ...res };
+        const newCard = document.createElement('div');
+        newCard.innerHTML = resultCard(i, merged);
+        card.replaceWith(newCard.firstElementChild);
+        T.anyDone = true;
+      } catch (err) {
+        const newCard = document.createElement('div');
+        newCard.innerHTML = resultCard(i, { filingId: f.id, company_name: f.company_name, ticker: f.ticker, exchange: f.exchange, filing_type: f.filing_type, ok: false, error: err.message });
+        if (card) card.replaceWith(newCard.firstElementChild);
+      }
+      done++;
+      setProgress(done, T.filings.length);
+    }
+
+    analyzeBtn.disabled = false;
+    selectBtn.disabled = false;
+    analyzeBtn.textContent = 'Re-analyze';
+    T.analyzing = false;
+    if (T.anyDone) document.getElementById('test-download-btn').hidden = false;
+    loadStats();
+    notify('Analysis complete');
+  }
+
+  function downloadResults() {
+    if (!T.batchId) return;
+    window.location.href = `/api/admin/testing/filings/download?batch=${encodeURIComponent(T.batchId)}`;
+  }
+
+  document.addEventListener('DOMContentLoaded', loadStats);
+</script>
+</body>
+</html>

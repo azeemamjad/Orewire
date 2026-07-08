@@ -8,6 +8,7 @@ const {
   finishUsageEvent,
   stripTrailingSlash,
 } = require('./ollama-store');
+const { isAiPaused, AiPausedError } = require('./ai-settings');
 
 async function readHttpBody(res) {
   try {
@@ -88,8 +89,13 @@ function buildRequest(provider, messages, model) {
  * @param {string} [opts.model] - override default model
  * @param {number} [opts.timeoutMs] - abort after N ms
  * @param {object} [opts.provider] - force a specific provider row (admin test)
+ * @param {boolean} [opts.bypassPause] - run even when AI is globally paused (manual admin actions)
  */
-async function chat({ feature, messages, model: modelOverride, timeoutMs, provider: providerOverride }) {
+async function chat({ feature, messages, model: modelOverride, timeoutMs, provider: providerOverride, bypassPause = false }) {
+  if (!bypassPause && await isAiPaused()) {
+    throw new AiPausedError();
+  }
+
   const provider = providerOverride || await getActiveProvider();
   if (!provider) {
     throw new Error('AI not configured — add a provider in Admin → AI');
@@ -171,11 +177,11 @@ async function chat({ feature, messages, model: modelOverride, timeoutMs, provid
 }
 
 /** Convenience: system + user messages */
-async function chatWithSystem({ feature, system, user, model, timeoutMs, provider }) {
+async function chatWithSystem({ feature, system, user, model, timeoutMs, provider, bypassPause }) {
   const messages = [];
   if (system) messages.push({ role: 'system', content: system });
   messages.push({ role: 'user', content: user });
-  return chat({ feature, messages, model, timeoutMs, provider });
+  return chat({ feature, messages, model, timeoutMs, provider, bypassPause });
 }
 
 module.exports = {

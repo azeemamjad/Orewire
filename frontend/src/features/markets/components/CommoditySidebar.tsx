@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDownRight, ArrowUpRight, DollarSign, Flame, TrendingUp } from "lucide-react";
 import { Link } from "react-router-dom";
+import { commoditySlugFromKey } from "@/lib/commodity-slugs";
 import {
   fetchCommodities,
   fetchCurrencies,
@@ -34,19 +35,11 @@ function fmtFxPrice(n: number | null): string {
   return n.toFixed(4);
 }
 
-const commoditySlugMap: Record<string, string> = {
-  gold: "GOLD", silver: "SLVR", copper: "COPR", uranium: "URAN", lithium: "LITH",
-  iron_ore: "IRON", nickel: "NICK", zinc: "ZINC", brent: "BRENT", wti: "WTI",
-  tin: "TIN", cobalt: "COBALT", lead: "LEAD", platinum: "PLAT", palladium: "PALL",
-  natgas: "NATGAS",
-};
-
 const COMMODITY_FALLBACK: CommoditySpot[] = [
   // Must show - core metals
   { key: "gold",      label: "Gold",            unit: "oz",  price: null, change_pct: null },
   { key: "silver",    label: "Silver",          unit: "oz",  price: null, change_pct: null },
   { key: "copper",    label: "Copper",          unit: "lb",  price: null, change_pct: null },
-  { key: "uranium",   label: "Uranium",         unit: "lb",  price: null, change_pct: null },
   { key: "lithium",   label: "Lithium",         unit: "t",   price: null, change_pct: null },
   { key: "iron_ore",  label: "Iron Ore",        unit: "t",   price: null, change_pct: null },
   { key: "nickel",    label: "Nickel",          unit: "t",   price: null, change_pct: null },
@@ -182,7 +175,7 @@ const CommoditySidebar = () => {
             <TableHeader />
             <tbody className="divide-y divide-border">
               {commodities.map((c) => {
-                const slug = commoditySlugMap[c.key] || c.key.toUpperCase();
+                const slug = commoditySlugFromKey(c.key);
                 return (
                   <tr key={c.key} className="hover:bg-background/60 transition-colors cursor-pointer group">
                     <td className="px-3 py-2">

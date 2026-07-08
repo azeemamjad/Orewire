@@ -504,6 +504,32 @@ async function migrate() {
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_ai_usage_provider_started ON ai_usage_events(provider_id, started_at DESC)`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_ai_usage_feature ON ai_usage_events(feature, started_at DESC)`);
 
+  // Filing testing (Admin → Testing): remembers which filings were used in a test
+  // run so the "select random filings" picker never re-tests the same document,
+  // and stores each result so a batch can be re-exported as a zip on download.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS filing_test_runs (
+      id                SERIAL PRIMARY KEY,
+      batch_id          TEXT,
+      filing_id         INTEGER NOT NULL REFERENCES filings(id) ON DELETE CASCADE,
+      company_name      TEXT,
+      exchange          TEXT,
+      filing_type       TEXT,
+      model             TEXT,
+      verdict           TEXT,
+      ok                BOOLEAN DEFAULT TRUE,
+      duration_ms       INTEGER,
+      prompt_tokens     INTEGER,
+      completion_tokens INTEGER,
+      analysis          JSONB,
+      raw_response      TEXT,
+      error_message     TEXT,
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_filing_test_runs_filing ON filing_test_runs(filing_id)`);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_filing_test_runs_batch ON filing_test_runs(batch_id)`);
+
   const contactCount = await db.query(`SELECT COUNT(*)::int AS n FROM contact_messages`);
   if ((contactCount.rows[0]?.n || 0) === 0) {
     await db.query(
