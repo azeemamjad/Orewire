@@ -229,6 +229,28 @@ async function migrate() {
   `);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_company_people_company ON company_people(company_id)`);
 
+  // One-time cleanup: strip honorifics (Mr/Ms/Mrs/Dr/…) from stored names so
+  // Management / Board rosters show the bare name. Idempotent (safe to re-run).
+  {
+    const HON = `^\\s*(mr|mrs|ms|mx|dr|prof|professor|sir|miss|madam|hon)\\.?\\s+`;
+    // Drop honorific rows that would collide with an existing clean duplicate.
+    await safeQuery(`
+      DELETE FROM company_people cp
+      USING company_people o
+      WHERE cp.name ~* '${HON}'
+        AND o.company_id = cp.company_id
+        AND o.kind = cp.kind
+        AND o.id <> cp.id
+        AND lower(o.name) = lower(regexp_replace(cp.name, '${HON}', '', 'i'))
+    `);
+    // Strip the honorific from the remaining rows.
+    await safeQuery(`
+      UPDATE company_people
+      SET name = regexp_replace(name, '${HON}', '', 'i'), updated_at = NOW()
+      WHERE name ~* '${HON}'
+    `);
+  }
+
   // Watchlist
   await db.query(`
     CREATE TABLE IF NOT EXISTS watchlist (

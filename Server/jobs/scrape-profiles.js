@@ -16,6 +16,7 @@ const { addLog } = require('../pipeline/state');
 const {
   isJobRunning, syncJob, startJob, endJob,
 } = require('../lib/job-tracker');
+const { stripHonorific } = require('../lib/companies/people-name');
 
 const JOB_ID = 'profiles';
 
@@ -95,6 +96,7 @@ async function savePeople(companyId, people) {
   await db.query(`DELETE FROM company_people WHERE company_id = $1`, [companyId]);
   let saved = 0;
   for (const p of people) {
+    const name = stripHonorific(p.name);
     try {
       await db.query(
         `INSERT INTO company_people (company_id, name, role_code, title, age, since_year, kind, source, updated_at)
@@ -106,11 +108,11 @@ async function savePeople(companyId, people) {
            since_year = EXCLUDED.since_year,
            source     = EXCLUDED.source,
            updated_at = NOW()`,
-        [companyId, p.name, p.role_code ?? null, p.title ?? null, p.age ?? null, p.since_year ?? null, p.kind, p.source || 'exchange']
+        [companyId, name, p.role_code ?? null, p.title ?? null, p.age ?? null, p.since_year ?? null, p.kind, p.source || 'exchange']
       );
       saved++;
     } catch (e) {
-      addLog('warn', `[Profiles]   ! failed to save "${p.name}": ${e.message}`);
+      addLog('warn', `[Profiles]   ! failed to save "${name}": ${e.message}`);
     }
   }
   return saved;

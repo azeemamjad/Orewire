@@ -30,6 +30,40 @@ function getDefaultPrompt() {
   return SYSTEM_PROMPT;
 }
 
+// ── Editable prompt (persisted in app_settings) ─────────────────────────────
+
+const PROMPT_KEY = 'testing_filing_prompt';
+
+/** The prompt the operator is currently working with: saved custom, else default. */
+async function getActivePrompt() {
+  try {
+    const r = await db.query(`SELECT value FROM app_settings WHERE key = $1`, [PROMPT_KEY]);
+    const v = r.rows[0]?.value;
+    if (v && typeof v.prompt === 'string' && v.prompt.trim()) return v.prompt;
+  } catch { /* fall through to default */ }
+  return SYSTEM_PROMPT;
+}
+
+async function isPromptCustom() {
+  try {
+    const r = await db.query(`SELECT 1 FROM app_settings WHERE key = $1`, [PROMPT_KEY]);
+    return r.rows.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function saveTestingPrompt(prompt) {
+  const text = String(prompt ?? '');
+  await db.query(
+    `INSERT INTO app_settings (key, value, updated_at)
+     VALUES ($1, $2::jsonb, NOW())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+    [PROMPT_KEY, JSON.stringify({ prompt: text })],
+  );
+  return text;
+}
+
 // ── Selection & tracking ────────────────────────────────────────────────────
 
 /** Random filings that have a PDF and have never been part of a test run. */
@@ -330,14 +364,35 @@ function buildResultsZip(results) {
       entries.push({ name: `${folder}/error.txt`, data: String(r.error || 'Analysis failed') });
       if (r.raw) entries.push({ name: `${folder}/raw_response.txt`, data: String(r.raw) });
     }
+
+    // Include the original filing PDF alongside its result for easy comparison.
+    if (r._pdf && r._pdf.buffer) {
+      entries.push({ name: `${folder}/${r._pdf.filename}`, data: r._pdf.buffer });
+    } else if (r._pdfError) {
+      entries.push({ name: `${folder}/pdf_unavailable.txt`, data: `Original PDF could not be attached: ${r._pdfError}` });
+    }
   });
   entries.push({ name: 'summary.csv', data: summaryCsv(results) });
   return buildZip(entries);
 }
 
-/** Build the export zip from stored DB rows (getBatchRuns output). */
-function buildZipFromRows(rows) {
-  return buildResultsZip(rows.map((row) => ({
+/** Read a filing's original PDF bytes (from S3 or local disk). */
+async function getFilingPdfBuffer(filing) {
+  const { pdfPath, cleanup } = await loadPdfToTempPath(filing);
+  try {
+    const buffer = fs.readFileSync(pdfPath);
+    const raw = filing.pdf_filename || path.basename(pdfPath) || `filing-${filing.id}.pdf`;
+    let filename = String(raw).replace(/[\\/]/g, '_').trim() || `filing-${filing.id}.pdf`;
+    if (!/\.pdf$/i.test(filename)) filename += '.pdf';
+    return { buffer, filename };
+  } finally {
+    cleanup();
+  }
+}
+
+/** Build the export zip from stored DB rows, attaching each original PDF. */
+async function buildBatchZip(rows) {
+  const results = rows.map((row) => ({
     filingId: row.filing_id,
     company_name: row.company_name,
     exchange: row.exchange,
@@ -351,12 +406,31 @@ function buildZipFromRows(rows) {
     analysis: row.analysis,
     error: row.error_message,
     raw: row.raw_response,
-  })));
+  }));
+
+  // Fetch each filing's original PDF (best-effort — a missing file leaves a note).
+  for (const r of results) {
+    try {
+      const filing = await getFilingById(r.filingId);
+      if (filing && filing.pdf_path) {
+        r._pdf = await getFilingPdfBuffer(filing);
+      } else {
+        r._pdfError = 'Filing has no stored PDF path';
+      }
+    } catch (err) {
+      r._pdfError = err?.message || String(err);
+    }
+  }
+
+  return buildResultsZip(results);
 }
 
 module.exports = {
   DEFAULT_SAMPLE_SIZE,
   getDefaultPrompt,
+  getActivePrompt,
+  isPromptCustom,
+  saveTestingPrompt,
   pickUntestedFilings,
   getFilingById,
   testedStats,
@@ -365,5 +439,6 @@ module.exports = {
   analyzeFilingForTest,
   analysisToCsv,
   buildResultsZip,
-  buildZipFromRows,
+  buildBatchZip,
+  getFilingPdfBuffer,
 };
