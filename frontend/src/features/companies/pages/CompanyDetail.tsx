@@ -570,6 +570,8 @@ const PeopleSection = ({ companyId }: { companyId: number }) => {
   const directors = data.people.filter((p) => p.kind === "director");
   const insiderSlug = (name: string) =>
     name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  const stripHonorific = (name: string) =>
+    name.replace(/^\s*(mr|mrs|ms|mx|dr|prof|professor|sir|miss|madam|hon)\.?\s+/i, "").trim() || name;
 
   const renderTable = (rows: typeof data.people) => (
     <div className="overflow-x-auto">
@@ -585,16 +587,19 @@ const PeopleSection = ({ companyId }: { companyId: number }) => {
           </tr>
         </thead>
         <tbody>
-          {rows.map((p) => (
-            <tr key={p.id} className="border-b border-border last:border-0 hover:bg-muted/30">
-              <td className="py-2 font-medium">
-                <Link className="hover:underline" to={`/insider/${insiderSlug(p.name)}`}>
-                  {p.name}
-                </Link>
-              </td>
-              <td className="py-2 text-muted-foreground">{p.title || "-"}</td>
-            </tr>
-          ))}
+          {rows.map((p) => {
+            const displayName = stripHonorific(p.name);
+            return (
+              <tr key={p.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+                <td className="py-2 font-medium">
+                  <Link className="hover:underline" to={`/insider/${insiderSlug(displayName)}`}>
+                    {displayName}
+                  </Link>
+                </td>
+                <td className="py-2 text-muted-foreground">{p.title || "-"}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

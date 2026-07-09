@@ -5,13 +5,16 @@ const { getActiveProvider } = require('../../lib/ai/ollama-store');
 const {
   DEFAULT_SAMPLE_SIZE,
   getDefaultPrompt,
+  getActivePrompt,
+  isPromptCustom,
+  saveTestingPrompt,
   pickUntestedFilings,
   getFilingById,
   testedStats,
   recordTestRun,
   getBatchRuns,
   analyzeFilingForTest,
-  buildZipFromRows,
+  buildBatchZip,
 } = require('../../lib/testing/filing-testing');
 
 const router = express.Router();
@@ -49,6 +52,34 @@ router.get('/filings/stats', async (_req, res) => {
   }
 });
 
+// GET /api/admin/testing/filings/prompt — the saved (or default) analysis prompt
+router.get('/filings/prompt', async (_req, res) => {
+  try {
+    res.json({
+      prompt: await getActivePrompt(),
+      defaultPrompt: getDefaultPrompt(),
+      isCustom: await isPromptCustom(),
+    });
+  } catch (err) {
+    console.error('Testing get prompt failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to load prompt' });
+  }
+});
+
+// PUT /api/admin/testing/filings/prompt — save/update the analysis prompt
+router.put('/filings/prompt', express.json({ limit: '512kb' }), async (req, res) => {
+  const prompt = req.body?.prompt;
+  if (typeof prompt !== 'string') return res.status(400).json({ error: 'prompt (string) is required' });
+  if (!prompt.trim()) return res.status(400).json({ error: 'Prompt cannot be empty' });
+  try {
+    await saveTestingPrompt(prompt);
+    res.json({ ok: true, isCustom: true });
+  } catch (err) {
+    console.error('Testing save prompt failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to save prompt' });
+  }
+});
+
 // POST /api/admin/testing/filings/select — pick N random untested filings + open a batch
 router.post('/filings/select', express.json(), async (req, res) => {
   try {
@@ -61,7 +92,9 @@ router.post('/filings/select', express.json(), async (req, res) => {
       requested: count,
       filings,
       stats,
+      prompt: await getActivePrompt(),
       defaultPrompt: getDefaultPrompt(),
+      isCustom: await isPromptCustom(),
       models,
       activeModel,
       providerType,
@@ -124,7 +157,7 @@ router.get('/filings/download', async (req, res) => {
     const rows = await getBatchRuns(batchId);
     if (!rows.length) return res.status(404).json({ error: 'No results found for this batch' });
 
-    const zip = buildZipFromRows(rows);
+    const zip = await buildBatchZip(rows);
     const stamp = new Date().toISOString().slice(0, 10);
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="filing-test-${stamp}.zip"`);

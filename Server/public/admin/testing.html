@@ -104,11 +104,15 @@
         <select id="test-model"></select>
       </div>
       <div class="config-field">
-        <label for="test-prompt" style="display:flex;align-items:center;justify-content:space-between;">
-          <span>System prompt</span>
-          <button class="btn btn-ghost btn-sm" type="button" onclick="resetPrompt()">Reset to default</button>
+        <label for="test-prompt" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+          <span>System prompt <span id="prompt-status" style="font-weight:400;color:var(--muted);font-size:12px;"></span></span>
+          <span style="display:inline-flex;gap:6px;">
+            <button class="btn btn-primary btn-sm" type="button" id="prompt-save-btn" onclick="savePrompt()">Save prompt</button>
+            <button class="btn btn-ghost btn-sm" type="button" onclick="resetPrompt()">Reset to default</button>
+          </span>
         </label>
         <textarea id="test-prompt" rows="12" spellcheck="false"></textarea>
+        <p class="test-hint" style="margin-top:6px;">Saved to the database and reused for every test run until you change it. “Reset to default” restores the built-in prompt (save to persist it).</p>
       </div>
     </div>
 
@@ -118,7 +122,7 @@
       <p class="test-hint">Runs each filing through the AI one at a time. This can take a few minutes for a full batch.</p>
       <div class="toolbar">
         <button class="btn btn-primary btn-sm" type="button" id="test-analyze-btn" onclick="analyzeAll()">Analyze filings</button>
-        <button class="btn btn-secondary btn-sm" type="button" id="test-download-btn" onclick="downloadResults()" hidden>Download results (ZIP)</button>
+        <button class="btn btn-secondary btn-sm" type="button" id="test-download-btn" onclick="downloadResults()" hidden>Download results + PDFs (ZIP)</button>
       </div>
       <div id="test-progress" hidden style="margin-top:12px;">
         <div class="test-progress-bar"><i id="test-progress-fill"></i></div>
@@ -211,6 +215,7 @@
       T.batchId = data.batchId;
       T.filings = data.filings || [];
       T.defaultPrompt = data.defaultPrompt || '';
+      T.savedPrompt = (data.prompt != null ? data.prompt : data.defaultPrompt) || '';
       T.anyDone = false;
 
       // Model select
@@ -218,8 +223,9 @@
       modelSel.innerHTML = (data.models || []).map((m) =>
         `<option value="${esc(m)}"${m === data.activeModel ? ' selected' : ''}>${esc(m)}</option>`).join('');
 
-      // Prompt
-      document.getElementById('test-prompt').value = T.defaultPrompt;
+      // Prompt — load the saved (or default) prompt
+      document.getElementById('test-prompt').value = T.savedPrompt;
+      setPromptStatus(data.isCustom ? 'custom saved prompt' : 'built-in default');
 
       renderSelected();
       document.getElementById('test-step2').hidden = false;
@@ -264,9 +270,38 @@
       </table></div>`;
   }
 
+  function setPromptStatus(text) {
+    const el = document.getElementById('prompt-status');
+    if (el) el.textContent = text ? `· ${text}` : '';
+  }
+
   function resetPrompt() {
     document.getElementById('test-prompt').value = T.defaultPrompt;
+    setPromptStatus('default (unsaved — click Save to persist)');
     notify('Prompt reset to default');
+  }
+
+  async function savePrompt() {
+    const prompt = document.getElementById('test-prompt').value;
+    if (!prompt.trim()) { notify('Prompt cannot be empty', 'err'); return; }
+    const btn = document.getElementById('prompt-save-btn');
+    btn.disabled = true;
+    try {
+      const r = await fetch('/api/admin/testing/filings/prompt', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || 'Failed to save');
+      T.savedPrompt = prompt;
+      setPromptStatus('custom saved prompt');
+      notify('Prompt saved');
+    } catch (err) {
+      notify(err.message || 'Failed to save', 'err');
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   function resultCard(index, res) {
