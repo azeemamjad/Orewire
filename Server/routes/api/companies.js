@@ -437,8 +437,10 @@ router.get('/:idOrSlug', async (req, res) => {
   const quoteTicker = defaultListing?.ticker || row.ticker;
   const tvSym = defaultListing?.tv_symbol || tvSymbolForCompany(row.exchange, row.ticker);
 
-  // Non-blocking symbol health check on page visit
-  checkCompanySymbolHealth(row).catch((err) => {
+  // Non-blocking symbol health check on page visit. Observe-only: a visit can
+  // clear a flag once the symbol is healthy again, but never raises one — that
+  // is the daily batch's job (gated by the consecutive-failure counter).
+  checkCompanySymbolHealth(row, { flagOnMissing: false }).catch((err) => {
     console.warn(`[symbol-health] Company ${row.id} check failed:`, err?.message || err);
   });
 

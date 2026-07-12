@@ -9,6 +9,7 @@ const { startNewsRssScheduler } = require('./news-rss');
 const { startVaTasksScheduler } = require('./va-tasks');
 const { startUsageLogPruneScheduler } = require('./usage-log-prune');
 const { startSymbolHealthScheduler } = require('../market/symbol-health-scheduler');
+const { startTickerRecheckScheduler } = require('./ticker-recheck');
 
 async function startPipelineSchedulers() {
   const cfg = await initPipelineConfig();
@@ -66,6 +67,12 @@ function startBackgroundSchedulers({ server, app } = {}) {
     startSymbolHealthScheduler();
   } catch (err) {
     console.error('[symbol-health] Scheduler failed to start:', err?.message || err);
+  }
+
+  try {
+    startTickerRecheckScheduler();
+  } catch (err) {
+    console.error('[ticker-recheck] Scheduler failed to start:', err?.message || err);
   }
 
   if (process.env.RELAY_ENABLED === 'true' && server && app) {

@@ -228,6 +228,9 @@ async function migrate() {
     )
   `);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_company_people_company ON company_people(company_id)`);
+  // Watermark for the website people-rebuild job (source='website').
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS people_scraped_at TIMESTAMPTZ`);
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS people_source TEXT`);
 
   // One-time cleanup: strip honorifics (Mr/Ms/Mrs/Dr/…) from stored names so
   // Management / Board rosters show the bare name. Idempotent (safe to re-run).
@@ -440,6 +443,11 @@ async function migrate() {
   `);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_va_tasks_status ON va_tasks(status, last_seen_at DESC)`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_va_tasks_module ON va_tasks(module, error_type)`);
+  // Structured suggestions (e.g. ticker_suggestion): carry the proposed value,
+  // its source, and the target company so a VA can approve & apply in one click.
+  await safeQuery(`ALTER TABLE va_tasks ADD COLUMN IF NOT EXISTS payload JSONB`);
+  await safeQuery(`ALTER TABLE va_tasks ADD COLUMN IF NOT EXISTS source_url TEXT`);
+  await safeQuery(`ALTER TABLE va_tasks ADD COLUMN IF NOT EXISTS company_id INTEGER`);
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS browser_proxies (
@@ -584,6 +592,35 @@ async function migrate() {
   await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS symbol_flagged_at TIMESTAMPTZ`);
   await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS symbol_flagged_reason TEXT`);
   await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS symbol_flagged_tv_symbol TEXT`);
+  // Stricter symbol-health flagging: consecutive-failure counter + last-checked stamp.
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS symbol_fail_count INTEGER DEFAULT 0`);
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS symbol_last_checked_at TIMESTAMPTZ`);
+
+  // One-time reset of pre-existing false-positive flags (the old logic flagged
+  // on a single transient failure). Guarded by an app_settings marker so it runs
+  // exactly once — the stricter daily batch then re-flags only genuinely dead
+  // symbols. Legitimate flags accumulated AFTER this reset are never wiped.
+  {
+    const marker = await db.query(
+      `SELECT 1 FROM app_settings WHERE key = 'symbol_flag_reset_v1'`,
+    );
+    if (!marker.rows.length) {
+      await safeQuery(`
+        UPDATE companies SET
+          symbol_flagged_at = NULL,
+          symbol_flagged_reason = NULL,
+          symbol_flagged_tv_symbol = NULL,
+          symbol_fail_count = 0
+        WHERE symbol_flagged_at IS NOT NULL
+      `);
+      await safeQuery(`
+        INSERT INTO app_settings (key, value, updated_at)
+        VALUES ('symbol_flag_reset_v1', '{"done": true}'::jsonb, NOW())
+        ON CONFLICT (key) DO NOTHING
+      `);
+      console.log('[DB] Reset stale symbol flags (one-time, symbol_flag_reset_v1)');
+    }
+  }
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS instrument_symbols (
