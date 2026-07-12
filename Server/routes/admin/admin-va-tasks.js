@@ -1,6 +1,8 @@
 const express = require('express');
 const db = require('../../db');
 const { syncVaTasks } = require('../../lib/va-tasks-sync');
+const { createSymbol } = require('../../lib/market/instrument-symbols-store');
+const { clearCompanySymbolFlag } = require('../../lib/market/symbol-health');
 
 const router = express.Router();
 
@@ -18,6 +20,9 @@ function formatTask(row) {
     status: row.status,
     assignedNote: row.assigned_note || null,
     autoManaged: Boolean(row.auto_managed),
+    payload: row.payload || null,
+    sourceUrl: row.source_url || null,
+    companyId: row.company_id || null,
     firstSeenAt: row.first_seen_at,
     lastSeenAt: row.last_seen_at,
     resolvedAt: row.resolved_at || null,
@@ -142,6 +147,68 @@ router.patch('/:id', express.json(), async (req, res) => {
   } catch (err) {
     console.error('VA task update failed:', err?.message || err);
     res.status(500).json({ error: 'Failed to update task' });
+  }
+});
+
+// POST /api/admin/va-tasks/:id/apply
+// Approve & apply a structured suggestion. Currently: ticker_suggestion — adopts
+// the proposed exchange:ticker as the company's default symbol and clears the flag.
+router.post('/:id/apply', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
+
+    const t = await db.query(`SELECT * FROM va_tasks WHERE id = $1`, [id]);
+    const task = t.rows[0];
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    if (task.error_type !== 'ticker_suggestion') {
+      return res.status(400).json({ error: 'This task type cannot be applied automatically' });
+    }
+
+    const payload = task.payload || {};
+    const companyId = task.company_id;
+    const exchange = payload.suggested_exchange ? String(payload.suggested_exchange).toUpperCase() : null;
+    const ticker = payload.suggested_ticker ? String(payload.suggested_ticker).toUpperCase() : null;
+    const tvSymbol = payload.suggested_tv_symbol
+      ? String(payload.suggested_tv_symbol).toUpperCase()
+      : (exchange && ticker ? `${exchange}:${ticker}` : null);
+
+    if (!companyId || !exchange || !ticker || !tvSymbol) {
+      return res.status(400).json({ error: 'Suggestion payload is incomplete — cannot apply' });
+    }
+
+    // Adopt the new listing as the default company symbol. createSymbol writes
+    // the exchange/ticker back onto the companies row.
+    const symbol = await createSymbol({
+      entity_type: 'company',
+      entity_id: companyId,
+      exchange,
+      ticker,
+      tv_symbol: tvSymbol,
+      label: 'Primary (VA approved)',
+      is_default: true,
+      sort_order: 0,
+    });
+    await clearCompanySymbolFlag(companyId);
+
+    const note = `[applied] adopted ${tvSymbol}`;
+    const r = await db.query(
+      `UPDATE va_tasks SET
+         status = 'resolved', resolved_at = NOW(), resolved_by = 'va',
+         assigned_note = CASE WHEN assigned_note IS NULL OR assigned_note = ''
+                              THEN $2 ELSE assigned_note || E'\\n' || $2 END
+       WHERE id = $1 RETURNING *`,
+      [id, note],
+    );
+
+    res.json({
+      ok: true,
+      applied: { companyId, exchange, ticker, tvSymbol, symbolId: symbol?.id },
+      task: formatTask(r.rows[0]),
+    });
+  } catch (err) {
+    console.error('VA task apply failed:', err?.message || err);
+    res.status(500).json({ error: err.message || 'Apply failed' });
   }
 });
 

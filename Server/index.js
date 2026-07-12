@@ -47,6 +47,7 @@ adminApiRouter.use('/ai', require('./routes/admin/admin-ai'));
 adminApiRouter.use('/instrument-symbols', require('./routes/admin/admin-instrument-symbols'));
 adminApiRouter.use('/storage', require('./routes/admin/admin-storage'));
 adminApiRouter.use('/filings', require('./routes/admin/admin-filings'));
+adminApiRouter.use('/companies', require('./routes/admin/admin-companies'));
 adminApiRouter.use('/testing', require('./routes/admin/admin-testing'));
 adminApiRouter.use('/contact-messages', require('./routes/api/contact').adminRouter);
 app.use('/api', apiRouter);

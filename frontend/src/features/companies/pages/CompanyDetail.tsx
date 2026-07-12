@@ -605,12 +605,15 @@ const PeopleSection = ({ companyId }: { companyId: number }) => {
     </div>
   );
 
+  const peopleSource = data.people[0]?.source;
   const sourceLabel =
-    data.people[0]?.source === "manual"
+    peopleSource === "manual"
       ? "Manually entered"
-      : data.people[0]?.source === "exchange"
-        ? "Official exchange listing data"
-        : "Latest management information circular";
+      : peopleSource === "website"
+        ? "Company website"
+        : peopleSource === "exchange"
+          ? "Official exchange listing data"
+          : "Latest management information circular";
 
   return (
     <>

@@ -168,6 +168,9 @@ async function loadCompanies() {
       const migrateBtn = flagged
         ? `<button class="btn btn-primary btn-sm" title="Move filings &amp; news to the renamed company" onclick="openMigrateModal(${c.id})">⇄ Migrate</button>`
         : '';
+      const suggestBtn = flagged
+        ? `<button class="btn btn-ghost btn-sm" title="Search the web for this company's new ticker and file a VA suggestion" onclick="findNewTicker(${c.id}, this)">🔎 Find ticker</button>`
+        : '';
       return `
       <tr>
         <td><strong>${esc(c.name)}</strong></td>
@@ -181,6 +184,7 @@ async function loadCompanies() {
         </td>
         <td style="display:flex;gap:6px;flex-wrap:wrap;">
           ${migrateBtn}
+          ${suggestBtn}
           <button class="btn btn-ghost btn-sm" onclick="openEditProfile(${c.id})">✎ Edit</button>
           ${c.ticker ? `<button class="btn btn-primary btn-sm" title="Pull profile from ${esc(c.exchange ?? 'exchange')} listing" onclick="quickProfile('${esc(c.ticker).replace(/'/g,"\\'")}')">▶ Profile</button>` : ''}
           <button class="btn btn-ghost btn-sm" title="Scrape SEDAR/ASX filings" onclick="quickScrape('${esc(c.name).replace(/'/g,"\\'")}','${esc(c.exchange??'')}','${esc(c.ticker??'')}')">📄 Filings</button>
@@ -191,6 +195,49 @@ async function loadCompanies() {
   } catch (e) {
     tbody.innerHTML = `<tr class="empty-row"><td colspan="8">Error: ${esc(e.message)}</td></tr>`;
   }
+}
+
+// Research a flagged company's current ticker on the web (DuckDuckGo + AI) and,
+// if confident, file a VA suggestion the team can approve from the VA Tasks page.
+async function findNewTicker(id, btn) {
+  const original = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '🔎 Searching…'; }
+  try {
+    const r = await fetch(`${API}/api/admin/companies/${id}/suggest-ticker`, { method: 'POST' })
+      .then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    if (r.created) {
+      const p = r.suggestion || {};
+      toast(`Suggestion filed: ${p.suggested_tv_symbol || 'new ticker'} — review it under VA Tasks`);
+    } else if (r.suggestion && r.suggestion.changed) {
+      const pct = Math.round((r.suggestion.confidence || 0) * 100);
+      toast(`Found ${r.suggestion.suggested_tv_symbol || 'a change'} but confidence too low (${pct}%)`, 'err');
+    } else {
+      toast(`No ticker change found (${r.reason || 'no change'})`, 'err');
+    }
+  } catch (err) {
+    toast(err.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = original; }
+  }
+}
+
+// Kick the website people-rebuild job (visits company sites, AI-extracts the
+// real Management/Board). Prompts for a batch size; blank = all never-checked.
+async function rebuildPeople() {
+  const ans = prompt('Rebuild people from company websites.\nHow many companies to process? (blank = all not-yet-checked)\nTip: for the full backfill, run the CLI: node jobs/scrape-people-web.js --all', '25');
+  if (ans === null) return;
+  const limit = ans.trim() === '' ? null : parseInt(ans, 10);
+  if (limit !== null && (!Number.isFinite(limit) || limit < 1)) { toast('Invalid number', 'err'); return; }
+  try {
+    const r = await fetch(`${API}/api/admin/companies/refresh-people`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(limit ? { limit } : {}),
+    }).then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    toast(`People rebuild started${limit ? ` (${limit} companies)` : ' (full backfill)'} — runs in the background`);
+  } catch (err) { toast(err.message, 'err'); }
 }
 
 // Pull the company profile (description / website / HQ / transfer agent / officers)
@@ -3065,23 +3112,51 @@ function selectVaTask(id) {
     ? `<div style="margin-top:12px;font-size:12px;"><strong>Sample:</strong><pre style="white-space:pre-wrap;margin:6px 0 0;padding:10px;background:var(--bg);border-radius:6px;font-size:11px;">${esc(t.sampleDetail)}</pre></div>`
     : '';
   const actionBtn = t.actionUrl
-    ? `<a class="btn btn-primary btn-sm" href="${esc(t.actionUrl)}">Open section →</a>`
+    ? `<a class="btn btn-ghost btn-sm" href="${esc(t.actionUrl)}">Open section →</a>`
     : '';
-  el.innerHTML = `
-    <div class="va-sev-${esc(t.severity)}" style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">${esc(t.severity)} · ${esc(t.module)} · ${esc(t.errorType)}</div>
-    <h3 style="margin:0 0 8px;font-size:18px;">${esc(t.title)}</h3>
-    <p style="margin:0;font-size:14px;line-height:1.55;color:var(--muted);">${esc(t.description || '')}</p>
-    ${sample}
-    <div style="margin-top:10px;font-size:12px;color:var(--muted);">
-      Occurrences: <strong>${t.occurrenceCount}</strong> · Status: <strong>${esc(t.status)}</strong>
-    </div>
-    <div class="va-task-actions">
+
+  // Structured ticker-change suggestion: show the proposed change + Approve/Reject.
+  let suggestionBlock = '';
+  let actions;
+  if (t.errorType === 'ticker_suggestion' && t.payload) {
+    const p = t.payload;
+    const proposed = p.suggested_tv_symbol || `${p.suggested_exchange || ''}:${p.suggested_ticker || ''}`;
+    const current = `${p.current_exchange || '?'}:${p.current_ticker || '?'}`;
+    const conf = p.confidence != null ? `${Math.round(p.confidence * 100)}%` : '—';
+    const src = t.sourceUrl || p.source_url;
+    suggestionBlock = `
+      <div style="margin-top:12px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;">Proposed change</div>
+        <div style="font-size:16px;font-weight:700;margin:4px 0;">${esc(current)} &nbsp;→&nbsp; ${esc(proposed)}</div>
+        ${p.new_company_name ? `<div style="font-size:13px;">New name: <strong>${esc(p.new_company_name)}</strong></div>` : ''}
+        <div style="font-size:12px;color:var(--muted);margin-top:4px;">Confidence: <strong>${esc(conf)}</strong>${p.verified ? ' · <span style="color:#15803d;font-weight:600;">price-verified</span>' : ''}</div>
+        ${src ? `<div style="margin-top:6px;"><a href="${esc(src)}" target="_blank" rel="noopener" style="font-size:12px;">View source ↗</a></div>` : ''}
+      </div>`;
+    actions = `
+      <button class="btn btn-primary btn-sm" type="button" onclick="applyVaTaskSuggestion(${t.id})">✓ Approve &amp; apply</button>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'dismissed')">Reject</button>
+      ${actionBtn}
+      <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'in_progress')">▶ In progress</button>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'open')">Reopen</button>`;
+  } else {
+    actions = `
       ${actionBtn}
       <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'in_progress')">▶ In progress</button>
       <button class="btn btn-primary btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'done')">✓ Done</button>
       <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'dismissed')">Dismiss</button>
-      <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'open')">Reopen</button>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'open')">Reopen</button>`;
+  }
+
+  el.innerHTML = `
+    <div class="va-sev-${esc(t.severity)}" style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">${esc(t.severity)} · ${esc(t.module)} · ${esc(t.errorType)}</div>
+    <h3 style="margin:0 0 8px;font-size:18px;">${esc(t.title)}</h3>
+    <p style="margin:0;font-size:14px;line-height:1.55;color:var(--muted);white-space:pre-wrap;">${esc(t.description || '')}</p>
+    ${suggestionBlock}
+    ${sample}
+    <div style="margin-top:10px;font-size:12px;color:var(--muted);">
+      Occurrences: <strong>${t.occurrenceCount}</strong> · Status: <strong>${esc(t.status)}</strong>
     </div>
+    <div class="va-task-actions">${actions}</div>
     <div style="margin-top:14px;">
       <label style="font-size:12px;color:var(--muted);">VA note</label>
       <textarea id="va-note-input" rows="2" style="width:100%;margin-top:4px;font:inherit;padding:8px;" placeholder="Optional note for the team">${esc(t.assignedNote || '')}</textarea>
@@ -3098,6 +3173,20 @@ async function updateVaTaskStatus(id, status) {
     }).then((x) => x.json());
     if (r.error) { toast(r.error, 'err'); return; }
     toast(status === 'done' ? 'Task marked done' : `Status: ${status}`);
+    await syncVaTasks();
+    loadVaTasks();
+    if (typeof refreshVaTasksBadge === 'function') refreshVaTasksBadge();
+  } catch (err) { toast(err.message, 'err'); }
+}
+
+async function applyVaTaskSuggestion(id) {
+  if (!confirm('Apply this ticker change? It will update the company’s symbol and clear the flag.')) return;
+  try {
+    const r = await fetch(`${API}/api/admin/va-tasks/${id}/apply`, { method: 'POST' })
+      .then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    const a = r.applied || {};
+    toast(`Applied ${a.tvSymbol || 'change'} — company updated`);
     await syncVaTasks();
     loadVaTasks();
     if (typeof refreshVaTasksBadge === 'function') refreshVaTasksBadge();

@@ -19,9 +19,16 @@ function startSymbolHealthScheduler() {
     async () => {
       try {
         const result = await runSymbolHealthBatch();
-        console.log(
-          `[symbol-health] Morning check: ${result.checked} companies, ${result.flagged} newly flagged, ${result.cleared} cleared`,
-        );
+        if (result.aborted) {
+          console.warn(
+            `[symbol-health] Morning check ABORTED after ${result.checked} companies — providers unreachable (outage suspected), nothing flagged`,
+          );
+        } else {
+          console.log(
+            `[symbol-health] Morning check: ${result.checked} companies, ${result.flagged} newly flagged, ${result.cleared} cleared`
+            + ` (${result.missing} missing, ${result.unknown} transient/skipped)`,
+          );
+        }
       } catch (err) {
         console.error('[symbol-health] Batch failed:', err?.message || err);
       }
