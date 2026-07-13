@@ -653,6 +653,30 @@ async function migrate() {
       WHERE entity_key IS NOT NULL
   `);
 
+  // One-time removal of the auto-seeded OTCQB alternates (OTC:<sedar_ticker>).
+  // They never resolved on TradingView, so they only cluttered the chart symbol
+  // picker. Never touches the default (Primary) symbol. Guarded so a VA/admin can
+  // still add an OTCQB symbol manually later without it being wiped on restart.
+  {
+    const marker = await db.query(
+      `SELECT 1 FROM app_settings WHERE key = 'otcqb_symbols_removed_v1'`,
+    );
+    if (!marker.rows.length) {
+      await safeQuery(`
+        DELETE FROM instrument_symbols
+         WHERE entity_type = 'company'
+           AND is_default = FALSE
+           AND (label = 'OTCQB' OR exchange = 'OTCQB')
+      `);
+      await safeQuery(`
+        INSERT INTO app_settings (key, value, updated_at)
+        VALUES ('otcqb_symbols_removed_v1', '{"done": true}'::jsonb, NOW())
+        ON CONFLICT (key) DO NOTHING
+      `);
+      console.log('[DB] Removed OTCQB company instrument symbols (one-time, otcqb_symbols_removed_v1)');
+    }
+  }
+
   try {
     const { seedInstrumentSymbolsIfEmpty } = require('../lib/market/instrument-symbols-store');
     await seedInstrumentSymbolsIfEmpty();

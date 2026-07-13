@@ -226,19 +226,8 @@ async function seedInstrumentSymbolsIfEmpty() {
       is_default: true,
       sort_order: 0,
     });
-    if (c.sedar_ticker) {
-      const otcTv = `OTC:${c.sedar_ticker}`;
-      await createSymbol({
-        entity_type: 'company',
-        entity_id: c.id,
-        exchange: 'OTCQB',
-        ticker: c.sedar_ticker,
-        tv_symbol: otcTv,
-        label: 'OTCQB',
-        is_default: false,
-        sort_order: 1,
-      }).catch(() => {});
-    }
+    // OTCQB alternates (OTC:<sedar_ticker>) were seeded here but don't resolve on
+    // TradingView, so they cluttered the chart symbol picker — no longer created.
   }
 
   async function seedMarketList(entityType, list) {
