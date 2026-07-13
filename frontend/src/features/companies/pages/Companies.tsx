@@ -66,28 +66,11 @@ function fmtVol(n: number | null | undefined): string {
   return `${Math.round(n)}`;
 }
 
-/** Split "CHILE, PERU" / "A; B" into separate display tags. */
-function expandTags(items: string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const item of items) {
-    for (const part of item.split(/[,;]/)) {
-      const tag = part.trim();
-      if (!tag) continue;
-      const key = tag.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(tag);
-    }
-  }
-  return out;
-}
-
-// Ticker · Exch · Company · Price · Chg$ · Chg% · Volume · Mkt Cap · Tags · Watch.
+// Ticker · Exch · Company · Price · Chg$ · Chg% · Volume · Mkt Cap · Watch.
 // Both class strings are written as full literals (no interpolation) so Tailwind's
 // JIT scanner picks up the arbitrary grid-template tracks.
-const GRID = "grid-cols-[64px_52px_minmax(120px,1.3fr)_80px_84px_72px_78px_90px_minmax(110px,1fr)_44px]";
-const COL = "grid grid-cols-1 md:grid-cols-[64px_52px_minmax(120px,1.3fr)_80px_84px_72px_78px_90px_minmax(110px,1fr)_44px]";
+const GRID = "grid-cols-[64px_52px_minmax(140px,1.6fr)_80px_84px_72px_78px_100px_44px]";
+const COL = "grid grid-cols-1 md:grid-cols-[64px_52px_minmax(140px,1.6fr)_80px_84px_72px_78px_100px_44px]";
 
 const Companies = () => {
   const [searchParams] = useSearchParams();
@@ -281,7 +264,6 @@ const Companies = () => {
               <div className="text-right">Chg %</div>
               <div className="text-right">Volume</div>
               <div className="text-right">Mkt Cap</div>
-              <div>Tags</div>
               <div className="text-center">Watch</div>
             </div>
 
@@ -412,10 +394,6 @@ const CompanyRow = ({ c, quote }: { c: Company; quote: LiveTvQuote | null }) => 
   const marketCap = computedMcap ?? c.market_cap ?? null;
   const up = change != null && change >= 0;
   const exLabel = c.exchange === "TSXV" ? "TSX-V" : c.exchange;
-  const commodityTags = expandTags(c.commodities ?? []).slice(0, 3);
-  const geoTags = expandTags(
-    [c.country, ...(c.continents ?? [])].filter(Boolean) as string[],
-  ).slice(0, 4);
   const moveColor =
     change == null ? "text-muted-foreground" : up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]";
 
@@ -460,26 +438,6 @@ const CompanyRow = ({ c, quote }: { c: Company; quote: LiveTvQuote | null }) => 
 
       {/* Mkt Cap */}
       <span className="md:text-right font-mono text-sm font-semibold">{fmtMcap(marketCap)}</span>
-
-      {/* Tags */}
-      <div className="flex flex-wrap gap-1">
-        {commodityTags.length === 0 && geoTags.length === 0 ? (
-          <span className="text-muted-foreground text-xs">-</span>
-        ) : (
-          <>
-            {commodityTags.map((cm) => (
-              <span key={`c-${cm}`} className="text-[10px] font-mono uppercase bg-muted px-1.5 py-0.5 rounded-sm">
-                {cm}
-              </span>
-            ))}
-            {geoTags.map((g) => (
-              <span key={`g-${g}`} className="text-[10px] font-mono uppercase border border-border text-muted-foreground px-1.5 py-0.5 rounded-sm">
-                {g}
-              </span>
-            ))}
-          </>
-        )}
-      </div>
 
       {/* Watch */}
       <div className="md:text-center">

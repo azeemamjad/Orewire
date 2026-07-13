@@ -179,12 +179,12 @@ const FilingsList = () => {
                               {item.time}
                             </span>
                           </div>
-                          <div className="text-[13px] font-semibold text-foreground/90 mb-1 leading-snug">{item.company}</div>
-                          <div className="inline-flex items-center gap-1 text-[13.5px] font-bold tracking-tight text-foreground leading-snug mb-1.5">
+                          <div className="text-[13px] font-semibold text-foreground/90 mb-1 leading-snug truncate">{item.company}</div>
+                          <div className="flex items-center gap-1 text-[13.5px] font-bold tracking-tight text-foreground leading-snug mb-1.5 min-w-0">
                             <FileText className="w-3.5 h-3.5 text-accent shrink-0" />
-                            {item.filingType}
+                            <span className="truncate">{item.filingType}</span>
                           </div>
-                          <p className="text-[12.5px] leading-relaxed text-foreground/70">
+                          <p className="text-[12.5px] leading-relaxed text-foreground/70 line-clamp-2 min-h-[2.6rem]">
                             <Sparkles className="inline w-3 h-3 text-accent mr-1 -mt-0.5" />
                             {item.summary}
                           </p>
