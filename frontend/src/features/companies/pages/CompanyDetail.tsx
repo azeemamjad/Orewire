@@ -493,7 +493,6 @@ const IdentifiersCard = ({
         <ul className="space-y-1">
           {(symbols?.length ? symbols : [
             { exchange, ticker, label: null, tv_symbol: '' },
-            ...(sedarTicker ? [{ exchange: 'OTCQB', ticker: sedarTicker, label: null, tv_symbol: '' }] : []),
           ]).map((s, i) => (
             <li key={`${s.exchange}-${s.ticker}-${i}`} className="flex justify-between font-mono text-xs">
               <span className="text-muted-foreground">{fmtExLabel(s.exchange)}</span>
