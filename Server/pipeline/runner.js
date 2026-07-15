@@ -217,8 +217,8 @@ async function saveOneFiling(pdfPath, companyDir, companyName, ticker, exchange)
 
     const insFilin = `
       INSERT INTO filings
-        (company_id, company_name, pdf_filename, pdf_path, commodity, exchange, analyzed, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        (company_id, company_name, pdf_filename, pdf_path, commodity, exchange, analyzed, status, filing_type)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       ON CONFLICT (pdf_path) DO NOTHING
       RETURNING id
     `;
@@ -232,6 +232,7 @@ async function saveOneFiling(pdfPath, companyDir, companyName, ticker, exchange)
       companyRow?.exchange || exchange,
       analyzed,
       status,
+      analysis.filing_type || null,
     ]);
 
     const fid = fiResult.rows[0]?.id;
@@ -294,8 +295,8 @@ async function syncAnalyses() {
 
     const insFilin = `
       INSERT INTO filings
-        (company_id, company_name, pdf_filename, pdf_path, commodity, exchange, analyzed, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        (company_id, company_name, pdf_filename, pdf_path, commodity, exchange, analyzed, status, filing_type)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       ON CONFLICT (pdf_path) DO NOTHING
       RETURNING id
     `;
@@ -341,6 +342,7 @@ async function syncAnalyses() {
             companyRow?.exchange || null,
             analyzed,
             status,
+            analysis.filing_type || null,
           ]);
           const fid = fiResult.rows[0]?.id;
           if (!fid) { stats.skipped++; continue; }

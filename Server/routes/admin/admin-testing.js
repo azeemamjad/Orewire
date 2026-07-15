@@ -2,13 +2,18 @@ const crypto = require('crypto');
 const express = require('express');
 
 const { getActiveProvider } = require('../../lib/ai/ollama-store');
+const { CANONICAL_TYPES } = require('../../lib/scraper/analyzer/classify');
+const {
+  getTypePrompt,
+  isCustom,
+  saveTypePrompt,
+  defaultPromptForType,
+  listCustomizedTypes,
+} = require('../../lib/scraper/analyzer/prompt-store');
 const {
   DEFAULT_SAMPLE_SIZE,
-  getDefaultPrompt,
-  getActivePrompt,
-  isPromptCustom,
-  saveTestingPrompt,
   pickUntestedFilings,
+  costSummary,
   getFilingById,
   testedStats,
   recordTestRun,
@@ -52,13 +57,26 @@ router.get('/filings/stats', async (_req, res) => {
   }
 });
 
-// GET /api/admin/testing/filings/prompt — the saved (or default) analysis prompt
-router.get('/filings/prompt', async (_req, res) => {
+// GET /api/admin/testing/filings/types — canonical types + which are customized
+router.get('/filings/types', async (_req, res) => {
   try {
+    res.json({ types: CANONICAL_TYPES, customized: await listCustomizedTypes() });
+  } catch (err) {
+    console.error('Testing types failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to load types' });
+  }
+});
+
+// GET /api/admin/testing/filings/prompt?type=<type> — saved (or default) prompt for a type
+router.get('/filings/prompt', async (req, res) => {
+  const type = req.query.type ? String(req.query.type) : null;
+  try {
+    const saved = await getTypePrompt(type);
     res.json({
-      prompt: await getActivePrompt(),
-      defaultPrompt: getDefaultPrompt(),
-      isCustom: await isPromptCustom(),
+      type,
+      prompt: saved || defaultPromptForType(type),
+      defaultPrompt: defaultPromptForType(type),
+      isCustom: await isCustom(type),
     });
   } catch (err) {
     console.error('Testing get prompt failed:', err?.message || err);
@@ -66,17 +84,29 @@ router.get('/filings/prompt', async (_req, res) => {
   }
 });
 
-// PUT /api/admin/testing/filings/prompt — save/update the analysis prompt
+// PUT /api/admin/testing/filings/prompt — save/update a per-type prompt (type optional = default)
 router.put('/filings/prompt', express.json({ limit: '512kb' }), async (req, res) => {
   const prompt = req.body?.prompt;
+  const type = req.body?.type ? String(req.body.type) : null;
   if (typeof prompt !== 'string') return res.status(400).json({ error: 'prompt (string) is required' });
   if (!prompt.trim()) return res.status(400).json({ error: 'Prompt cannot be empty' });
   try {
-    await saveTestingPrompt(prompt);
-    res.json({ ok: true, isCustom: true });
+    await saveTypePrompt(type, prompt);
+    res.json({ ok: true, isCustom: true, type });
   } catch (err) {
     console.error('Testing save prompt failed:', err?.message || err);
     res.status(500).json({ error: 'Failed to save prompt' });
+  }
+});
+
+// GET /api/admin/testing/cost-summary — AI token/cache accounting per feature
+router.get('/cost-summary', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days, 10) || 3;
+    res.json({ days, features: await costSummary({ days }) });
+  } catch (err) {
+    console.error('Testing cost summary failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to load cost summary' });
   }
 });
 
@@ -84,17 +114,20 @@ router.put('/filings/prompt', express.json({ limit: '512kb' }), async (req, res)
 router.post('/filings/select', express.json(), async (req, res) => {
   try {
     const count = parseInt(req.body?.count, 10) || DEFAULT_SAMPLE_SIZE;
-    const filings = await pickUntestedFilings(count);
+    const filingType = req.body?.filingType ? String(req.body.filingType) : null;
+    const filings = await pickUntestedFilings(count, filingType);
     const stats = await testedStats();
     const { models, activeModel, providerType } = await buildModelOptions();
+    const saved = await getTypePrompt(filingType);
     res.json({
       batchId: crypto.randomUUID(),
       requested: count,
+      filingType,
       filings,
       stats,
-      prompt: await getActivePrompt(),
-      defaultPrompt: getDefaultPrompt(),
-      isCustom: await isPromptCustom(),
+      prompt: saved || defaultPromptForType(filingType),
+      defaultPrompt: defaultPromptForType(filingType),
+      isCustom: await isCustom(filingType),
       models,
       activeModel,
       providerType,
