@@ -7,6 +7,12 @@ const XIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
+const socialLinks = [
+  { href: "https://x.com/Orewirenews", label: "X", Icon: XIcon },
+  { href: "https://www.linkedin.com/company/orewire/", label: "LinkedIn", Icon: Linkedin },
+  { href: "https://www.instagram.com/orewirenews", label: "Instagram", Icon: Instagram },
+];
+
 const productLinks = [
   { to: "/", label: "Home" },
   { to: "/companies", label: "Companies" },
@@ -43,15 +49,18 @@ const Footer = () => (
             TSX · TSX-V · CSE · ASX
           </div>
           <div className="flex items-center gap-3 mt-5">
-            <a href="#" aria-label="X" className="w-9 h-9 grid place-items-center border border-border hover:border-accent hover:text-accent transition-colors">
-              <XIcon className="w-3.5 h-3.5" />
-            </a>
-            <a href="#" aria-label="LinkedIn" className="w-9 h-9 grid place-items-center border border-border hover:border-accent hover:text-accent transition-colors">
-              <Linkedin className="w-3.5 h-3.5" />
-            </a>
-            <a href="#" aria-label="Instagram" className="w-9 h-9 grid place-items-center border border-border hover:border-accent hover:text-accent transition-colors">
-              <Instagram className="w-3.5 h-3.5" />
-            </a>
+            {socialLinks.map(({ href, label, Icon }) => (
+              <a
+                key={label}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={label}
+                className="w-9 h-9 grid place-items-center border border-border hover:border-accent hover:text-accent transition-colors"
+              >
+                <Icon className="w-3.5 h-3.5" />
+              </a>
+            ))}
           </div>
         </div>
 
@@ -80,7 +89,7 @@ const Footer = () => (
       </div>
     </div>
 
-    <div className="border-t border-border bg-[hsl(220_45%_10%)] text-[hsl(36_30%_94%)]">
+    <div className="border-t border-border bg-[hsl(219_45%_10%)] text-[hsl(36_30%_94%)]">
       <div className="max-w-[1200px] mx-auto px-6 lg:px-10 py-5 text-[11px] font-mono leading-relaxed">
         <span className="uppercase tracking-widest opacity-60 mr-2">Disclaimer</span>
         This platform provides information for educational purposes only. Nothing constitutes investment advice. Always do your own due diligence.

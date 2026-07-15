@@ -677,6 +677,41 @@ async function migrate() {
     }
   }
 
+  // Teck Resources trades as TECK.B on TSX / TradingView. A bare TECK ticker yields
+  // a null TV scanner body (blank chart) and used to be misclassified as "unknown"
+  // so it never VA-flagged. Correct the listing once.
+  {
+    const marker = await db.query(
+      `SELECT 1 FROM app_settings WHERE key = 'teck_b_symbol_fix_v1'`,
+    );
+    if (!marker.rows.length) {
+      await safeQuery(`
+        UPDATE instrument_symbols AS s
+           SET ticker = 'TECK.B',
+               tv_symbol = 'TSX:TECK.B'
+          FROM companies c
+         WHERE s.entity_type = 'company'
+           AND s.entity_id = c.id
+           AND c.exchange = 'TSX'
+           AND UPPER(c.ticker) = 'TECK'
+           AND (s.tv_symbol = 'TSX:TECK' OR UPPER(s.ticker) = 'TECK')
+      `);
+      await safeQuery(`
+        UPDATE companies
+           SET ticker = 'TECK.B',
+               updated_at = NOW()
+         WHERE exchange = 'TSX'
+           AND UPPER(ticker) = 'TECK'
+      `);
+      await safeQuery(`
+        INSERT INTO app_settings (key, value, updated_at)
+        VALUES ('teck_b_symbol_fix_v1', '{"done": true}'::jsonb, NOW())
+        ON CONFLICT (key) DO NOTHING
+      `);
+      console.log('[DB] Corrected Teck Resources ticker to TECK.B (one-time, teck_b_symbol_fix_v1)');
+    }
+  }
+
   try {
     const { seedInstrumentSymbolsIfEmpty } = require('../lib/market/instrument-symbols-store');
     await seedInstrumentSymbolsIfEmpty();

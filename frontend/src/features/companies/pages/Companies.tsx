@@ -69,8 +69,9 @@ function fmtVol(n: number | null | undefined): string {
 // Ticker · Exch · Company · Price · Chg$ · Chg% · Volume · Mkt Cap · Watch.
 // Both class strings are written as full literals (no interpolation) so Tailwind's
 // JIT scanner picks up the arbitrary grid-template tracks.
-const GRID = "grid-cols-[64px_52px_minmax(140px,1.6fr)_80px_84px_72px_78px_100px_44px]";
-const COL = "grid grid-cols-1 md:grid-cols-[64px_52px_minmax(140px,1.6fr)_80px_84px_72px_78px_100px_44px]";
+// Company takes leftover width (stays large). Metric cols after it are equal-width.
+const GRID = "grid-cols-[64px_52px_minmax(140px,1fr)_repeat(5,90px)_44px]";
+const COL = "grid grid-cols-1 md:grid-cols-[64px_52px_minmax(140px,1fr)_repeat(5,90px)_44px]";
 
 const Companies = () => {
   const [searchParams] = useSearchParams();
@@ -176,7 +177,7 @@ const Companies = () => {
             <div>
               <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Database</div>
               <h1 className="font-display text-4xl md:text-5xl font-bold leading-tight">Companies</h1>
-              <p className="text-muted-foreground mt-2 max-w-xl">
+              <p className="text-muted-foreground mt-2 max-w-4xl">
                 Search and filter junior miners across TSX-V, CSE, ASX and TSX. Ask in plain English or filter manually.
               </p>
             </div>
@@ -259,11 +260,11 @@ const Companies = () => {
               <div>Ticker</div>
               <div>Exch</div>
               <div>Company</div>
-              <div className="text-right">Price</div>
-              <div className="text-right">Chg $</div>
-              <div className="text-right">Chg %</div>
-              <div className="text-right">Volume</div>
-              <div className="text-right">Mkt Cap</div>
+              <div className="text-center">Price</div>
+              <div className="text-center">Chg $</div>
+              <div className="text-center">Chg %</div>
+              <div className="text-center">Volume</div>
+              <div className="text-center">Mkt Cap</div>
               <div className="text-center">Watch</div>
             </div>
 
@@ -331,7 +332,7 @@ const FilterGroup = ({ title, options, value, onToggle }: FilterGroupProps) => (
 );
 
 // Watchlist star - toggles without navigating the row's parent Link. Unauthed
-// clicks bounce to the register page (matches the rest of the site's gating).
+// clicks go to the watchlist page (sign-in prompt lives there).
 const WatchStar = ({ companyId }: { companyId: number }) => {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
@@ -353,7 +354,7 @@ const WatchStar = ({ companyId }: { companyId: number }) => {
     e.stopPropagation();
     if (busy) return;
     if (!isAuthenticated) {
-      navigate("/register");
+      navigate("/watchlist");
       return;
     }
     setBusy(true);
@@ -414,15 +415,15 @@ const CompanyRow = ({ c, quote }: { c: Company; quote: LiveTvQuote | null }) => 
       </div>
 
       {/* Price */}
-      <span className="md:text-right font-mono text-sm font-semibold">{fmtPrice(price)}</span>
+      <span className="md:text-center font-mono text-sm font-semibold">{fmtPrice(price)}</span>
 
       {/* Chg $ */}
-      <span className={`md:text-right font-mono text-sm font-semibold ${moveColor}`}>
+      <span className={`md:text-center font-mono text-sm font-semibold ${moveColor}`}>
         {fmtChgAbs(changeAbs, price)}
       </span>
 
       {/* Chg % */}
-      <span className={`md:text-right font-mono text-sm font-semibold inline-flex md:justify-end items-center gap-0.5 ${moveColor}`}>
+      <span className={`md:text-center font-mono text-sm font-semibold inline-flex md:justify-center items-center gap-0.5 ${moveColor}`}>
         {change == null ? (
           "-"
         ) : (
@@ -434,13 +435,13 @@ const CompanyRow = ({ c, quote }: { c: Company; quote: LiveTvQuote | null }) => 
       </span>
 
       {/* Volume */}
-      <span className="md:text-right font-mono text-sm text-muted-foreground">{fmtVol(volume)}</span>
+      <span className="md:text-center font-mono text-sm text-muted-foreground">{fmtVol(volume)}</span>
 
       {/* Mkt Cap */}
-      <span className="md:text-right font-mono text-sm font-semibold">{fmtMcap(marketCap)}</span>
+      <span className="md:text-center font-mono text-sm font-semibold">{fmtMcap(marketCap)}</span>
 
       {/* Watch */}
-      <div className="md:text-center">
+      <div className="md:text-center md:flex md:justify-center">
         <WatchStar companyId={c.id} />
       </div>
     </Link>

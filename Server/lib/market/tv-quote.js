@@ -56,7 +56,14 @@ async function fetchTvQuote(symbol) {
   });
   if (!res.ok) throw new Error(`TV ${res.status} for ${symbol}`);
   const data = await res.json();
-  if (data === null || typeof data !== 'object') throw new Error('TV returned null/empty');
+  // no_404=true: unknown symbols return HTTP 200 with a null body. Treat that as a
+  // definitive empty quote (not a throw) so symbol-health can classify as "missing"
+  // rather than a transient provider outage ("unknown"), which never flags.
+  if (data === null || typeof data !== 'object') {
+    const empty = { close: null };
+    cacheSet(symbol, empty);
+    return empty;
+  }
 
   cacheSet(symbol, data);
   return data;

@@ -130,14 +130,13 @@ const MarketNewsPage = () => {
                         href={item.link}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="group flex items-start gap-3 px-4 py-4 hover:bg-background/60 transition-colors"
+                        className="group flex items-center gap-3 px-4 py-3 h-[4.5rem] hover:bg-background/60 transition-colors"
                       >
                         <div className="flex-1 min-w-0">
                           <div className="text-[15px] font-semibold leading-snug text-foreground group-hover:text-accent transition-colors line-clamp-1">
                             {item.title}
                           </div>
-                          <p className="mt-1 text-sm text-foreground/75 line-clamp-2 min-h-[2.5rem]">{item.summary || " "}</p>
-                          <div className="mt-1.5 flex items-center gap-2 flex-wrap text-[11px] font-mono text-muted-foreground">
+                          <div className="mt-1 flex items-center gap-2 flex-wrap text-[11px] font-mono text-muted-foreground">
                             <span className="uppercase tracking-wider text-foreground/80">{item.source}</span>
                             <span>·</span>
                             <span>{newsDisplayTime(item)}</span>
@@ -149,7 +148,7 @@ const MarketNewsPage = () => {
                             )}
                           </div>
                         </div>
-                        <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-accent shrink-0 mt-1" />
+                        <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-accent shrink-0" />
                       </a>
                     </li>
                   ))}
