@@ -241,6 +241,24 @@
     } catch (e) { notify(e.message, 'err'); }
   }
 
+  function fillModels(models, activeModel, preserve) {
+    const sel = document.getElementById('test-model');
+    const cur = preserve ? sel.value : null;
+    const list = (models && models.length) ? models : [];
+    sel.innerHTML = list.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
+    if (cur && list.includes(cur)) sel.value = cur;
+    else if (activeModel && list.includes(activeModel)) sel.value = activeModel;
+  }
+
+  async function loadModels() {
+    try {
+      const r = await fetch('/api/admin/testing/filings/models');
+      if (!r.ok) return;
+      const d = await r.json();
+      fillModels(d.models, d.activeModel, true);
+    } catch { /* ignore */ }
+  }
+
   async function loadCost() {
     const body = document.getElementById('cost-body');
     try {
@@ -293,10 +311,8 @@
       T.savedPrompt = (data.prompt != null ? data.prompt : data.defaultPrompt) || '';
       T.anyDone = false;
 
-      // Model select
-      const modelSel = document.getElementById('test-model');
-      modelSel.innerHTML = (data.models || []).map((m) =>
-        `<option value="${esc(m)}"${m === data.activeModel ? ' selected' : ''}>${esc(m)}</option>`).join('');
+      // Model select — preserve the operator's current choice if still valid.
+      fillModels(data.models, data.activeModel, true);
 
       // Prompt — load the saved (or default) prompt
       document.getElementById('test-prompt').value = T.savedPrompt;
@@ -487,7 +503,7 @@
     window.location.href = `/api/admin/testing/filings/download?batch=${encodeURIComponent(T.batchId)}`;
   }
 
-  document.addEventListener('DOMContentLoaded', () => { loadStats(); loadTypes(); loadCost(); });
+  document.addEventListener('DOMContentLoaded', () => { loadStats(); loadTypes(); loadModels(); loadCost(); });
 </script>
 </body>
 </html>
