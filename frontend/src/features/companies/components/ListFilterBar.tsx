@@ -105,7 +105,7 @@ export function ListFilterHeader({
           <div>
             <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-2">{eyebrow}</div>
             <h1 className="font-display text-4xl md:text-5xl font-bold leading-tight">{title}</h1>
-            <p className="text-muted-foreground mt-2 max-w-xl">{description}</p>
+            <p className="text-muted-foreground mt-2 max-w-4xl">{description}</p>
           </div>
           <div className="text-sm text-muted-foreground font-mono">
             <span className="text-foreground font-bold">{resultCount}</span> of {totalCount}

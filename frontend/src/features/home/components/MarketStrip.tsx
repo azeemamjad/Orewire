@@ -57,7 +57,7 @@ const MarketStrip = () => {
   ];
 
   return (
-    <div className="bg-[hsl(220_45%_10%)] text-[hsl(36_30%_94%)] border-b border-[hsl(36_30%_94%/0.1)] overflow-hidden">
+    <div className="bg-[hsl(219_45%_10%)] text-[hsl(36_30%_94%)] border-b border-[hsl(36_30%_94%/0.1)] overflow-hidden">
       <div className="ticker flex items-center gap-8 py-2 whitespace-nowrap w-max">
         {[...display, ...display].map((t, i) => (
           <div key={i} className="flex items-center gap-2 font-mono text-[11px] shrink-0">

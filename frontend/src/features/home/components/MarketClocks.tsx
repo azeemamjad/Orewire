@@ -87,7 +87,7 @@ const MarketClocks = () => {
   }, []);
 
   return (
-    <div className="bg-[hsl(220_45%_10%)] text-[hsl(36_30%_94%)] border-b border-[hsl(36_30%_94%/0.1)]">
+    <div className="bg-[hsl(219_45%_10%)] text-[hsl(36_30%_94%)] border-b border-[hsl(36_30%_94%/0.1)]">
       <div className="max-w-[1440px] mx-auto px-4 lg:px-6 py-2 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-4 sm:gap-8 flex-wrap">
           {CLOCKS.map((spec) => {

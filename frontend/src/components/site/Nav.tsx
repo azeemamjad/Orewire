@@ -109,7 +109,7 @@ const Nav = ({ showSiteTopBar = true }: NavProps) => {
             <Link
               to="/watchlist"
               aria-label="Watchlist"
-              className={`group hidden sm:inline-flex items-center gap-2 h-9 px-3 text-[12px] font-mono uppercase tracking-[0.16em] font-bold text-[hsl(36_30%_94%)] bg-[hsl(220_45%_10%)] hover:bg-[hsl(220_45%_16%)] border border-[hsl(220_45%_10%)] transition-colors ${
+              className={`group hidden sm:inline-flex items-center gap-2 h-9 px-3 text-[12px] font-mono uppercase tracking-[0.16em] font-bold text-[hsl(36_30%_94%)] bg-[hsl(219_45%_10%)] hover:bg-[hsl(219_45%_16%)] border border-[hsl(219_45%_10%)] transition-colors ${
                 location.pathname.startsWith("/watchlist")
                   ? "ring-2 ring-accent ring-offset-1 ring-offset-background"
                   : ""
