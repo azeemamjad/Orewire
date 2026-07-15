@@ -34,49 +34,60 @@ function formatOllamaHttpError(res, body) {
   return formatHttpError(res, body, 'Ollama');
 }
 
+function fin(n) {
+  return Number.isFinite(n) ? n : null;
+}
+
 function extractTokenCounts(data, providerType) {
   if (providerType === 'deepseek' || data?.usage) {
-    const promptTokens = data?.usage?.prompt_tokens ?? null;
-    const completionTokens = data?.usage?.completion_tokens ?? null;
     return {
-      promptTokens: Number.isFinite(promptTokens) ? promptTokens : null,
-      completionTokens: Number.isFinite(completionTokens) ? completionTokens : null,
+      promptTokens: fin(data?.usage?.prompt_tokens),
+      completionTokens: fin(data?.usage?.completion_tokens),
+      // DeepSeek context-caching accounting (present on deepseek-chat/reasoner).
+      cacheHitTokens: fin(data?.usage?.prompt_cache_hit_tokens),
+      cacheMissTokens: fin(data?.usage?.prompt_cache_miss_tokens),
     };
   }
-  const promptTokens = data?.prompt_eval_count ?? data?.prompt_tokens ?? null;
-  const completionTokens = data?.eval_count ?? data?.completion_tokens ?? null;
   return {
-    promptTokens: Number.isFinite(promptTokens) ? promptTokens : null,
-    completionTokens: Number.isFinite(completionTokens) ? completionTokens : null,
+    promptTokens: fin(data?.prompt_eval_count ?? data?.prompt_tokens),
+    completionTokens: fin(data?.eval_count ?? data?.completion_tokens),
+    cacheHitTokens: null,
+    cacheMissTokens: null,
   };
 }
 
-function buildRequest(provider, messages, model) {
+function buildRequest(provider, messages, model, { jsonMode = false } = {}) {
   const type = provider.provider || 'ollama';
   const base = stripTrailingSlash(provider.host || (type === 'deepseek' ? 'https://api.deepseek.com' : 'https://ollama.com'));
   const headers = { 'Content-Type': 'application/json' };
   if (provider.api_key) headers.Authorization = `Bearer ${provider.api_key}`;
 
   if (type === 'deepseek') {
+    const body = {
+      model,
+      stream: false,
+      messages,
+      // Faster JSON analysis — disable thinking mode on V4 Flash.
+      thinking: { type: 'disabled' },
+    };
+    // JSON mode: guarantees valid JSON (no code fences / prose) — requires the
+    // word "json" somewhere in the prompt, which our analysis prompts satisfy.
+    if (jsonMode) body.response_format = { type: 'json_object' };
     return {
       url: `${base}/chat/completions`,
       headers,
-      body: {
-        model,
-        stream: false,
-        messages,
-        // Faster JSON analysis — disable thinking mode on V4 Flash.
-        thinking: { type: 'disabled' },
-      },
+      body,
       parseContent: (data) => (data.choices?.[0]?.message?.content || '').trim(),
       parseModel: (data) => data.model || model,
     };
   }
 
+  const body = { model, stream: false, messages };
+  if (jsonMode) body.format = 'json'; // Ollama JSON mode
   return {
     url: `${base}/api/chat`,
     headers,
-    body: { model, stream: false, messages },
+    body,
     parseContent: (data) => (data.message?.content || '').trim(),
     parseModel: (data) => data.model || model,
   };
@@ -90,8 +101,9 @@ function buildRequest(provider, messages, model) {
  * @param {number} [opts.timeoutMs] - abort after N ms
  * @param {object} [opts.provider] - force a specific provider row (admin test)
  * @param {boolean} [opts.bypassPause] - run even when AI is globally paused (manual admin actions)
+ * @param {boolean} [opts.jsonMode] - request strict JSON output (response_format)
  */
-async function chat({ feature, messages, model: modelOverride, timeoutMs, provider: providerOverride, bypassPause = false }) {
+async function chat({ feature, messages, model: modelOverride, timeoutMs, provider: providerOverride, bypassPause = false, jsonMode = false }) {
   if (!bypassPause && await isAiPaused()) {
     throw new AiPausedError();
   }
@@ -109,7 +121,7 @@ async function chat({ feature, messages, model: modelOverride, timeoutMs, provid
     || provider.default_model
     || (type === 'deepseek' ? 'deepseek-v4-flash' : 'kimi');
 
-  const req = buildRequest(provider, messages, model);
+  const req = buildRequest(provider, messages, model, { jsonMode });
 
   const eventId = provider.id
     ? await startUsageEvent(provider.id, feature, model)
@@ -149,6 +161,8 @@ async function chat({ feature, messages, model: modelOverride, timeoutMs, provid
       durationMs,
       promptTokens: tokens.promptTokens,
       completionTokens: tokens.completionTokens,
+      cacheHitTokens: tokens.cacheHitTokens,
+      cacheMissTokens: tokens.cacheMissTokens,
     });
 
     return {
@@ -157,6 +171,8 @@ async function chat({ feature, messages, model: modelOverride, timeoutMs, provid
       provider: type,
       promptTokens: tokens.promptTokens,
       completionTokens: tokens.completionTokens,
+      cacheHitTokens: tokens.cacheHitTokens,
+      cacheMissTokens: tokens.cacheMissTokens,
       durationMs,
     };
   } catch (err) {
@@ -177,11 +193,11 @@ async function chat({ feature, messages, model: modelOverride, timeoutMs, provid
 }
 
 /** Convenience: system + user messages */
-async function chatWithSystem({ feature, system, user, model, timeoutMs, provider, bypassPause }) {
+async function chatWithSystem({ feature, system, user, model, timeoutMs, provider, bypassPause, jsonMode }) {
   const messages = [];
   if (system) messages.push({ role: 'system', content: system });
   messages.push({ role: 'user', content: user });
-  return chat({ feature, messages, model, timeoutMs, provider, bypassPause });
+  return chat({ feature, messages, model, timeoutMs, provider, bypassPause, jsonMode });
 }
 
 module.exports = {

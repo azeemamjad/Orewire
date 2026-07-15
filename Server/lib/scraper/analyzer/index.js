@@ -3,8 +3,10 @@ const fs       = require('fs');
 const path     = require('path');
 const pdfParse = require('pdf-parse');
 
-const { SYSTEM_PROMPT, buildUserPrompt } = require('./prompt');
+const { SYSTEM_PROMPT, buildSystemPrompt, buildUserPrompt } = require('./prompt');
 const { chatWithSystem } = require('../../ai/client');
+const { classifyFilingType, modelForFilingType } = require('./classify');
+const { effectiveSystemPrompt } = require('./prompt-store');
 const { ocrPdfText } = require('./ocr');
 const { validateAnalysis } = require('./validate');
 const {
@@ -62,14 +64,38 @@ async function analyzePdf(pdfPath, meta = {}, { model } = {}) {
     );
   }
 
-  const userPrompt = buildUserPrompt(meta, text);
+  // Decide the filing type BEFORE analysis so we can feed a focused per-type
+  // prompt (only that type's rules). Heuristic-first, cheap-AI fallback. Falls
+  // back to the full prompt on any failure or an unmapped type — no regression.
+  let filingType = meta.filing_type;
+  if (!filingType || filingType === 'Unknown') {
+    try {
+      const cls = await classifyFilingType({
+        text,
+        meta: {
+          pdf_filename: meta.pdf_filename || path.basename(pdfPath),
+          headline: meta.headline,
+          company_name: meta.company_name,
+          exchange: meta.exchange,
+        },
+      });
+      filingType = cls.filing_type;
+    } catch { /* keep undefined → full prompt */ }
+  }
 
-  console.log(`  [AI] Sending to AI${model ? ` (${model})` : ''}…`);
+  const analysisMeta = { ...meta, filing_type: filingType || meta.filing_type || 'Unknown' };
+  const userPrompt = buildUserPrompt(analysisMeta, text);
+  // Prefer an operator-tuned per-type prompt (Testing tab), else the code split.
+  const system = await effectiveSystemPrompt(filingType);
+  const useModel = model || modelForFilingType(filingType);
+
+  console.log(`  [AI] Analyzing as "${filingType || 'Unknown'}"${useModel ? ` (${useModel})` : ''}…`);
   const { content: raw } = await chatWithSystem({
     feature: 'filing_analysis',
-    system: SYSTEM_PROMPT,
+    system,
     user: userPrompt,
-    model,
+    model: useModel,
+    jsonMode: true,
   });
 
   let analysis;
@@ -80,7 +106,10 @@ async function analyzePdf(pdfPath, meta = {}, { model } = {}) {
     return extractionFailedAnalysis('Model returned invalid JSON');
   }
 
-  return validateAnalysis(analysis, { textLength });
+  const validated = validateAnalysis(analysis, { textLength });
+  // Attach the pre-classified type so the pipeline can persist filings.filing_type.
+  if (filingType && !validated.filing_type) validated.filing_type = filingType;
+  return validated;
 }
 
 async function analyzeDirectory(dirPath, meta = {}) {

@@ -67,20 +67,61 @@ async function saveTestingPrompt(prompt) {
 // ── Selection & tracking ────────────────────────────────────────────────────
 
 /** Random filings that have a PDF and have never been part of a test run. */
-async function pickUntestedFilings(limit = DEFAULT_SAMPLE_SIZE) {
+async function pickUntestedFilings(limit = DEFAULT_SAMPLE_SIZE, filingType = null) {
   const n = Math.max(1, Math.min(100, parseInt(limit, 10) || DEFAULT_SAMPLE_SIZE));
+  const params = [n];
+  let typeClause = '';
+  if (filingType) {
+    params.push(filingType);
+    typeClause = ` AND f.filing_type = $${params.length}`;
+  }
   const r = await db.query(
     `SELECT f.id, f.company_name, f.exchange, f.filing_type, f.commodity,
             f.pdf_filename, f.pdf_path, c.ticker
        FROM filings f
        LEFT JOIN companies c ON c.id = f.company_id
       WHERE f.pdf_path IS NOT NULL
-        AND f.id NOT IN (SELECT DISTINCT filing_id FROM filing_test_runs)
+        AND f.id NOT IN (SELECT DISTINCT filing_id FROM filing_test_runs)${typeClause}
       ORDER BY random()
       LIMIT $1`,
-    [n],
+    params,
   );
   return r.rows;
+}
+
+/** Aggregate AI cost/cache accounting per feature over the retention window. */
+async function costSummary({ days = 3 } = {}) {
+  const r = await db.query(
+    `SELECT feature,
+            COUNT(*)::int                              AS calls,
+            COALESCE(SUM(prompt_tokens), 0)::bigint    AS prompt_tokens,
+            COALESCE(SUM(completion_tokens), 0)::bigint AS completion_tokens,
+            COALESCE(SUM(cache_hit_tokens), 0)::bigint  AS cache_hit_tokens,
+            COALESCE(SUM(cache_miss_tokens), 0)::bigint AS cache_miss_tokens,
+            COALESCE(AVG(prompt_tokens), 0)::numeric    AS avg_prompt,
+            COALESCE(AVG(completion_tokens), 0)::numeric AS avg_completion
+       FROM ai_usage_events
+      WHERE status = 'success'
+        AND started_at >= NOW() - make_interval(days => $1::int)
+      GROUP BY feature
+      ORDER BY calls DESC`,
+    [Math.max(1, parseInt(days, 10) || 3)],
+  );
+  return r.rows.map((row) => {
+    const hit = Number(row.cache_hit_tokens) || 0;
+    const miss = Number(row.cache_miss_tokens) || 0;
+    return {
+      feature: row.feature,
+      calls: row.calls,
+      promptTokens: Number(row.prompt_tokens) || 0,
+      completionTokens: Number(row.completion_tokens) || 0,
+      cacheHitTokens: hit,
+      cacheMissTokens: miss,
+      avgPrompt: Math.round(Number(row.avg_prompt) || 0),
+      avgCompletion: Math.round(Number(row.avg_completion) || 0),
+      cacheHitRate: (hit + miss) ? +(hit / (hit + miss)).toFixed(3) : null,
+    };
+  });
 }
 
 async function getFilingById(id) {
@@ -432,6 +473,7 @@ module.exports = {
   isPromptCustom,
   saveTestingPrompt,
   pickUntestedFilings,
+  costSummary,
   getFilingById,
   testedStats,
   recordTestRun,

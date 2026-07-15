@@ -248,6 +248,8 @@ async function finishUsageEvent(eventId, status, {
   durationMs = null,
   promptTokens = null,
   completionTokens = null,
+  cacheHitTokens = null,
+  cacheMissTokens = null,
 } = {}) {
   if (!eventId) return;
 
@@ -262,10 +264,12 @@ async function finishUsageEvent(eventId, status, {
        prompt_tokens = $4,
        completion_tokens = $5,
        total_tokens = $6,
-       error_message = $7
+       error_message = $7,
+       cache_hit_tokens = $8,
+       cache_miss_tokens = $9
      WHERE id = $1
      RETURNING provider_id, prompt_tokens, completion_tokens`,
-    [eventId, status, durationMs, promptTokens, completionTokens, totalTokens, errorMessage],
+    [eventId, status, durationMs, promptTokens, completionTokens, totalTokens, errorMessage, cacheHitTokens, cacheMissTokens],
   );
 
   const row = r.rows[0];

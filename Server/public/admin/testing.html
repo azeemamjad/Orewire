@@ -81,17 +81,37 @@
       <div class="ai-stat"><div class="label">Test runs logged</div><div class="value" id="stat-runs">–</div></div>
     </div>
 
+    <!-- AI cost & cache -->
+    <div class="test-step" style="margin-bottom:16px;">
+      <div class="test-step-head" style="justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:10px;"><span class="test-step-n">$</span><h2>AI cost &amp; cache</h2></div>
+        <button class="btn btn-ghost btn-sm" type="button" onclick="loadCost()">↻ Refresh</button>
+      </div>
+      <p class="test-hint">Token usage per AI feature over the retention window. A high cache-hit rate on <code>filing_analysis</code> means the per-type prompt prefixes are being reused (cheaper input).</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Feature</th><th style="text-align:right">Calls</th><th style="text-align:right">Avg in</th><th style="text-align:right">Avg out</th><th style="text-align:right">Cache hit</th><th style="text-align:right">Cache-hit rate</th></tr></thead>
+        <tbody id="cost-body"><tr class="empty-row"><td colspan="6">Loading…</td></tr></tbody>
+      </table></div>
+    </div>
+
     <!-- Step 1 -->
     <div class="test-step">
       <div class="test-step-head"><span class="test-step-n">1</span><h2>Select filings</h2></div>
       <p class="test-hint">Pick a random sample of filings that have never been tested before. Previously tested filings are skipped automatically.</p>
       <div class="toolbar">
         <label style="font-size:13px;display:inline-flex;align-items:center;gap:6px;">
+          Filing type
+          <select id="test-type" onchange="onTypeChange()" style="padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);max-width:260px;">
+            <option value="">Default (all types)</option>
+          </select>
+        </label>
+        <label style="font-size:13px;display:inline-flex;align-items:center;gap:6px;">
           How many
           <input id="test-count" type="number" value="19" min="1" max="100" style="width:74px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);" />
         </label>
         <button class="btn btn-primary btn-sm" type="button" id="test-select-btn" onclick="selectFilings()">Select random filings</button>
       </div>
+      <p class="test-hint" style="margin-top:8px;">Pick a filing type to edit and test its dedicated prompt (production uses your saved per-type prompt; “Default (all types)” is the fallback). Selecting a type also filters the sample to that type.</p>
       <div id="test-selected" style="margin-top:12px;"></div>
     </div>
 
@@ -158,6 +178,8 @@
     batchId: null,
     filings: [],
     defaultPrompt: '',
+    savedPrompt: '',
+    filingType: '',
     analyzing: false,
     anyDone: false,
   };
@@ -188,6 +210,59 @@
     } catch { /* ignore */ }
   }
 
+  async function loadTypes() {
+    try {
+      const r = await fetch('/api/admin/testing/filings/types');
+      if (!r.ok) return;
+      const d = await r.json();
+      const custom = new Set(d.customized || []);
+      const sel = document.getElementById('test-type');
+      const opts = ['<option value="">Default (all types)</option>'];
+      for (const t of (d.types || [])) {
+        opts.push(`<option value="${esc(t)}">${esc(t)}${custom.has(t) ? ' ●' : ''}</option>`);
+      }
+      sel.innerHTML = opts.join('');
+    } catch { /* ignore */ }
+  }
+
+  async function onTypeChange() {
+    const type = document.getElementById('test-type').value;
+    T.filingType = type;
+    try {
+      const qs = type ? `?type=${encodeURIComponent(type)}` : '';
+      const r = await fetch('/api/admin/testing/filings/prompt' + qs);
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Failed to load prompt');
+      T.defaultPrompt = d.defaultPrompt || '';
+      T.savedPrompt = (d.prompt != null ? d.prompt : d.defaultPrompt) || '';
+      document.getElementById('test-prompt').value = T.savedPrompt;
+      setPromptStatus(d.isCustom ? `custom saved prompt (${type || 'default'})` : `built-in default${type ? ' for ' + type : ''}`);
+      document.getElementById('test-step2').hidden = false;
+    } catch (e) { notify(e.message, 'err'); }
+  }
+
+  async function loadCost() {
+    const body = document.getElementById('cost-body');
+    try {
+      const r = await fetch('/api/admin/testing/cost-summary');
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Failed');
+      const rows = d.features || [];
+      if (!rows.length) { body.innerHTML = '<tr class="empty-row"><td colspan="6">No AI usage recorded yet.</td></tr>'; return; }
+      body.innerHTML = rows.map((f) => {
+        const rate = f.cacheHitRate != null ? Math.round(f.cacheHitRate * 100) + '%' : '—';
+        return `<tr><td><code>${esc(f.feature)}</code></td>`
+          + `<td style="text-align:right">${f.calls}</td>`
+          + `<td style="text-align:right">${(f.avgPrompt || 0).toLocaleString()}</td>`
+          + `<td style="text-align:right">${(f.avgCompletion || 0).toLocaleString()}</td>`
+          + `<td style="text-align:right">${(f.cacheHitTokens || 0).toLocaleString()}</td>`
+          + `<td style="text-align:right">${rate}</td></tr>`;
+      }).join('');
+    } catch (e) {
+      body.innerHTML = `<tr class="empty-row"><td colspan="6">${esc(e.message)}</td></tr>`;
+    }
+  }
+
   function verdictBadge(verdict, ok, error) {
     if (ok === false) return `<span class="badge badge-error">error</span>`;
     const v = String(verdict || '').toLowerCase();
@@ -207,7 +282,7 @@
       const r = await fetch('/api/admin/testing/filings/select', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ count }),
+        body: JSON.stringify({ count, filingType: T.filingType || null }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || 'Failed to select');
@@ -290,13 +365,14 @@
       const r = await fetch('/api/admin/testing/filings/prompt', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, type: T.filingType || null }),
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data.error || 'Failed to save');
       T.savedPrompt = prompt;
-      setPromptStatus('custom saved prompt');
-      notify('Prompt saved');
+      setPromptStatus(`custom saved prompt (${T.filingType || 'default'})`);
+      notify(`Prompt saved for ${T.filingType || 'default'} — production will use it`);
+      loadTypes();
     } catch (err) {
       notify(err.message || 'Failed to save', 'err');
     } finally {
@@ -411,7 +487,7 @@
     window.location.href = `/api/admin/testing/filings/download?batch=${encodeURIComponent(T.batchId)}`;
   }
 
-  document.addEventListener('DOMContentLoaded', loadStats);
+  document.addEventListener('DOMContentLoaded', () => { loadStats(); loadTypes(); loadCost(); });
 </script>
 </body>
 </html>

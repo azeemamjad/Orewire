@@ -533,6 +533,9 @@ async function migrate() {
   `);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_ai_usage_provider_started ON ai_usage_events(provider_id, started_at DESC)`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_ai_usage_feature ON ai_usage_events(feature, started_at DESC)`);
+  // DeepSeek context-caching accounting — lets us measure prompt-cache savings.
+  await safeQuery(`ALTER TABLE ai_usage_events ADD COLUMN IF NOT EXISTS cache_hit_tokens INTEGER`);
+  await safeQuery(`ALTER TABLE ai_usage_events ADD COLUMN IF NOT EXISTS cache_miss_tokens INTEGER`);
 
   // Filing testing (Admin → Testing): remembers which filings were used in a test
   // run so the "select random filings" picker never re-tests the same document,

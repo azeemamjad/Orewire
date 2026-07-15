@@ -423,6 +423,79 @@ OUTPUT SCHEMA
   }
 }`;
 
+// ── Per-type system prompt composition ──────────────────────────────────────
+// Re-slice SYSTEM_PROMPT (never re-authored — zero drift) into: the intro up to
+// and including the "FILING TYPE RULES" header, the individual per-type rule
+// blocks, and the shared trailer (verdicts, grade commentary, grounding, rules,
+// output schema). buildSystemPrompt() then emits [intro + ONE type block +
+// trailer] so the model only sees the rules for the classified type. Unknown /
+// unmapped types fall back to the full prompt (today's behaviour — no regression).
+
+function headerRange(title) {
+  const re = new RegExp(`═{5,}\\n${title}\\n═{5,}`);
+  const m = re.exec(SYSTEM_PROMPT);
+  return m ? { start: m.index, end: m.index + m[0].length } : null;
+}
+
+const _rulesHdr = headerRange('FILING TYPE RULES');
+const _verdictsHdr = headerRange('SIGNIFICANCE VERDICTS');
+
+let PROMPT_INTRO = SYSTEM_PROMPT;
+let PROMPT_TRAILER = '';
+let TYPE_BLOCKS = [];
+if (_rulesHdr && _verdictsHdr && _verdictsHdr.start > _rulesHdr.end) {
+  PROMPT_INTRO = SYSTEM_PROMPT.slice(0, _rulesHdr.end);
+  PROMPT_TRAILER = SYSTEM_PROMPT.slice(_verdictsHdr.start);
+  const blocksText = SYSTEM_PROMPT.slice(_rulesHdr.end, _verdictsHdr.start);
+  TYPE_BLOCKS = blocksText
+    .split(/\n(?=When filing_type )/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+// Signature → which parsed block belongs to which module key.
+const BLOCK_SIGNATURES = [
+  { key: 'financials', re: /cash_position/ },
+  { key: 'drill', re: /true width|ETW|intercept/i },
+  { key: 'technical', re: /Measured, Indicated, Inferred|Resource Estimate|PEA/ },
+  { key: 'ni44101', re: /NI 44-101/ },
+  { key: 'meeting', re: /Notice of Meeting|AGM/ },
+  { key: 'correction', re: /Correction/ },
+  { key: 'compensation', re: /Option Grant|RSU|DSU|Compensation/ },
+  { key: 'insider', re: /insider_transactions|Insider Report|SEDI/ },
+];
+const _blockByKey = {};
+for (const block of TYPE_BLOCKS) {
+  for (const sig of BLOCK_SIGNATURES) {
+    if (!_blockByKey[sig.key] && sig.re.test(block)) { _blockByKey[sig.key] = block; break; }
+  }
+}
+
+// Canonical filing type → module key (matches lib/.../classify.js CANONICAL_TYPES).
+const TYPE_TO_MODULE = {
+  'Financial Statements': 'financials', 'Quarterly Report': 'financials', 'Annual Report': 'financials',
+  'MD&A': 'financials', 'AIF': 'financials', 'Appendix 4C': 'financials', 'Appendix 4D': 'financials', 'Appendix 4E': 'financials',
+  'Drill Results': 'drill', 'Exploration Update': 'drill',
+  'Technical Report': 'technical', 'Resource Estimate': 'technical', 'PEA': 'technical', 'PFS': 'technical', 'FS': 'technical',
+  'NI 44-101 Notice': 'ni44101', 'Short Form Prospectus': 'ni44101', 'Shelf Prospectus': 'ni44101', 'Consent of QP': 'ni44101',
+  'Notice of Meeting': 'meeting', 'Management Information Circular': 'meeting',
+  'Correction': 'correction',
+  'Management Compensation': 'compensation', 'CEO/CFO Appointment': 'compensation',
+  'Insider Report': 'insider', 'Early Warning Report': 'insider', 'Substantial Holder Notice': 'insider',
+  "Change of Director's Interest": 'insider', "Final Director's Interest": 'insider',
+};
+
+/**
+ * Focused system prompt for a classified filing type. Falls back to the full
+ * SYSTEM_PROMPT for unmapped/unknown types (or if the parse failed).
+ */
+function buildSystemPrompt(filingType) {
+  const key = TYPE_TO_MODULE[filingType];
+  const block = key ? _blockByKey[key] : null;
+  if (!block || !PROMPT_TRAILER) return SYSTEM_PROMPT;
+  return `${PROMPT_INTRO.trim()}\n\n${block}\n\n${PROMPT_TRAILER.trim()}`;
+}
+
 function smartTruncate(text, limit = 80000) {
   if (text.length <= limit) return text;
   // For financial documents: preserve more of the back half (notes, balance sheet)
@@ -481,4 +554,4 @@ IMPORTANT REMINDERS FOR THIS FILING:
 ${text}`;
 }
 
-module.exports = { SYSTEM_PROMPT, buildUserPrompt };
+module.exports = { SYSTEM_PROMPT, buildSystemPrompt, buildUserPrompt, TYPE_TO_MODULE };
