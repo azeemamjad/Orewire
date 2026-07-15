@@ -57,6 +57,17 @@ router.get('/filings/stats', async (_req, res) => {
   }
 });
 
+// GET /api/admin/testing/filings/models — model options (so the dropdown can
+// populate independently of selecting filings).
+router.get('/filings/models', async (_req, res) => {
+  try {
+    res.json(await buildModelOptions());
+  } catch (err) {
+    console.error('Testing models failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to load models' });
+  }
+});
+
 // GET /api/admin/testing/filings/types — canonical types + which are customized
 router.get('/filings/types', async (_req, res) => {
   try {
