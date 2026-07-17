@@ -16,7 +16,7 @@ const CANONICAL_TYPES = [
   'PEA', 'PFS', 'FS',
   // Capital markets & financing
   'Private Placement', 'Agency Agreement', 'Short Form Prospectus', 'Shelf Prospectus',
-  'NI 44-101 Notice', 'Consent of QP', 'Offering Memorandum', 'Rights Offering',
+  'NI 43-101', 'Consent of QP', 'Offering Memorandum', 'Rights Offering',
   'Report of Exempt Distribution',
   // Corporate & governance
   'News Release', 'Notice of Meeting', 'Management Information Circular',
@@ -66,7 +66,7 @@ const RULES = [
   { type: 'MD&A', tier: 'medium', re: /management'?s discussion (and|&) analysis|\bmd&a\b/i },
   { type: 'Short Form Prospectus', tier: 'medium', re: /short form prospectus/i },
   { type: 'Shelf Prospectus', tier: 'medium', re: /base shelf prospectus|shelf prospectus/i },
-  { type: 'NI 44-101 Notice', tier: 'medium', re: /ni\s*44-?101|notice of intention to be qualified/i },
+  { type: 'NI 43-101', tier: 'medium', re: /ni\s*44-?101|notice of intention to be qualified/i },
   { type: 'Offering Memorandum', tier: 'medium', re: /offering memorandum/i },
   { type: 'Agency Agreement', tier: 'medium', re: /agency agreement|underwriting agreement/i },
   { type: 'Resource Estimate', tier: 'medium', re: /mineral resource estimate|maiden resource|updated resource estimate/i },

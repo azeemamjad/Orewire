@@ -13,6 +13,8 @@ const {
 const {
   DEFAULT_SAMPLE_SIZE,
   pickUntestedFilings,
+  untestedCountsByType,
+  resetTestRuns,
   costSummary,
   getFilingById,
   testedStats,
@@ -68,13 +70,37 @@ router.get('/filings/models', async (_req, res) => {
   }
 });
 
-// GET /api/admin/testing/filings/types — canonical types + which are customized
+// GET /api/admin/testing/filings/types — canonical types, which are customized,
+// and how many untested filings remain per type (+ overall total).
 router.get('/filings/types', async (_req, res) => {
   try {
-    res.json({ types: CANONICAL_TYPES, customized: await listCustomizedTypes() });
+    const [customized, counts] = await Promise.all([
+      listCustomizedTypes(),
+      untestedCountsByType(),
+    ]);
+    res.json({
+      types: CANONICAL_TYPES,
+      customized,
+      counts: counts.byType,
+      untestedTotal: counts.total,
+    });
   } catch (err) {
     console.error('Testing types failed:', err?.message || err);
     res.status(500).json({ error: 'Failed to load types' });
+  }
+});
+
+// POST /api/admin/testing/filings/reset — clear tested history so filings can be
+// tested again. Optional { filingType } scopes the reset to a single type.
+router.post('/filings/reset', express.json(), async (req, res) => {
+  try {
+    const filingType = req.body?.filingType ? String(req.body.filingType) : null;
+    const removed = await resetTestRuns(filingType);
+    const stats = await testedStats();
+    res.json({ ok: true, filingType, removed, stats });
+  } catch (err) {
+    console.error('Testing reset failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to reset tested filings' });
   }
 });
 

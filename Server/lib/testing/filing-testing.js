@@ -89,6 +89,45 @@ async function pickUntestedFilings(limit = DEFAULT_SAMPLE_SIZE, filingType = nul
   return r.rows;
 }
 
+/**
+ * Untested filing counts grouped by filing type (plus a grand total), so the
+ * picker can show operators how many documents remain per category at a glance.
+ */
+async function untestedCountsByType() {
+  const r = await db.query(
+    `SELECT COALESCE(f.filing_type, 'Other') AS filing_type, COUNT(*)::int AS n
+       FROM filings f
+      WHERE f.pdf_path IS NOT NULL
+        AND f.id NOT IN (SELECT DISTINCT filing_id FROM filing_test_runs)
+      GROUP BY COALESCE(f.filing_type, 'Other')`,
+  );
+  const byType = {};
+  let total = 0;
+  for (const row of r.rows) {
+    byType[row.filing_type] = row.n;
+    total += row.n;
+  }
+  return { total, byType };
+}
+
+/**
+ * Clear tested history so the picker surfaces filings again ("start from the
+ * start"). Scoped to a single filing type when provided, otherwise wipes all
+ * recorded test runs. Returns the number of run rows removed.
+ */
+async function resetTestRuns(filingType = null) {
+  if (filingType) {
+    const r = await db.query(
+      `DELETE FROM filing_test_runs
+        WHERE filing_id IN (SELECT id FROM filings WHERE filing_type = $1)`,
+      [filingType],
+    );
+    return r.rowCount || 0;
+  }
+  const r = await db.query(`DELETE FROM filing_test_runs`);
+  return r.rowCount || 0;
+}
+
 /** Aggregate AI cost/cache accounting per feature over the retention window. */
 async function costSummary({ days = 3 } = {}) {
   const r = await db.query(
@@ -473,6 +512,8 @@ module.exports = {
   isPromptCustom,
   saveTestingPrompt,
   pickUntestedFilings,
+  untestedCountsByType,
+  resetTestRuns,
   costSummary,
   getFilingById,
   testedStats,
