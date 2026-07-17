@@ -92,7 +92,7 @@ When filing_type is "Technical Report", "Resource Estimate", "PEA", "PFS", or "F
 - Note the effective date of the estimate
 - Extract key economic assumptions (gold price used, discount rate, strip ratio, opex/capex)
 
-When filing_type is "NI 44-101 Notice", "Short Form Prospectus Qualification",
+When filing_type is "NI 43-101", "Short Form Prospectus Qualification",
 or any filing declaring intention to qualify under NI 44-101:
 - This is NOT routine for pre-production companies. It is a preparatory step that
   enables a future capital raise via short form prospectus.
@@ -477,7 +477,7 @@ const TYPE_TO_MODULE = {
   'MD&A': 'financials', 'AIF': 'financials', 'Appendix 4C': 'financials', 'Appendix 4D': 'financials', 'Appendix 4E': 'financials',
   'Drill Results': 'drill', 'Exploration Update': 'drill',
   'Technical Report': 'technical', 'Resource Estimate': 'technical', 'PEA': 'technical', 'PFS': 'technical', 'FS': 'technical',
-  'NI 44-101 Notice': 'ni44101', 'Short Form Prospectus': 'ni44101', 'Shelf Prospectus': 'ni44101', 'Consent of QP': 'ni44101',
+  'NI 43-101': 'ni44101', 'Short Form Prospectus': 'ni44101', 'Shelf Prospectus': 'ni44101', 'Consent of QP': 'ni44101',
   'Notice of Meeting': 'meeting', 'Management Information Circular': 'meeting',
   'Correction': 'correction',
   'Management Compensation': 'compensation', 'CEO/CFO Appointment': 'compensation',

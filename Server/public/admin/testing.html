@@ -110,6 +110,7 @@
           <input id="test-count" type="number" value="19" min="1" max="100" style="width:74px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);" />
         </label>
         <button class="btn btn-primary btn-sm" type="button" id="test-select-btn" onclick="selectFilings()">Select random filings</button>
+        <button class="btn btn-ghost btn-sm" type="button" id="test-reset-btn" onclick="resetTests()">Reset tested history</button>
       </div>
       <p class="test-hint" style="margin-top:8px;">Pick a filing type to edit and test its dedicated prompt (production uses your saved per-type prompt; “Default (all types)” is the fallback). Selecting a type also filters the sample to that type.</p>
       <div id="test-selected" style="margin-top:12px;"></div>
@@ -216,12 +217,18 @@
       if (!r.ok) return;
       const d = await r.json();
       const custom = new Set(d.customized || []);
+      const counts = d.counts || {};
       const sel = document.getElementById('test-type');
-      const opts = ['<option value="">Default (all types)</option>'];
+      const prev = sel.value;
+      const total = d.untestedTotal ?? 0;
+      // The number after each type is how many untested filings remain for it.
+      const opts = [`<option value="">Default (all types) — ${total} untested</option>`];
       for (const t of (d.types || [])) {
-        opts.push(`<option value="${esc(t)}">${esc(t)}${custom.has(t) ? ' ●' : ''}</option>`);
+        const n = counts[t] || 0;
+        opts.push(`<option value="${esc(t)}">${esc(t)} (${n})${custom.has(t) ? ' ●' : ''}</option>`);
       }
       sel.innerHTML = opts.join('');
+      if (prev) sel.value = prev;
     } catch { /* ignore */ }
   }
 
@@ -332,13 +339,55 @@
         document.getElementById('stat-runs').textContent = data.stats.totalRuns ?? 0;
       }
 
-      if (T.filings.length === 0) notify('No untested filings left', 'err');
-      else if (T.filings.length < count) notify(`Only ${T.filings.length} untested filings remain`, 'ok');
+      if (T.filings.length === 0) {
+        const scope = T.filingType ? ` for “${esc(T.filingType)}”` : '';
+        document.getElementById('test-selected').innerHTML =
+          `<div style="padding:12px;border:1px dashed var(--border);border-radius:8px;">`
+          + `<div style="margin-bottom:8px;">No untested filings left${scope}. Every matching filing has already been tested.</div>`
+          + `<button class="btn btn-primary btn-sm" type="button" onclick="resetTests()">Reset &amp; start from the start</button>`
+          + `</div>`;
+        notify('No untested filings left', 'err');
+      } else if (T.filings.length < count) {
+        notify(`Only ${T.filings.length} untested filings remain`, 'ok');
+      }
     } catch (err) {
       notify(err.message || 'Failed', 'err');
     } finally {
       btn.disabled = false;
       btn.textContent = 'Select random filings';
+    }
+  }
+
+  // Clear tested history so filings can be tested again. Scoped to the selected
+  // filing type when one is chosen, otherwise resets everything.
+  async function resetTests() {
+    const type = T.filingType || '';
+    const scopeLabel = type || 'ALL filing types';
+    if (!confirm(`Reset tested history for ${scopeLabel}?\n\nPreviously tested filings will become available to test again from the start.`)) return;
+    const btn = document.getElementById('test-reset-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Resetting…'; }
+    try {
+      const r = await fetch('/api/admin/testing/filings/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filingType: type || null }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Failed to reset');
+
+      if (d.stats) {
+        document.getElementById('stat-tested').textContent = d.stats.testedFilings ?? 0;
+        document.getElementById('stat-untested').textContent = d.stats.untested ?? 0;
+        document.getElementById('stat-total').textContent = d.stats.totalFilings ?? 0;
+        document.getElementById('stat-runs').textContent = d.stats.totalRuns ?? 0;
+      }
+      await loadTypes();
+      document.getElementById('test-selected').innerHTML = '<p class="test-hint">No filings selected.</p>';
+      notify(`Reset done — ${d.removed} test run(s) cleared for ${scopeLabel}.`);
+    } catch (e) {
+      notify(e.message || 'Failed to reset', 'err');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Reset tested history'; }
     }
   }
 
@@ -495,6 +544,7 @@
     T.analyzing = false;
     if (T.anyDone) document.getElementById('test-download-btn').hidden = false;
     loadStats();
+    loadTypes();
     notify('Analysis complete');
   }
 
