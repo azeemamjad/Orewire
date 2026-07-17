@@ -3,10 +3,10 @@
     "id": "company-quotes",
     "label": "Company quote refresh",
     "type": "in-process",
-    "pid": 2716891,
+    "pid": 83966,
     "status": "stale",
-    "startedAt": 1784152800019,
-    "endedAt": 1784273804948,
+    "startedAt": 1784275200016,
+    "endedAt": 1784275301963,
     "meta": {
       "limit": null,
       "exchange": null,
