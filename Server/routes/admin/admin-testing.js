@@ -8,6 +8,9 @@ const {
   isCustom,
   saveTypePrompt,
   defaultPromptForType,
+  getDraftPrompt,
+  saveDraftPrompt,
+  clearDraftPrompt,
   listCustomizedTypes,
 } = require('../../lib/scraper/analyzer/prompt-store');
 const {
@@ -47,6 +50,31 @@ async function buildModelOptions() {
     if (!models.includes(m)) models.push(m);
   }
   return { models, activeModel: activeModel || models[0] || 'deepseek-chat', providerType };
+}
+
+// Resolve the prompt state for a filing type: the built-in default, the LIVE
+// production override (if saved), and any testing-only draft. `prompt`/`source`
+// describe what the editor should show (draft first, then production, then
+// default) so a draft-in-progress is never lost on reload.
+async function buildPromptPayload(filingType) {
+  const [productionPrompt, draftPrompt, isProductionCustom] = await Promise.all([
+    getTypePrompt(filingType),
+    getDraftPrompt(filingType),
+    isCustom(filingType),
+  ]);
+  const defaultPrompt = defaultPromptForType(filingType);
+  const source = draftPrompt ? 'draft' : (productionPrompt ? 'production' : 'default');
+  return {
+    type: filingType,
+    defaultPrompt,
+    productionPrompt: productionPrompt || null,
+    draftPrompt: draftPrompt || null,
+    isProductionCustom,
+    hasDraft: !!draftPrompt,
+    prompt: draftPrompt || productionPrompt || defaultPrompt,
+    source,
+    isCustom: isProductionCustom,
+  };
 }
 
 // GET /api/admin/testing/filings/stats
@@ -104,32 +132,35 @@ router.post('/filings/reset', express.json(), async (req, res) => {
   }
 });
 
-// GET /api/admin/testing/filings/prompt?type=<type> — saved (or default) prompt for a type
+// GET /api/admin/testing/filings/prompt?type=<type> — default, production, and
+// draft prompt state for a type
 router.get('/filings/prompt', async (req, res) => {
   const type = req.query.type ? String(req.query.type) : null;
   try {
-    const saved = await getTypePrompt(type);
-    res.json({
-      type,
-      prompt: saved || defaultPromptForType(type),
-      defaultPrompt: defaultPromptForType(type),
-      isCustom: await isCustom(type),
-    });
+    res.json(await buildPromptPayload(type));
   } catch (err) {
     console.error('Testing get prompt failed:', err?.message || err);
     res.status(500).json({ error: 'Failed to load prompt' });
   }
 });
 
-// PUT /api/admin/testing/filings/prompt — save/update a per-type prompt (type optional = default)
+// PUT /api/admin/testing/filings/prompt — save a per-type prompt (type optional = default).
+// target: 'draft' (default, testing only) or 'production' (LIVE — used by real
+// filing analysis). Promoting to production clears the draft copy.
 router.put('/filings/prompt', express.json({ limit: '512kb' }), async (req, res) => {
   const prompt = req.body?.prompt;
   const type = req.body?.type ? String(req.body.type) : null;
+  const target = req.body?.target === 'production' ? 'production' : 'draft';
   if (typeof prompt !== 'string') return res.status(400).json({ error: 'prompt (string) is required' });
   if (!prompt.trim()) return res.status(400).json({ error: 'Prompt cannot be empty' });
   try {
-    await saveTypePrompt(type, prompt);
-    res.json({ ok: true, isCustom: true, type });
+    if (target === 'production') {
+      await saveTypePrompt(type, prompt);
+      await clearDraftPrompt(type);
+    } else {
+      await saveDraftPrompt(type, prompt);
+    }
+    res.json({ ok: true, target, ...(await buildPromptPayload(type)) });
   } catch (err) {
     console.error('Testing save prompt failed:', err?.message || err);
     res.status(500).json({ error: 'Failed to save prompt' });
@@ -155,16 +186,14 @@ router.post('/filings/select', express.json(), async (req, res) => {
     const filings = await pickUntestedFilings(count, filingType);
     const stats = await testedStats();
     const { models, activeModel, providerType } = await buildModelOptions();
-    const saved = await getTypePrompt(filingType);
+    const promptPayload = await buildPromptPayload(filingType);
     res.json({
       batchId: crypto.randomUUID(),
       requested: count,
       filingType,
       filings,
       stats,
-      prompt: saved || defaultPromptForType(filingType),
-      defaultPrompt: defaultPromptForType(filingType),
-      isCustom: await isCustom(filingType),
+      ...promptPayload,
       models,
       activeModel,
       providerType,
