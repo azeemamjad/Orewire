@@ -94,6 +94,22 @@
       </table></div>
     </div>
 
+    <!-- Filing-type backfill -->
+    <div class="test-step" style="margin-bottom:16px;">
+      <div class="test-step-head" style="justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:10px;"><span class="test-step-n">⚙</span><h2>Backfill filing types</h2></div>
+        <span style="display:inline-flex;gap:6px;">
+          <button class="btn btn-primary btn-sm" type="button" id="backfill-start-btn" onclick="startBackfill()">Start backfill</button>
+          <button class="btn btn-ghost btn-sm" type="button" id="backfill-stop-btn" onclick="stopBackfill()" hidden>Stop</button>
+        </span>
+      </div>
+      <p class="test-hint">Older filings have no <code>filing_type</code> yet, so per-type counts/selection show 0. This classifies untyped filings from their PDF and fills it in (heuristic, free). Safe to stop and resume — it only fills blanks. Runs in the background; you can leave this page and come back.</p>
+      <div id="backfill-progress" hidden style="margin-top:12px;">
+        <div class="test-progress-bar"><i id="backfill-progress-fill"></i></div>
+        <div id="backfill-progress-label" style="font-size:12px;color:var(--muted);margin-top:6px;"></div>
+      </div>
+    </div>
+
     <!-- Step 1 -->
     <div class="test-step">
       <div class="test-step-head"><span class="test-step-n">1</span><h2>Select filings</h2></div>
@@ -300,6 +316,77 @@
     } catch (e) {
       body.innerHTML = `<tr class="empty-row"><td colspan="6">${esc(e.message)}</td></tr>`;
     }
+  }
+
+  // ── Filing-type backfill ──────────────────────────────────────────────────
+  let backfillTimer = null;
+
+  function renderBackfill(s) {
+    const wrap = document.getElementById('backfill-progress');
+    const startBtn = document.getElementById('backfill-start-btn');
+    const stopBtn = document.getElementById('backfill-stop-btn');
+    const running = s && s.running;
+    startBtn.disabled = running;
+    startBtn.textContent = running ? 'Running…' : 'Start backfill';
+    stopBtn.hidden = !running;
+
+    if (!s || (s.status === 'idle' && !s.processed)) { wrap.hidden = true; return; }
+    wrap.hidden = false;
+    const pct = s.total ? Math.min(100, (s.processed / s.total) * 100) : 0;
+    document.getElementById('backfill-progress-fill').style.width = `${pct}%`;
+    const eta = s.etaSec != null ? `${Math.floor(s.etaSec / 60)}m ${s.etaSec % 60}s` : '—';
+    const bits = [
+      `${s.status.toUpperCase()}`,
+      `${s.processed}/${s.total}`,
+      `typed ${s.typed}`,
+      `skipped ${s.skipped}`,
+      `errors ${s.errors}`,
+    ];
+    if (running) { bits.push(`${s.rate}/s`); bits.push(`ETA ${eta}`); }
+    let label = bits.join(' · ');
+    if (s.status === 'done') label += ' · done — per-type counts are updated';
+    if (s.lastError) label += ` · last error: ${esc(s.lastError)}`;
+    document.getElementById('backfill-progress-label').textContent = label;
+  }
+
+  async function pollBackfill() {
+    try {
+      const r = await fetch('/api/admin/testing/filings/backfill-type/status');
+      if (!r.ok) return;
+      const s = await r.json();
+      renderBackfill(s);
+      if (s.running) {
+        if (!backfillTimer) backfillTimer = setInterval(pollBackfill, 3000);
+      } else {
+        if (backfillTimer) { clearInterval(backfillTimer); backfillTimer = null; }
+        // Job just finished — refresh the per-type counts and stats.
+        if (s.status === 'done' || s.status === 'stopped') { loadTypes(); loadStats(); }
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function startBackfill() {
+    if (!confirm('Start classifying untyped filings in the background?\n\nThis reads each PDF from storage and fills in filing_type. It is safe to leave running and to stop/resume.')) return;
+    try {
+      const r = await fetch('/api/admin/testing/filings/backfill-type/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ useAi: false }),
+      });
+      const d = await r.json();
+      if (d.started === false && d.reason === 'already_running') notify('Backfill already running', 'ok');
+      renderBackfill(d.status);
+      if (!backfillTimer) backfillTimer = setInterval(pollBackfill, 3000);
+      pollBackfill();
+    } catch (e) { notify(e.message || 'Failed to start backfill', 'err'); }
+  }
+
+  async function stopBackfill() {
+    try {
+      await fetch('/api/admin/testing/filings/backfill-type/stop', { method: 'POST' });
+      notify('Stopping after the current filing…', 'ok');
+      pollBackfill();
+    } catch (e) { notify(e.message || 'Failed to stop', 'err'); }
   }
 
   function verdictBadge(verdict, ok, error) {
@@ -599,7 +686,7 @@
     window.location.href = `/api/admin/testing/filings/download?batch=${encodeURIComponent(T.batchId)}`;
   }
 
-  document.addEventListener('DOMContentLoaded', () => { loadStats(); loadTypes(); loadModels(); loadCost(); });
+  document.addEventListener('DOMContentLoaded', () => { loadStats(); loadTypes(); loadModels(); loadCost(); pollBackfill(); });
 </script>
 </body>
 </html>
