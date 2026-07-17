@@ -26,6 +26,11 @@ const {
   analyzeFilingForTest,
   buildBatchZip,
 } = require('../../lib/testing/filing-testing');
+const {
+  startBackfill,
+  stopBackfill,
+  getStatus: getBackfillStatus,
+} = require('../../lib/testing/filing-type-backfill');
 
 const router = express.Router();
 
@@ -130,6 +135,22 @@ router.post('/filings/reset', express.json(), async (req, res) => {
     console.error('Testing reset failed:', err?.message || err);
     res.status(500).json({ error: 'Failed to reset tested filings' });
   }
+});
+
+// Filing-type backfill: classify untyped filings so per-type counts/selection work.
+// GET status (poll), POST start, POST stop.
+router.get('/filings/backfill-type/status', (_req, res) => {
+  res.json(getBackfillStatus());
+});
+
+router.post('/filings/backfill-type/start', express.json(), (req, res) => {
+  const useAi = req.body?.useAi === true;
+  const result = startBackfill({ useAi });
+  res.json(result);
+});
+
+router.post('/filings/backfill-type/stop', (_req, res) => {
+  res.json(stopBackfill());
 });
 
 // GET /api/admin/testing/filings/prompt?type=<type> — default, production, and
