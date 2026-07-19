@@ -563,6 +563,52 @@ async function migrate() {
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_filing_test_runs_filing ON filing_test_runs(filing_id)`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_filing_test_runs_batch ON filing_test_runs(batch_id)`);
 
+  // News-release testing (Admin → Testing → News Releases): remembers which
+  // companies were used in a test run so the "select random companies" picker
+  // never re-tests the same company, and stores each result for zip export.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS news_test_runs (
+      id                SERIAL PRIMARY KEY,
+      batch_id          TEXT,
+      company_id        INTEGER REFERENCES companies(id) ON DELETE CASCADE,
+      company_name      TEXT,
+      ticker            TEXT,
+      model             TEXT,
+      ok                BOOLEAN DEFAULT TRUE,
+      item_count        INTEGER,
+      duration_ms       INTEGER,
+      prompt_tokens     INTEGER,
+      completion_tokens INTEGER,
+      results           JSONB,
+      error_message     TEXT,
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_news_test_runs_company ON news_test_runs(company_id)`);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_news_test_runs_batch ON news_test_runs(batch_id)`);
+
+  // Company-snapshot testing (Admin → Testing → Snapshots): remembers tested
+  // companies and stores each generated snapshot for zip export.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS snapshot_test_runs (
+      id                SERIAL PRIMARY KEY,
+      batch_id          TEXT,
+      company_id        INTEGER REFERENCES companies(id) ON DELETE CASCADE,
+      company_name      TEXT,
+      ticker            TEXT,
+      model             TEXT,
+      ok                BOOLEAN DEFAULT TRUE,
+      duration_ms       INTEGER,
+      prompt_tokens     INTEGER,
+      completion_tokens INTEGER,
+      result            JSONB,
+      error_message     TEXT,
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_snapshot_test_runs_company ON snapshot_test_runs(company_id)`);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_snapshot_test_runs_batch ON snapshot_test_runs(batch_id)`);
+
   const contactCount = await db.query(`SELECT COUNT(*)::int AS n FROM contact_messages`);
   if ((contactCount.rows[0]?.n || 0) === 0) {
     await db.query(

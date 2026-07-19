@@ -7,9 +7,16 @@ const {
 const { chatWithSystem } = require('../ai/client');
 
 const RSS_FEEDS = [
+  // TMX Newsfile — verbatim issuer press releases (TSX / TSX-V / CSE), by industry.
   { name: 'Newsfile Mining', url: 'https://feeds.newsfilecorp.com/industry/mining-metals', source: 'TMX Newsfile' },
   { name: 'Newsfile Energy Metals', url: 'https://feeds.newsfilecorp.com/industry/energy-metals', source: 'TMX Newsfile' },
+  { name: 'Newsfile Precious Metals', url: 'https://feeds.newsfilecorp.com/industry/precious-metals', source: 'TMX Newsfile' },
+  { name: 'Newsfile Rare Earths', url: 'https://feeds.newsfilecorp.com/industry/rare-earths', source: 'TMX Newsfile' },
+  // GlobeNewsWire — official newswire, by industry subject code.
   { name: 'GlobeNewsWire Mining', url: 'https://www.globenewswire.com/RssFeed/industry/1775-General+Mining/feedTitle/GlobeNewsWire+-+Industry+Tag+-+General+Mining', source: 'GlobeNewsWire' },
+  { name: 'GlobeNewsWire Gold Mining', url: 'https://www.globenewswire.com/RssFeed/industry/1777-Gold+Mining/feedTitle/GlobeNewsWire+-+Industry+Tag+-+Gold+Mining', source: 'GlobeNewsWire' },
+  { name: 'GlobeNewsWire Nonferrous Metals', url: 'https://www.globenewswire.com/RssFeed/industry/1755-Nonferrous+Metals/feedTitle/GlobeNewsWire+-+Industry+Tag+-+Nonferrous+Metals', source: 'GlobeNewsWire' },
+  { name: 'GlobeNewsWire Platinum & Precious Metals', url: 'https://www.globenewswire.com/RssFeed/industry/1779-Platinum+&+Precious+Metals/feedTitle/GlobeNewsWire+-+Industry+Tag+-+Platinum+Precious+Metals', source: 'GlobeNewsWire' },
 ];
 
 // Google News (and some other feeds) ship the <description> as HTML with the
@@ -121,12 +128,24 @@ function matchCompany(title, description) {
   return null;
 }
 
+const NEWS_SYSTEM =
+  'You are a mining investment news analyst for a platform tracking junior mining stocks on TSX-V, CSE, and ASX. Given news headlines and descriptions, produce a JSON array. Each item: "title" (clean headline — remove source suffix), "summary" (1-2 sentence summary for mining investors), "commodity" (Gold, Silver, Copper, Lithium, Uranium, Nickel, Zinc, or null), "sentiment" ("bullish", "bearish", or "neutral"). Return ONLY a valid JSON array.';
+
+// Production uses the operator-tuned prompt saved from the Testing tab (Admin →
+// Testing → News Releases), falling back to the built-in NEWS_SYSTEM.
+async function getActiveNewsSystem() {
+  try {
+    const r = await db.query(`SELECT value FROM app_settings WHERE key = 'testing_news_prompt'`);
+    const v = r.rows[0]?.value;
+    if (v && typeof v.prompt === 'string' && v.prompt.trim()) return v.prompt;
+  } catch { /* fall through */ }
+  return NEWS_SYSTEM;
+}
+
 async function callOllama(prompt) {
-  const NEWS_SYSTEM =
-    'You are a mining investment news analyst for a platform tracking junior mining stocks on TSX-V, CSE, and ASX. Given news headlines and descriptions, produce a JSON array. Each item: "title" (clean headline — remove source suffix), "summary" (1-2 sentence summary for mining investors), "commodity" (Gold, Silver, Copper, Lithium, Uranium, Nickel, Zinc, or null), "sentiment" ("bullish", "bearish", or "neutral"). Return ONLY a valid JSON array.';
   const { content } = await chatWithSystem({
     feature: 'news_enrichment',
-    system: NEWS_SYSTEM,
+    system: await getActiveNewsSystem(),
     user: prompt,
   });
   return content;
@@ -404,6 +423,7 @@ async function fetchAndStoreRssFeeds() {
 }
 
 module.exports = {
+  NEWS_SYSTEM,
   RSS_FEEDS,
   cleanRssText,
   parseRssItems,

@@ -5,7 +5,7 @@
  * VA to approve. Approval is applied by routes/admin/admin-va-tasks.js.
  */
 const db = require('../../db');
-const { searchWeb } = require('../websearch/duckduckgo');
+const { searchWeb } = require('../websearch');
 const { chatWithSystem } = require('../ai/client');
 const { fetchCompanyQuote } = require('../market/market-quote');
 
@@ -112,7 +112,7 @@ async function verifySuggestion(suggestion) {
  * Research a ticker change for one company.
  * @returns {Promise<{ ok, suggestion, verified }>} suggestion is null when nothing found.
  */
-async function suggestTickerForCompany(company, { skipCooldown = false } = {}) {
+async function suggestTickerForCompany(company, { skipCooldown = false, bypassPause = false } = {}) {
   if (!skipCooldown && isCooling(company.id)) {
     return { ok: false, reason: 'cooling_down', suggestion: null };
   }
@@ -128,6 +128,9 @@ async function suggestTickerForCompany(company, { skipCooldown = false } = {}) {
       system: SYSTEM_PROMPT,
       user: buildUserPrompt(company, results),
       timeoutMs: 60000,
+      // Manual "Find new ticker" is a deliberate one-off admin action, so it may
+      // bypass the global AI pause (which only exists to stop automatic/bulk work).
+      bypassPause,
     });
 
     let parsed;

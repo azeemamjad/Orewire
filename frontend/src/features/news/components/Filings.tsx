@@ -62,23 +62,29 @@ const Filings = () => {
                   {f.time}
                 </span>
               </div>
-              <div className="text-[12px] font-semibold text-foreground/90 mb-1.5 leading-snug truncate">
-                {f.company}
+              <div className="text-[12px] font-semibold text-foreground/90 mb-1.5 leading-snug truncate min-h-[1.125rem]">
+                {f.company || "\u00A0"}
               </div>
-              <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
-                {f.verdict && (
+              <div className="flex items-center gap-1.5 mb-1.5 min-w-0">
+                {f.verdict ? (
                   <span
-                    className={`font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 font-bold rounded-full whitespace-nowrap ${verdictStyle[f.verdict] || verdictStyle.Routine}`}
+                    className={`font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 font-bold rounded-full whitespace-nowrap shrink-0 ${verdictStyle[f.verdict] || verdictStyle.Routine}`}
                   >
                     {f.verdict}
                   </span>
+                ) : (
+                  <span className="invisible font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 font-bold rounded-full whitespace-nowrap shrink-0">
+                    Routine
+                  </span>
                 )}
-                <span className="inline-flex items-center gap-1 text-[12.5px] font-bold tracking-tight text-foreground leading-snug">
+                <span className="inline-flex items-center gap-1 text-[12.5px] font-bold tracking-tight text-foreground leading-snug min-w-0 truncate">
                   <FileText className="w-3 h-3 text-accent shrink-0" />
-                  {f.filingType}
+                  <span className="truncate">{f.filingType}</span>
                 </span>
               </div>
-              <p className="text-[12px] leading-relaxed text-foreground/70 line-clamp-2">{f.summary}</p>
+              <p className="text-[12px] leading-relaxed text-foreground/70 line-clamp-2 min-h-[2.5rem]">
+                {f.summary || "\u00A0"}
+              </p>
             </Link>
           </li>
         ))}
