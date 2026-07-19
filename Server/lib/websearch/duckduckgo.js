@@ -10,6 +10,13 @@
  */
 const { search, SafeSearchType } = require('duck-duck-scrape');
 
+// Transport for the token-free HTML fallback below. `needle` is already present
+// (duck-duck-scrape depends on it) and supports proxies the same way, so the
+// fallback behaves consistently with the primary path. If it can't be required,
+// the fallback still works for direct (non-proxied) requests via global fetch.
+let needle = null;
+try { needle = require('needle'); } catch { /* direct-only fallback via fetch */ }
+
 const MIN_GAP_MS = Number(process.env.DDG_MIN_GAP_MS || 1200);
 let lastCallAt = 0;
 
@@ -81,6 +88,106 @@ async function searchOnce(query, limit, proxyUrl) {
     .filter((r) => r.url);
 }
 
+// ── Token-free HTML fallback ────────────────────────────────────────────────
+// duck-duck-scrape must first fetch a VQD token from duckduckgo.com; when that
+// fetch is blocked or rate-limited ("Failed to get the VQD"), the JSON API is
+// unusable. DDG's HTML and Lite endpoints return plain HTML with NO token
+// required, so we scrape those as a fallback (through the same proxy tiers).
+
+const BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+};
+
+// Both accept a form POST of `q=…`; POST is markedly more reliable than GET
+// against these endpoints (GET frequently returns the 202 anomaly page).
+const HTML_ENDPOINTS = [
+  'https://html.duckduckgo.com/html/',
+  'https://lite.duckduckgo.com/lite/',
+];
+
+// DDG result links are wrapped as //duckduckgo.com/l/?uddg=<encoded target>.
+function decodeDdgHref(href) {
+  if (!href) return '';
+  const h = href.startsWith('//') ? `https:${href}` : href;
+  try {
+    const uddg = new URL(h).searchParams.get('uddg');
+    return uddg || h;
+  } catch {
+    const m = /[?&]uddg=([^&]+)/.exec(href);
+    return m ? decodeURIComponent(m[1]) : href;
+  }
+}
+
+function parseHtmlResults(html, limit) {
+  const anchorRe = /<a[^>]+class="[^"]*(?:result__a|result-link)[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  const snippetRe = /class="[^"]*(?:result__snippet|result-snippet)[^"]*"[^>]*>([\s\S]*?)<\/(?:a|td)>/gi;
+  const snippets = [];
+  let sm;
+  while ((sm = snippetRe.exec(html)) !== null) snippets.push(stripTags(sm[1]));
+  const results = [];
+  let m;
+  let i = 0;
+  while ((m = anchorRe.exec(html)) !== null && results.length < limit) {
+    const url = decodeDdgHref(m[1]);
+    const title = stripTags(m[2]);
+    if (url && /^https?:\/\//.test(url) && !/(?:^|\/\/)(?:[^/]*\.)?duckduckgo\.com/.test(url)) {
+      results.push({ title, url, snippet: snippets[i] || '' });
+    }
+    i += 1;
+  }
+  return results;
+}
+
+function httpPostForm(url, form, proxyUrl) {
+  const headers = { ...BROWSER_HEADERS, 'Content-Type': 'application/x-www-form-urlencoded' };
+  if (needle) {
+    return new Promise((resolve, reject) => {
+      const opts = {
+        headers,
+        follow_max: 3,
+        open_timeout: 15000,
+        response_timeout: 15000,
+        read_timeout: 15000,
+        compressed: true,
+      };
+      if (proxyUrl) opts.proxy = proxyUrl;
+      needle.post(url, form, opts, (err, resp) => {
+        if (err) return reject(err);
+        if (!resp || resp.statusCode >= 400 || resp.statusCode === 202) {
+          return reject(new Error(`HTTP ${resp ? resp.statusCode : '?'}`));
+        }
+        resolve(typeof resp.body === 'string' ? resp.body : String(resp.body || ''));
+      });
+    });
+  }
+  if (proxyUrl) return Promise.reject(new Error('proxied fallback requires needle'));
+  return fetch(url, { method: 'POST', headers, body: form }).then((r) => {
+    if (!r.ok || r.status === 202) throw new Error(`HTTP ${r.status}`);
+    return r.text();
+  });
+}
+
+/** Scrape DDG's token-free HTML/Lite endpoints. Returns [] if reached but empty. */
+async function searchHtmlFallback(query, limit, proxyUrl) {
+  const form = `q=${encodeURIComponent(query)}&kl=us-en`;
+  let lastErr;
+  let reached = false;
+  for (const url of HTML_ENDPOINTS) {
+    try {
+      const html = await httpPostForm(url, form, proxyUrl);
+      reached = true;
+      const results = parseHtmlResults(html, limit);
+      if (results.length) return results;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  if (!reached && lastErr) throw lastErr;
+  return [];
+}
+
 /**
  * @param {string} query
  * @param {object} [opts]
@@ -94,6 +201,8 @@ async function searchWeb(query, { limit = 8, retriesPerTransport = 1 } = {}) {
 
   const transports = await buildTransports();
   let lastErr;
+
+  // Primary: duck-duck-scrape (structured JSON, needs a VQD token).
   for (const proxyUrl of transports) {
     for (let attempt = 0; attempt <= retriesPerTransport; attempt += 1) {
       await throttle();
@@ -105,7 +214,25 @@ async function searchWeb(query, { limit = 8, retriesPerTransport = 1 } = {}) {
       }
     }
   }
+
+  // Fallback: token-free HTML endpoints (no VQD). Every primary transport threw
+  // — most likely a VQD failure — so retry the same transports against the HTML
+  // scraper before giving up.
+  let fallbackReached = false;
+  for (const proxyUrl of transports) {
+    await throttle();
+    try {
+      const results = await searchHtmlFallback(q, limit, proxyUrl);
+      fallbackReached = true;
+      if (results.length) return results;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  if (fallbackReached) return []; // reached DDG but no parseable results
   throw lastErr || new Error('DuckDuckGo search failed');
 }
 
-module.exports = { searchWeb };
+// `searchDuckDuckGo` is the name the orchestrator (index.js) uses; `searchWeb`
+// stays exported for backward compatibility with any direct importers.
+module.exports = { searchWeb, searchDuckDuckGo: searchWeb };

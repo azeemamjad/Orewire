@@ -224,35 +224,29 @@ async function collectActiveTasks() {
   }
 
   try {
+    // One VA row per flagged company (so a VA can action each individually).
     const flagged = await db.query(`
       SELECT id, name, exchange, ticker, symbol_flagged_reason, symbol_flagged_tv_symbol
         FROM companies
        WHERE symbol_flagged_at IS NOT NULL
        ORDER BY symbol_flagged_at DESC NULLS LAST
-       LIMIT 20
+       LIMIT 200
     `);
-    const countRes = await db.query(
-      `SELECT COUNT(*)::int AS count FROM companies WHERE symbol_flagged_at IS NOT NULL`,
-    );
-    const count = countRes.rows[0]?.count || 0;
-    if (count > 0) {
-      const sample = flagged.rows
-        .map((row) => {
-          const ex = row.exchange || '';
-          const tk = row.ticker || '';
-          return `${row.name} (${ex}:${tk})`;
-        })
-        .join('; ');
+    for (const row of flagged.rows) {
+      const ex = row.exchange || '';
+      const tk = row.ticker || '';
+      const sym = row.symbol_flagged_tv_symbol || `${ex}:${tk}`;
       tasks.push({
-        sourceKey: 'companies|symbol_invalid',
+        sourceKey: `companies|symbol_invalid|${row.id}`,
         module: 'companies',
         errorType: 'symbol_invalid',
-        title: 'Invalid or stale ticker symbols',
-        description: `${count} compan${count === 1 ? 'y has' : 'ies have'} flagged TradingView symbols. Open Companies → Market Symbols to fix.`,
-        actionUrl: '/admin/market-symbols.html',
-        severity: count >= 50 ? 'high' : 'medium',
-        occurrenceCount: count,
-        sampleDetail: sample.slice(0, 500) || null,
+        title: `${row.name} (${sym})`,
+        description: `${row.symbol_flagged_reason || 'TradingView symbol returned no price.'} Fix in Companies → Market Symbols, or use "Find new ticker" to research a replacement.`,
+        actionUrl: '/admin/companies.html?flagged=1',
+        severity: 'medium',
+        occurrenceCount: 1,
+        sampleDetail: sym || null,
+        companyId: row.id,
       });
     }
   } catch {
@@ -299,8 +293,8 @@ async function upsertAutoTask(task) {
   await db.query(
     `INSERT INTO va_tasks (
        source_key, module, error_type, title, description, action_url, severity,
-       occurrence_count, sample_detail, auto_managed, status, first_seen_at, last_seen_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, 'open', NOW(), NOW())
+       occurrence_count, sample_detail, company_id, auto_managed, status, first_seen_at, last_seen_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE, 'open', NOW(), NOW())
      ON CONFLICT (source_key) DO UPDATE SET
        module = EXCLUDED.module,
        error_type = EXCLUDED.error_type,
@@ -310,6 +304,7 @@ async function upsertAutoTask(task) {
        severity = EXCLUDED.severity,
        occurrence_count = EXCLUDED.occurrence_count,
        sample_detail = EXCLUDED.sample_detail,
+       company_id = EXCLUDED.company_id,
        last_seen_at = NOW(),
        status = CASE
          WHEN va_tasks.status = 'dismissed' THEN va_tasks.status
@@ -334,6 +329,7 @@ async function upsertAutoTask(task) {
       task.severity,
       task.occurrenceCount,
       task.sampleDetail,
+      task.companyId ?? null,
     ],
   );
 }
@@ -374,14 +370,13 @@ async function syncVaTasks() {
     );
   }
 
-  // Explicit cleanup of legacy one-row-per-company ticker tasks.
+  // Resolve the legacy AGGREGATE row (we now emit one row per company).
   await db.query(
     `UPDATE va_tasks
      SET status = 'resolved', resolved_at = NOW(), resolved_by = 'system'
      WHERE auto_managed = TRUE
        AND status IN ('open', 'in_progress')
-       AND source_key LIKE 'companies|symbol_invalid|%'
-       AND source_key <> 'companies|symbol_invalid'`,
+       AND source_key = 'companies|symbol_invalid'`,
   );
 
   return { synced: active.length, activeKeys };

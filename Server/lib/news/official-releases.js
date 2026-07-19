@@ -124,7 +124,7 @@ async function storeOfficialReleases(items, { companyId, ticker, companyName }) 
 /**
  * Pull official releases for one company from Newsfile or ASX and store in news_releases.
  */
-async function syncOfficialCompanyReleases({ name, ticker, exchange, companyId }) {
+async function syncOfficialCompanyReleases({ name, ticker, exchange, companyId }, { enrich = true } = {}) {
   let items = [];
   try {
     if (isAsxExchange(exchange)) {
@@ -145,7 +145,7 @@ async function syncOfficialCompanyReleases({ name, ticker, exchange, companyId }
     companyName: name,
   });
 
-  if (newIds.length) {
+  if (enrich && newIds.length) {
     try {
       const { enrichNewsByIds } = require('./fetch');
       await enrichNewsByIds(newIds, TABLE_RELEASES);

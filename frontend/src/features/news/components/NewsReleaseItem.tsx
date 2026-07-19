@@ -38,21 +38,23 @@ const NewsReleaseItem = ({
           {timeAgo}
         </span>
       </div>
-      {company ? (
-        <div className="text-[12px] font-semibold text-foreground/90 mb-1.5 leading-snug truncate">{company}</div>
-      ) : null}
-      <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+      <div className="text-[12px] font-semibold text-foreground/90 mb-1.5 leading-snug truncate min-h-[1.125rem]">
+        {company || "\u00A0"}
+      </div>
+      <div className="flex items-center gap-1.5 mb-1.5 min-w-0">
         <span
-          className={`font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 font-bold whitespace-nowrap ${newsSeverityStyle[severity] || newsSeverityStyle.Low}`}
+          className={`font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 font-bold whitespace-nowrap shrink-0 ${newsSeverityStyle[severity] || newsSeverityStyle.Low}`}
         >
           {severity}
         </span>
-        <span className="inline-flex items-center gap-1 text-[12.5px] font-bold tracking-tight text-foreground leading-snug">
+        <span className="inline-flex items-center gap-1 text-[12.5px] font-bold tracking-tight text-foreground leading-snug min-w-0 truncate">
           <FileText className="w-3 h-3 text-accent shrink-0" />
-          {filingType}
+          <span className="truncate">{filingType}</span>
         </span>
       </div>
-      <p className="text-[12px] leading-relaxed text-foreground/70 line-clamp-2">{summary}</p>
+      <p className="text-[12px] leading-relaxed text-foreground/70 line-clamp-2 min-h-[2.5rem]">
+        {summary || "\u00A0"}
+      </p>
     </Link>
   </li>
 );

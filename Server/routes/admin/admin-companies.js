@@ -51,7 +51,9 @@ router.post('/:id/suggest-ticker', async (req, res) => {
     const company = r.rows[0];
     if (!company) return res.status(404).json({ error: 'Company not found' });
 
-    const result = await suggestTickerForCompany(company, { skipCooldown: true });
+    // Manual admin action: bypass the global AI pause so the button works even
+    // while automatic AI processing is paused for cost control.
+    const result = await suggestTickerForCompany(company, { skipCooldown: true, bypassPause: true });
     if (!result.ok || !result.suggestion) {
       return res.json({
         ok: false,

@@ -31,6 +31,8 @@ const {
   stopBackfill,
   getStatus: getBackfillStatus,
 } = require('../../lib/testing/filing-type-backfill');
+const news = require('../../lib/testing/news-testing');
+const snap = require('../../lib/testing/snapshot-testing');
 
 const router = express.Router();
 
@@ -290,7 +292,275 @@ router.get('/filings/download', async (req, res) => {
 });
 
 // Placeholder sub-tabs — under development.
-router.get('/news-releases/status', (_req, res) => res.json({ status: 'under_development' }));
-router.get('/snapshots/status', (_req, res) => res.json({ status: 'under_development' }));
+// ── News Releases testing (select N random companies, enrich their news) ─────
+
+// GET /api/admin/testing/news/stats
+router.get('/news/stats', async (_req, res) => {
+  try {
+    res.json(await news.newsTestedStats());
+  } catch (err) {
+    console.error('News stats failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to load news stats' });
+  }
+});
+
+// POST /api/admin/testing/news/reset — clear tested history so companies with
+// news releases can be tested again from the start.
+router.post('/news/reset', express.json(), async (_req, res) => {
+  try {
+    const removed = await news.resetNewsTestRuns();
+    const stats = await news.newsTestedStats();
+    res.json({ ok: true, removed, stats });
+  } catch (err) {
+    console.error('News reset failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to reset tested companies' });
+  }
+});
+
+// GET /api/admin/testing/news/prompt
+router.get('/news/prompt', async (_req, res) => {
+  try {
+    res.json({
+      prompt: await news.getActivePrompt(),
+      defaultPrompt: news.getDefaultPrompt(),
+      isCustom: await news.isPromptCustom(),
+    });
+  } catch (err) {
+    console.error('News get prompt failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to load prompt' });
+  }
+});
+
+// PUT /api/admin/testing/news/prompt
+router.put('/news/prompt', express.json({ limit: '256kb' }), async (req, res) => {
+  const prompt = req.body?.prompt;
+  if (typeof prompt !== 'string') return res.status(400).json({ error: 'prompt (string) is required' });
+  if (!prompt.trim()) return res.status(400).json({ error: 'Prompt cannot be empty' });
+  try {
+    await news.saveTestingPrompt(prompt);
+    res.json({ ok: true, isCustom: true });
+  } catch (err) {
+    console.error('News save prompt failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to save prompt' });
+  }
+});
+
+// POST /api/admin/testing/news/select — pick N random untested companies + open a batch
+router.post('/news/select', express.json(), async (req, res) => {
+  try {
+    const count = parseInt(req.body?.count, 10) || news.DEFAULT_COMPANY_SAMPLE;
+    const companies = await news.pickUntestedCompanies(count);
+    const stats = await news.newsTestedStats();
+    const { models, activeModel, providerType } = await buildModelOptions();
+    res.json({
+      batchId: crypto.randomUUID(),
+      requested: count,
+      companies,
+      stats,
+      prompt: await news.getActivePrompt(),
+      defaultPrompt: news.getDefaultPrompt(),
+      isCustom: await news.isPromptCustom(),
+      models,
+      activeModel,
+      providerType,
+    });
+  } catch (err) {
+    console.error('News select failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to select companies' });
+  }
+});
+
+// POST /api/admin/testing/news/analyze-one — enrich one company's news + record it
+router.post('/news/analyze-one', express.json({ limit: '256kb' }), async (req, res) => {
+  const companyId = parseInt(req.body?.companyId, 10);
+  if (!Number.isFinite(companyId)) return res.status(400).json({ error: 'Invalid companyId' });
+
+  const { batchId, prompt, model } = req.body || {};
+  try {
+    const company = await news.getCompanyById(companyId);
+    if (!company) return res.status(404).json({ error: 'Company not found' });
+
+    // Extra step: if we have no stored releases for this company, pull them from
+    // Newsfile/ASX in real-time, then read again.
+    let items = await news.getCompanyNewsItems(companyId);
+    let fetched = null;
+    if (!items.length) {
+      fetched = await news.fetchCompanyReleasesRealtime(company);
+      items = await news.getCompanyNewsItems(companyId);
+    }
+    const result = await news.analyzeCompanyNews({ company, items, prompt, model });
+
+    await news.recordNewsTestRun(companyId, {
+      batchId,
+      companyName: company.name,
+      ticker: company.ticker,
+      model: result.model || model,
+      ok: result.ok,
+      itemCount: result.itemCount ?? items.length,
+      durationMs: result.durationMs,
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
+      results: result.ok ? result.items : null,
+      errorMessage: result.ok ? null : result.error,
+    });
+
+    res.json({
+      companyId,
+      company_name: company.name,
+      ticker: company.ticker,
+      exchange: company.exchange,
+      newsCount: items.length,
+      fetched,
+      ...result,
+    });
+  } catch (err) {
+    console.error('News analyze-one failed:', err?.message || err);
+    res.status(500).json({ error: err?.message || 'Analysis failed' });
+  }
+});
+
+// GET /api/admin/testing/news/download?batch=<id>
+router.get('/news/download', async (req, res) => {
+  const batchId = String(req.query.batch || '').trim();
+  if (!batchId) return res.status(400).json({ error: 'Missing batch id' });
+  try {
+    const rows = await news.getNewsBatchRuns(batchId);
+    if (!rows.length) return res.status(404).json({ error: 'No results found for this batch' });
+    const zip = news.buildNewsBatchZip(rows);
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="news-test-${stamp}.zip"`);
+    res.setHeader('Content-Length', zip.length);
+    res.send(zip);
+  } catch (err) {
+    console.error('News download failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to build download' });
+  }
+});
+
+// ── Snapshots testing (select N random companies, regenerate their snapshot) ──
+
+router.get('/snapshots/stats', async (_req, res) => {
+  try {
+    res.json(await snap.snapshotTestedStats());
+  } catch (err) {
+    console.error('Snapshot stats failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to load snapshot stats' });
+  }
+});
+
+router.get('/snapshots/prompt', async (_req, res) => {
+  try {
+    res.json({
+      prompt: await snap.getActivePrompt(),
+      defaultPrompt: snap.getDefaultPrompt(),
+      isCustom: await snap.isPromptCustom(),
+    });
+  } catch (err) {
+    console.error('Snapshot get prompt failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to load prompt' });
+  }
+});
+
+router.put('/snapshots/prompt', express.json({ limit: '256kb' }), async (req, res) => {
+  const prompt = req.body?.prompt;
+  if (typeof prompt !== 'string') return res.status(400).json({ error: 'prompt (string) is required' });
+  if (!prompt.trim()) return res.status(400).json({ error: 'Prompt cannot be empty' });
+  try {
+    await snap.saveTestingPrompt(prompt);
+    res.json({ ok: true, isCustom: true });
+  } catch (err) {
+    console.error('Snapshot save prompt failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to save prompt' });
+  }
+});
+
+router.post('/snapshots/select', express.json(), async (req, res) => {
+  try {
+    const count = parseInt(req.body?.count, 10) || snap.DEFAULT_COMPANY_SAMPLE;
+    const companies = await snap.pickUntestedCompanies(count);
+    const stats = await snap.snapshotTestedStats();
+    const { models, activeModel, providerType } = await buildModelOptions();
+    res.json({
+      batchId: crypto.randomUUID(),
+      requested: count,
+      companies,
+      stats,
+      prompt: await snap.getActivePrompt(),
+      defaultPrompt: snap.getDefaultPrompt(),
+      isCustom: await snap.isPromptCustom(),
+      models,
+      activeModel,
+      providerType,
+    });
+  } catch (err) {
+    console.error('Snapshot select failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to select companies' });
+  }
+});
+
+router.post('/snapshots/analyze-one', express.json({ limit: '256kb' }), async (req, res) => {
+  const companyId = parseInt(req.body?.companyId, 10);
+  if (!Number.isFinite(companyId)) return res.status(400).json({ error: 'Invalid companyId' });
+
+  const { batchId, prompt, model } = req.body || {};
+  try {
+    const company = await snap.getCompanyById(companyId);
+    if (!company) return res.status(404).json({ error: 'Company not found' });
+
+    // Extra step: if we have no stored releases for this company, pull them from
+    // Newsfile/ASX in real-time so the snapshot has fresh material to work from.
+    const existing = await news.getCompanyNewsItems(companyId, 1);
+    let fetched = null;
+    if (!existing.length) {
+      fetched = await news.fetchCompanyReleasesRealtime(company);
+    }
+
+    const result = await snap.analyzeCompanySnapshot({ company, prompt, model });
+
+    await snap.recordSnapshotTestRun(companyId, {
+      batchId,
+      companyName: company.name,
+      ticker: company.ticker,
+      model: result.model || model,
+      ok: result.ok,
+      durationMs: result.durationMs,
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
+      result: result.ok ? { body: result.body, paragraphs: result.paragraphs, keyPoints: result.keyPoints } : null,
+      errorMessage: result.ok ? null : result.error,
+    });
+
+    res.json({
+      companyId,
+      company_name: company.name,
+      ticker: company.ticker,
+      exchange: company.exchange,
+      fetched,
+      ...result,
+    });
+  } catch (err) {
+    console.error('Snapshot analyze-one failed:', err?.message || err);
+    res.status(500).json({ error: err?.message || 'Analysis failed' });
+  }
+});
+
+router.get('/snapshots/download', async (req, res) => {
+  const batchId = String(req.query.batch || '').trim();
+  if (!batchId) return res.status(400).json({ error: 'Missing batch id' });
+  try {
+    const rows = await snap.getSnapshotBatchRuns(batchId);
+    if (!rows.length) return res.status(404).json({ error: 'No results found for this batch' });
+    const zip = snap.buildSnapshotBatchZip(rows);
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="snapshot-test-${stamp}.zip"`);
+    res.setHeader('Content-Length', zip.length);
+    res.send(zip);
+  } catch (err) {
+    console.error('Snapshot download failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to build download' });
+  }
+});
 
 module.exports = router;

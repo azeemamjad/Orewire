@@ -197,8 +197,23 @@ async function loadCompanies() {
   }
 }
 
-// Research a flagged company's current ticker on the web (DuckDuckGo + AI) and,
-// if confident, file a VA suggestion the team can approve from the VA Tasks page.
+// Friendly wording for the "no suggestion filed" outcomes of ticker research,
+// so a paused/failed run doesn't read as "the ticker is fine".
+function tickerFindMessage(reason) {
+  const s = String(reason || '').toLowerCase();
+  if (!reason || s === 'no change' || s === 'no_change' || s === 'no_suggestion') {
+    return 'No ticker change found — the current symbol looks unchanged.';
+  }
+  if (s.includes('paused')) return 'AI is paused — resume it in Admin → AI, then try again.';
+  if (s.includes('no_search_results')) return 'No web results found for this company — try again later.';
+  if (s.includes('web search failed')) return 'Web search failed — try again in a moment.';
+  if (s.includes('cooling')) return 'Recently searched — please try again in a little while.';
+  if (s.includes('invalid_json')) return 'AI returned an unreadable response — try again.';
+  return `No ticker change found (${reason}).`;
+}
+
+// Research a flagged company's current ticker on the web (Brave/DuckDuckGo + AI)
+// and, if confident, file a VA suggestion the team can approve from VA Tasks.
 async function findNewTicker(id, btn) {
   const original = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = '🔎 Searching…'; }
@@ -213,7 +228,35 @@ async function findNewTicker(id, btn) {
       const pct = Math.round((r.suggestion.confidence || 0) * 100);
       toast(`Found ${r.suggestion.suggested_tv_symbol || 'a change'} but confidence too low (${pct}%)`, 'err');
     } else {
-      toast(`No ticker change found (${r.reason || 'no change'})`, 'err');
+      toast(tickerFindMessage(r.reason), 'err');
+    }
+  } catch (err) {
+    toast(err.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = original; }
+  }
+}
+
+// Same as findNewTicker, but triggered from a VA task row: on success it reloads
+// the VA list so the filed ticker_suggestion appears (with Approve/Reject).
+async function vaFindNewTicker(companyId, taskId, btn) {
+  const original = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '🔎 Searching…'; }
+  try {
+    const r = await fetch(`${API}/api/admin/companies/${companyId}/suggest-ticker`, { method: 'POST' })
+      .then((x) => x.json());
+    if (r.error) { toast(r.error, 'err'); return; }
+    if (r.created) {
+      const p = r.suggestion || {};
+      toast(`Suggestion filed: ${p.suggested_tv_symbol || 'new ticker'} — review it below`);
+      await syncVaTasks();
+      loadVaTasks();
+      if (typeof refreshVaTasksBadge === 'function') refreshVaTasksBadge();
+    } else if (r.suggestion && r.suggestion.changed) {
+      const pct = Math.round((r.suggestion.confidence || 0) * 100);
+      toast(`Found ${r.suggestion.suggested_tv_symbol || 'a change'} but confidence too low (${pct}%)`, 'err');
+    } else {
+      toast(tickerFindMessage(r.reason), 'err');
     }
   } catch (err) {
     toast(err.message, 'err');
@@ -3115,6 +3158,12 @@ function selectVaTask(id) {
     ? `<a class="btn btn-ghost btn-sm" href="${esc(t.actionUrl)}">Open section →</a>`
     : '';
 
+  // Invalid/stale ticker rows: let the VA research a replacement right here — it
+  // searches the web (DuckDuckGo + AI) and files a ticker_suggestion to approve.
+  const findTickerBtn = (t.companyId && t.errorType === 'symbol_invalid')
+    ? `<button class="btn btn-secondary btn-sm" type="button" title="Search the web (DuckDuckGo + AI) for this company's current ticker and file a suggestion to approve" onclick="vaFindNewTicker(${t.companyId}, ${t.id}, this)">🔎 Find new ticker</button>`
+    : '';
+
   // Structured ticker-change suggestion: show the proposed change + Approve/Reject.
   let suggestionBlock = '';
   let actions;
@@ -3140,6 +3189,7 @@ function selectVaTask(id) {
       <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'open')">Reopen</button>`;
   } else {
     actions = `
+      ${findTickerBtn}
       ${actionBtn}
       <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'in_progress')">▶ In progress</button>
       <button class="btn btn-primary btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'done')">✓ Done</button>

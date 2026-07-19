@@ -43,6 +43,17 @@ Rules:
 - Never use em dashes or en dashes (— or –). Use commas, periods, or parentheses instead.
 - Write in direct, natural prose. Avoid AI filler ("it's worth noting", "in conclusion", "overall") and curly quotes; use plain straight quotes.`;
 
+// Production uses the operator-tuned prompt saved from the Testing tab (Admin →
+// Testing → Snapshots), falling back to the built-in SNAPSHOT_SYSTEM.
+async function getActiveSnapshotSystem() {
+  try {
+    const r = await db.query(`SELECT value FROM app_settings WHERE key = 'testing_snapshot_prompt'`);
+    const v = r.rows[0]?.value;
+    if (v && typeof v.prompt === 'string' && v.prompt.trim()) return v.prompt;
+  } catch { /* fall through */ }
+  return SNAPSHOT_SYSTEM;
+}
+
 function fmtNull(value) {
   if (value === null || value === undefined || value === '') return 'null';
   return String(value).trim();
@@ -481,7 +492,7 @@ async function regenerateCompanySnapshot(companyId) {
     const prompt = buildSnapshotPrompt(ctx);
     const result = await chatWithSystem({
       feature: 'company_snapshot',
-      system: SNAPSHOT_SYSTEM,
+      system: await getActiveSnapshotSystem(),
       user: prompt,
     });
     model = result.model;
@@ -564,6 +575,7 @@ async function getCompanySnapshot(companyId, { force = false } = {}) {
 }
 
 module.exports = {
+  SNAPSHOT_SYSTEM,
   gatherSnapshotContext,
   getCompanySnapshot,
   getCompanySnapshotView,
