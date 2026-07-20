@@ -1,4 +1,4 @@
-/** Curated mining / markets hashtags + optional best-effort live trends. */
+/** Curated mining / markets hashtags for daily threads. */
 
 const CURATED = [
   '#Mining',
@@ -42,25 +42,10 @@ function pickFromText(text, limit = 5) {
   return [...picked].slice(0, limit);
 }
 
-/**
- * Best-effort: try XActions discoveryExplore if available; fall back to curated.
- * Never throws — hashtags must not block a post run.
- */
 async function pickHashtags(items = [], { count = 4 } = {}) {
   const text = items.map((i) => `${i.label || ''} ${i.summary || ''} ${i.ticker || ''}`).join(' ');
-  let live = [];
-  try {
-    const mod = await import('xactions').catch(() => null);
-    const explore = mod?.discoveryExplore || mod?.default?.discoveryExplore;
-    if (typeof explore === 'function') {
-      // discoveryExplore is typically a browser script factory; skip if not callable usefully
-    }
-  } catch {
-    /* ignore */
-  }
   const curated = pickFromText(text, count);
-  const merged = [...new Set([...live, ...curated])].slice(0, count);
-  return merged.length ? merged : CURATED.slice(0, count);
+  return curated.length ? curated : CURATED.slice(0, count);
 }
 
 module.exports = { pickHashtags, CURATED, pickFromText };
