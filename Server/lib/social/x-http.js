@@ -1,18 +1,21 @@
 /**
  * Minimal X/Twitter HTTP client for credential login + posting threads.
- * Uses X's public web bearer + onboarding/GraphQL endpoints (same approach as
- * open-source scrapers). No heavy xactions dependency — keeps Docker npm ci clean.
+ * Critical: login init returns an `att` header that MUST be sent on every
+ * subsequent onboarding subtask (error 366 = Invalid ATT).
  */
+const crypto = require('crypto');
+
 const BEARER =
   'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA';
 
 const WEB = 'https://x.com';
 const API = 'https://api.x.com';
 const GRAPHQL = `${WEB}/i/api/graphql`;
+const ONBOARDING = `${API}/1.1/onboarding/task.json`;
 const CREATE_TWEET = { queryId: 'SiM_cAu83R0wnrpmKQQSEw', operationName: 'CreateTweet' };
 
 const UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 const FEATURES = {
   rweb_video_screen_enabled: false,
@@ -102,11 +105,28 @@ function sleep(ms) {
 
 function parseCookieString(cookieString) {
   const out = {};
-  for (const part of String(cookieString || '').split(';')) {
-    const idx = part.indexOf('=');
+  const raw = String(cookieString || '')
+    .replace(/\r/g, '')
+    .replace(/\n+/g, ';')
+    .trim();
+
+  // Support "auth_token: value" / "ct0 = value" lines as well as "name=value; …"
+  for (const part of raw.split(/;|\n/)) {
+    let chunk = part.trim();
+    if (!chunk) continue;
+    // name: value  → name=value
+    if (!chunk.includes('=') && chunk.includes(':')) {
+      const idx = chunk.indexOf(':');
+      chunk = `${chunk.slice(0, idx).trim()}=${chunk.slice(idx + 1).trim()}`;
+    }
+    const idx = chunk.indexOf('=');
     if (idx === -1) continue;
-    const name = part.slice(0, idx).trim();
-    const value = part.slice(idx + 1).trim();
+    const name = chunk.slice(0, idx).trim();
+    let value = chunk.slice(idx + 1).trim();
+    // Strip wrapping quotes
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
     if (name) out[name] = value;
   }
   return out;
@@ -114,6 +134,7 @@ function parseCookieString(cookieString) {
 
 function cookieHeader(cookies) {
   return Object.entries(cookies)
+    .filter(([, v]) => v != null && v !== '')
     .map(([k, v]) => `${k}=${v}`)
     .join('; ');
 }
@@ -128,6 +149,20 @@ function mergeSetCookie(cookies, response) {
     const value = header.slice(idx + 1, semi === -1 ? undefined : semi).trim();
     if (name) cookies[name] = value;
   }
+  // Some stacks expose a single set-cookie header only
+  if (!setCookies.length) {
+    const single = response.headers.get?.('set-cookie');
+    if (single) {
+      for (const chunk of String(single).split(/,(?=\s*[^;=]+=)/)) {
+        const idx = chunk.indexOf('=');
+        if (idx === -1) continue;
+        const semi = chunk.indexOf(';');
+        const name = chunk.slice(0, idx).trim();
+        const value = chunk.slice(idx + 1, semi === -1 ? undefined : semi).trim();
+        if (name) cookies[name] = value;
+      }
+    }
+  }
   return cookies;
 }
 
@@ -136,6 +171,7 @@ class XHttpClient {
     this.fetchFn = fetchFn || globalThis.fetch;
     this.cookies = cookies ? { ...cookies } : {};
     this.guestToken = null;
+    this.att = null;
     this.user = null;
     this._lastSubtasks = [];
   }
@@ -154,20 +190,35 @@ class XHttpClient {
 
   async ensureGuestToken() {
     if (this.guestToken) return this.guestToken;
+
+    // Seed ct0 if missing — some flows expect it early
+    if (!this.cookies.ct0) {
+      this.cookies.ct0 = crypto.randomBytes(16).toString('hex');
+    }
+
     const res = await this.fetchFn(`${API}/1.1/guest/activate.json`, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${decodeURIComponent(BEARER)}`,
         'user-agent': UA,
+        'x-csrf-token': this.cookies.ct0,
+        cookie: cookieHeader(this.cookies),
       },
     });
+    mergeSetCookie(this.cookies, res);
     if (!res.ok) throw new Error(`Guest token failed (HTTP ${res.status})`);
     const data = await res.json();
     if (!data.guest_token) throw new Error('Guest token missing in response');
     this.guestToken = data.guest_token;
+    if (!this.cookies.guest_id) {
+      this.cookies.guest_id = `v1%3A${this.guestToken}`;
+    }
     return this.guestToken;
   }
 
+  /**
+   * Headers for login onboarding (guest) or authenticated GraphQL.
+   */
   baseHeaders({ authenticated = false, guest = false } = {}) {
     const headers = {
       authorization: `Bearer ${decodeURIComponent(BEARER)}`,
@@ -177,57 +228,84 @@ class XHttpClient {
       'accept-language': 'en-US,en;q=0.9',
       'x-twitter-client-language': 'en',
       'x-twitter-active-user': 'yes',
+      origin: WEB,
+      referer: `${WEB}/`,
     };
+
     if (authenticated && this.isAuthenticated()) {
       headers['x-csrf-token'] = this.cookies.ct0;
       headers['x-twitter-auth-type'] = 'OAuth2Session';
       headers.cookie = cookieHeader(this.cookies);
-    } else if (guest && this.guestToken) {
-      headers['x-guest-token'] = this.guestToken;
-      headers.cookie = `guest_id=v1%3A${this.guestToken}`;
+    } else if (guest) {
+      if (this.guestToken) headers['x-guest-token'] = this.guestToken;
+      if (this.cookies.ct0) headers['x-csrf-token'] = this.cookies.ct0;
+      // ATT must be echoed after login init — without it X returns error 366
+      if (this.att) headers.att = this.att;
+      headers.cookie = cookieHeader(this.cookies);
     }
     return headers;
   }
 
-  async loginWithCredentials(username, password, email = '') {
-    await this.ensureGuestToken();
-    const url = `${WEB}/i/api/1.1/onboarding/task.json`;
+  _captureAtt(response) {
+    const att =
+      response.headers.get?.('att') ||
+      response.headers.get?.('Att') ||
+      null;
+    if (att) {
+      this.att = att;
+      // Also store as cookie so Cookie jar stays consistent
+      this.cookies.att = att;
+    }
+  }
 
-    let flowToken = await this._loginInit(url);
-    flowToken = await this._loginSubtask(url, flowToken, {
-      subtask_id: 'LoginJsInstrumentationSubtask',
-      js_instrumentation: { response: '{}', link: 'next_link' },
-    });
-    flowToken = await this._loginSubtask(url, flowToken, {
+  async loginWithCredentials(username, password, email = '') {
+    const user = String(username || '').replace(/^@/, '').trim();
+    if (!user || !password) throw new Error('Username and password are required');
+
+    await this.ensureGuestToken();
+
+    let flowToken = await this._loginInit();
+    await sleep(200 + Math.random() * 300);
+
+    // Only run instrumentation if X asked for it
+    if (this._hasSubtask('LoginJsInstrumentationSubtask')) {
+      flowToken = await this._loginSubtask(flowToken, {
+        subtask_id: 'LoginJsInstrumentationSubtask',
+        js_instrumentation: { response: '{}', link: 'next_link' },
+      });
+      await sleep(150);
+    }
+
+    flowToken = await this._loginSubtask(flowToken, {
       subtask_id: 'LoginEnterUserIdentifierSSO',
       settings_list: {
         setting_responses: [
           {
             key: 'user_identifier',
-            response_data: { text_data: { result: username } },
+            response_data: { text_data: { result: user } },
           },
         ],
         link: 'next_link',
       },
     });
+    await sleep(200);
 
     if (this._hasSubtask('LoginEnterAlternateIdentifierSubtask')) {
-      if (!email) {
-        throw new Error('X requires email verification — save the account email in Social Automation');
-      }
-      flowToken = await this._loginSubtask(url, flowToken, {
+      const alt = email || user;
+      flowToken = await this._loginSubtask(flowToken, {
         subtask_id: 'LoginEnterAlternateIdentifierSubtask',
-        enter_text: { text: email, link: 'next_link' },
+        enter_text: { text: alt, link: 'next_link' },
       });
     }
 
-    flowToken = await this._loginSubtask(url, flowToken, {
+    flowToken = await this._loginSubtask(flowToken, {
       subtask_id: 'LoginEnterPassword',
       enter_password: { password, link: 'next_link' },
     });
+    await sleep(200);
 
     if (this._hasSubtask('AccountDuplicationCheck')) {
-      flowToken = await this._loginSubtask(url, flowToken, {
+      flowToken = await this._loginSubtask(flowToken, {
         subtask_id: 'AccountDuplicationCheck',
         check_logged_in_account: { link: 'AccountDuplicationCheck_false' },
       });
@@ -235,22 +313,28 @@ class XHttpClient {
 
     if (this._hasSubtask('LoginAcid')) {
       if (!email) {
-        throw new Error('X requires email confirmation (LoginAcid) — save the account email');
+        throw new Error('X requires email confirmation — save the account email and try again');
       }
-      flowToken = await this._loginSubtask(url, flowToken, {
+      flowToken = await this._loginSubtask(flowToken, {
         subtask_id: 'LoginAcid',
         enter_text: { text: email, link: 'next_link' },
       });
     }
 
     if (this._hasSubtask('LoginTwoFactorAuthChallenge')) {
-      throw new Error('Two-factor authentication is required. Disable 2FA on the X account or use an app password flow.');
+      throw new Error('Two-factor authentication is required. Disable 2FA on the X account for automated login.');
     }
+
+    // Sometimes auth is in open_account subtask rather than Set-Cookie
+    this._extractOpenAccount();
 
     void flowToken;
 
     if (!this.cookies.auth_token || !this.cookies.ct0) {
-      throw new Error('Login finished but auth cookies were not set (captcha or challenge may be required)');
+      const next = this._lastSubtasks.map((s) => s.subtask_id).join(', ') || 'none';
+      throw new Error(
+        `Login finished but auth cookies missing (next challenge: ${next}). Try again, or paste session cookies.`,
+      );
     }
 
     const validation = await this.validateSession();
@@ -259,6 +343,15 @@ class XHttpClient {
     }
     this.user = validation.user;
     return { ...validation.user };
+  }
+
+  _extractOpenAccount() {
+    for (const sub of this._lastSubtasks || []) {
+      const acct = sub.open_account;
+      if (!acct) continue;
+      if (acct.auth_token) this.cookies.auth_token = acct.auth_token;
+      if (acct.ct0) this.cookies.ct0 = acct.ct0;
+    }
   }
 
   async validateSession() {
@@ -331,12 +424,12 @@ class XHttpClient {
       throw new Error(json.errors[0].message || 'CreateTweet error');
     }
 
-    const result =
+    return (
       json?.data?.create_tweet?.tweet_results?.result ??
       json?.data?.create_tweet?.tweet_result?.result ??
       json?.data?.create_tweet ??
-      json;
-    return result;
+      json
+    );
   }
 
   async postThread(tweets) {
@@ -361,8 +454,8 @@ class XHttpClient {
     return results;
   }
 
-  async _loginInit(url) {
-    const res = await this.fetchFn(`${url}?flow_name=login`, {
+  async _loginInit() {
+    const res = await this.fetchFn(`${ONBOARDING}?flow_name=login`, {
       method: 'POST',
       headers: this.baseHeaders({ guest: true }),
       body: JSON.stringify({
@@ -376,15 +469,23 @@ class XHttpClient {
       }),
     });
     mergeSetCookie(this.cookies, res);
-    if (!res.ok) throw new Error(`Login init failed (HTTP ${res.status})`);
+    this._captureAtt(res);
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Login init failed (HTTP ${res.status}): ${body.slice(0, 200)}`);
+    }
     const data = await res.json();
     this._lastSubtasks = data.subtasks || [];
     if (!data.flow_token) throw new Error('Login init missing flow_token');
+    if (!this.att) {
+      // Soft warn — some regions set att only as cookie
+      if (this.cookies.att) this.att = this.cookies.att;
+    }
     return data.flow_token;
   }
 
-  async _loginSubtask(url, flowToken, subtaskInput) {
-    const res = await this.fetchFn(url, {
+  async _loginSubtask(flowToken, subtaskInput) {
+    const res = await this.fetchFn(ONBOARDING, {
       method: 'POST',
       headers: this.baseHeaders({ guest: true }),
       body: JSON.stringify({
@@ -393,13 +494,15 @@ class XHttpClient {
       }),
     });
     mergeSetCookie(this.cookies, res);
+    this._captureAtt(res);
     this._lastLoginResponse = res;
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      throw new Error(`Login step ${subtaskInput.subtask_id} failed (HTTP ${res.status}): ${body.slice(0, 200)}`);
+      throw new Error(`Login step ${subtaskInput.subtask_id} failed (HTTP ${res.status}): ${body.slice(0, 240)}`);
     }
     const data = await res.json();
     this._lastSubtasks = data.subtasks || [];
+    this._extractOpenAccount();
     return data.flow_token;
   }
 

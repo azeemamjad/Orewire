@@ -67,7 +67,7 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
         </div>
         <div class="form-row">
           <label for="x-password">Password</label>
-          <input id="x-password" type="password" autocomplete="new-password" placeholder="••••••••" required />
+          <input id="x-password" type="password" autocomplete="new-password" placeholder="••••••••" />
         </div>
         <div class="form-row">
           <label for="x-email">Email (optional, for login challenges)</label>
@@ -79,6 +79,15 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
           <span class="status-badge" id="account-badge"><span class="dot"></span><span id="account-badge-text">—</span></span>
         </div>
         <p class="hint" id="creds-meta" style="margin-top:10px;"></p>
+        <div style="margin-top:14px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px;">Recommended: paste session cookies</div>
+          <p class="hint" style="margin:0 0 8px;">X blocks automated login from most server IPs (Cloudflare). From Chrome on your laptop: open <code>x.com</code> while logged in → F12 → Application → Cookies → <code>x.com</code> → copy <code>auth_token</code> and <code>ct0</code>.</p>
+          <div class="form-row">
+            <label for="x-cookies">Cookie string</label>
+            <input id="x-cookies" type="text" autocomplete="off" placeholder="auth_token=PASTE; ct0=PASTE" />
+          </div>
+          <button class="btn btn-primary btn-sm" type="button" onclick="importCookies()">Import cookies &amp; activate</button>
+        </div>
       </form>
     </section>
 
@@ -220,11 +229,12 @@ async function saveCredentials(e) {
   const username = document.getElementById('x-username').value.trim();
   const password = document.getElementById('x-password').value;
   const email = document.getElementById('x-email').value.trim();
+  if (!username) { toast('Username required', 'err'); return; }
   try {
     const r = await fetch('/api/admin/social/x/credentials', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password, email: email || undefined }),
+      body: JSON.stringify({ username, password: password || undefined, email: email || undefined }),
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || 'Save failed');
@@ -237,7 +247,7 @@ async function saveCredentials(e) {
 }
 
 async function testLogin() {
-  toast('Testing login…', 'ok');
+  toast('Testing login (may take up to a minute)…', 'ok');
   try {
     const r = await fetch('/api/admin/social/x/login-test', { method: 'POST' });
     const data = await r.json();
@@ -247,6 +257,26 @@ async function testLogin() {
   } catch (err) {
     toast(err.message || 'Login failed', 'err');
     await loadStatus();
+  }
+}
+
+async function importCookies() {
+  const cookies = document.getElementById('x-cookies').value.trim();
+  if (!cookies) { toast('Paste auth_token and ct0 first', 'err'); return; }
+  try {
+    const r = await fetch('/api/admin/social/x/import-cookies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cookies }),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.ok) throw new Error(data.error || 'Import failed');
+    document.getElementById('x-cookies').value = '';
+    if (data.warning) toast(data.warning, 'ok');
+    else toast(`Session imported${data.user?.username ? ' (@' + data.user.username + ')' : ''}`, 'ok');
+    await loadStatus();
+  } catch (err) {
+    toast(err.message || 'Import failed', 'err');
   }
 }
 

@@ -6,7 +6,7 @@ const {
   publicAccount,
   getAccount,
 } = require('../../lib/social/accounts');
-const { loginWithStoredCredentials } = require('../../lib/social/x-client');
+const { loginWithStoredCredentials, importSessionCookies } = require('../../lib/social/x-client');
 const { runSocialPost, getStatusSnapshot } = require('../../lib/social/run');
 const { getAnalytics } = require('../../lib/social/analytics');
 const { rescheduleSocialScheduler } = require('../../lib/social/scheduler');
@@ -37,12 +37,12 @@ router.put('/settings', async (req, res) => {
     // Play requires credentials + successful login status
     if (body.enabled === true) {
       const account = await getAccount();
-      if (!account?.password_enc) {
-        return res.status(400).json({ error: 'Save X credentials before enabling automation' });
+      if (!account?.password_enc && !account?.session_cookie_enc) {
+        return res.status(400).json({ error: 'Save X credentials or import session cookies before enabling' });
       }
       if (account.status !== 'ok') {
         return res.status(400).json({
-          error: 'Test login must succeed before enabling automation',
+          error: 'Test login or Import cookies must succeed before enabling automation',
           status: account.status,
         });
       }
@@ -106,6 +106,28 @@ router.post('/x/login-test', async (_req, res) => {
       error: err?.message || 'Login failed',
       account: publicAccount(updated),
     });
+  }
+});
+
+// POST /api/admin/social/x/import-cookies — paste auth_token=…; ct0=… from browser
+router.post('/x/import-cookies', async (req, res) => {
+  try {
+    const cookieString = String(req.body?.cookies || req.body?.cookieString || '').trim();
+    if (!cookieString) return res.status(400).json({ error: 'cookies required' });
+    const result = await importSessionCookies(cookieString);
+    const updated = await getAccount();
+    res.json({
+      ok: true,
+      user: result.user
+        ? { id: result.user.id, username: result.user.username, name: result.user.name }
+        : null,
+      account: publicAccount(updated),
+      verified: !!result.verified,
+      warning: result.warning || null,
+    });
+  } catch (err) {
+    console.error('[social] import-cookies failed:', err?.message || err);
+    res.status(400).json({ ok: false, error: err?.message || 'Import failed' });
   }
 });
 

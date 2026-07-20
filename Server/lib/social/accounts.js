@@ -43,10 +43,17 @@ function publicAccount(row) {
 async function saveCredentials({ username, password, email } = {}) {
   const user = String(username || '').trim().replace(/^@/, '');
   if (!user) throw new Error('Username is required');
-  if (!password || !String(password).trim()) throw new Error('Password is required');
 
-  const passwordEnc = encrypt(String(password));
-  const emailEnc = email != null && String(email).trim() ? encrypt(String(email).trim()) : null;
+  const existing = await getAccount();
+  const passwordTrimmed = password != null ? String(password).trim() : '';
+  if (!passwordTrimmed && !existing?.password_enc) {
+    throw new Error('Password is required');
+  }
+
+  const passwordEnc = passwordTrimmed ? encrypt(passwordTrimmed) : existing.password_enc;
+  const emailEnc = email != null && String(email).trim()
+    ? encrypt(String(email).trim())
+    : (existing?.email_enc || null);
 
   await db.query(
     `INSERT INTO social_accounts
@@ -80,6 +87,14 @@ async function getDecryptedCredentials() {
 
 async function saveSession({ cookieString, expiresAt = null } = {}) {
   if (!cookieString) throw new Error('cookieString required');
+  const enc = encrypt(cookieString);
+  // Ensure a row exists (cookie-only import before password save)
+  await db.query(
+    `INSERT INTO social_accounts (platform, username, status, updated_at)
+     VALUES ($1, 'unknown', 'needs_login', NOW())
+     ON CONFLICT (platform) DO NOTHING`,
+    [PLATFORM],
+  );
   await db.query(
     `UPDATE social_accounts
         SET session_cookie_enc = $2,
@@ -89,7 +104,7 @@ async function saveSession({ cookieString, expiresAt = null } = {}) {
             last_error = NULL,
             updated_at = NOW()
       WHERE platform = $1`,
-    [PLATFORM, encrypt(cookieString), expiresAt],
+    [PLATFORM, enc, expiresAt],
   );
 }
 
