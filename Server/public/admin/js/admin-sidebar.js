@@ -11,7 +11,7 @@ const ADMIN_NAV = [
   { page: 'proxies', href: 'proxies.html', icon: '🔌', label: 'Proxies' },
   { page: 'ai', href: 'ai.html', icon: '🧠', label: 'AI' },
   { page: 'testing', href: 'testing.html', icon: '🧪', label: 'Testing' },
-  { page: 'social-automation', href: 'social-automation.html', icon: '𝕏', label: 'Social Automation' },
+  { page: 'social-automation', href: 'social-automation.html', icon: 'X', label: 'Social Automation' },
   { page: 'va-tasks', href: 'va-tasks.html', icon: '📋', label: 'VA Tasks', badge: 'va' },
   { page: 'users', href: 'users.html', icon: '👤', label: 'Users' },
   { page: 'contact-messages', href: 'contact-messages.html', icon: '📧', label: 'Contact', badge: 'contact' },
