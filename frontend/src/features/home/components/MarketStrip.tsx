@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { fetchMovers, type MoverItem } from "@/lib/api";
 
-const REFETCH_MS = 30 * 60 * 1000; // 30 minutes
+const REFETCH_MS = 60 * 1000; // match server movers poll (~1 min)
 
 function exPrefix(ex: string): string {
   if (ex === "TSXV") return "TSXV";

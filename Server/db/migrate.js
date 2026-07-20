@@ -768,6 +768,72 @@ async function migrate() {
     console.warn('[DB] instrument_symbols seed skipped:', err?.message || err);
   }
 
+  // Social automation (X/Twitter daily thread)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS social_accounts (
+      id                  SERIAL PRIMARY KEY,
+      platform            TEXT NOT NULL DEFAULT 'x',
+      username            TEXT NOT NULL,
+      password_enc        TEXT,
+      email_enc           TEXT,
+      session_cookie_enc  TEXT,
+      session_expires_at  TIMESTAMPTZ,
+      status              TEXT NOT NULL DEFAULT 'needs_login',
+      last_login_at       TIMESTAMPTZ,
+      last_error          TEXT,
+      created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (platform)
+    )
+  `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS social_automation_settings (
+      id          SERIAL PRIMARY KEY,
+      platform    TEXT NOT NULL DEFAULT 'x' UNIQUE,
+      enabled     BOOLEAN NOT NULL DEFAULT FALSE,
+      cron        TEXT NOT NULL DEFAULT '0 8 * * *',
+      timezone    TEXT NOT NULL DEFAULT 'America/Toronto',
+      items_min   INTEGER NOT NULL DEFAULT 5,
+      items_max   INTEGER NOT NULL DEFAULT 7,
+      dry_run     BOOLEAN NOT NULL DEFAULT TRUE,
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await safeQuery(`
+    INSERT INTO social_automation_settings (platform, enabled, cron, timezone, items_min, items_max, dry_run)
+    VALUES ('x', FALSE, '0 8 * * *', 'America/Toronto', 5, 7, TRUE)
+    ON CONFLICT (platform) DO NOTHING
+  `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS social_post_runs (
+      id           SERIAL PRIMARY KEY,
+      platform     TEXT NOT NULL DEFAULT 'x',
+      started_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      finished_at  TIMESTAMPTZ,
+      status       TEXT NOT NULL DEFAULT 'running',
+      trigger      TEXT NOT NULL DEFAULT 'cron',
+      item_count   INTEGER NOT NULL DEFAULT 0,
+      thread_url   TEXT,
+      error        TEXT,
+      dry_run      BOOLEAN NOT NULL DEFAULT FALSE,
+      payload      JSONB NOT NULL DEFAULT '{}'::jsonb
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_social_post_runs_started ON social_post_runs(started_at DESC)`);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS social_post_items (
+      id           SERIAL PRIMARY KEY,
+      run_id       INTEGER NOT NULL REFERENCES social_post_runs(id) ON DELETE CASCADE,
+      kind         TEXT NOT NULL,
+      source_id    TEXT,
+      tweet_text   TEXT NOT NULL,
+      position     INTEGER NOT NULL DEFAULT 0,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_social_post_items_run ON social_post_items(run_id, position)`);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_social_post_items_source ON social_post_items(kind, source_id)`);
+
   console.log('[DB] All migrations complete');
 }
 

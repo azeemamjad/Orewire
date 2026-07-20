@@ -61,6 +61,7 @@ router.get('/', async (req, res) => {
     let clause = "WHERE status IN ('open', 'in_progress')";
     if (filter === 'all') clause = '';
     else if (filter === 'done') clause = "WHERE status IN ('done', 'resolved', 'dismissed')";
+    else if (filter === 'do_later') clause = "WHERE status = 'do_later'";
     else if (filter === 'open') clause = "WHERE status IN ('open', 'in_progress')";
 
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -109,7 +110,7 @@ router.patch('/:id', express.json(), async (req, res) => {
     if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
 
     const { status, assignedNote } = req.body || {};
-    const allowed = new Set(['open', 'in_progress', 'done', 'dismissed', 'resolved']);
+    const allowed = new Set(['open', 'in_progress', 'do_later', 'done', 'dismissed', 'resolved']);
     if (status && !allowed.has(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
@@ -121,6 +122,7 @@ router.patch('/:id', express.json(), async (req, res) => {
     if (status) {
       sets.push(`status = $${i++}`);
       vals.push(status);
+      // Terminal only — do_later is a parked queue, not resolved
       if (['done', 'dismissed', 'resolved'].includes(status)) {
         sets.push(`resolved_at = NOW()`);
         sets.push(`resolved_by = $${i++}`);

@@ -11,7 +11,17 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
 .va-sev-high { color: #c2410c; font-weight: 600; }
 .va-sev-medium { color: var(--accent); }
 .va-sev-low { color: var(--muted); }
-.va-task-row-open { background: rgba(217, 119, 6, 0.08); }
+/* Flat rows — no zebra striping on this page. */
+.va-layout tbody tr:nth-child(even) { background: transparent; }
+.va-layout tbody tr { background: transparent; }
+.va-layout tbody tr:hover { background: var(--surface-2); }
+.va-task-row-open { background: transparent; }
+.va-task-row-later td:nth-child(5) { color: #a16207; font-weight: 600; }
+.va-layout tbody tr.va-task-row-selected,
+.va-layout tbody tr.va-task-row-selected:hover {
+  background: #e2e8f0;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
 .va-task-detail { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; min-height: 200px; }
 .va-task-detail-empty { color: var(--muted); font-size: 14px; padding: 24px; text-align: center; }
 .va-task-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
@@ -29,6 +39,7 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
   <div class="toolbar">
     <select id="va-filter">
       <option value="open">Open &amp; in progress</option>
+      <option value="do_later">Do later</option>
       <option value="all">All tasks</option>
       <option value="done">Done / dismissed</option>
     </select>

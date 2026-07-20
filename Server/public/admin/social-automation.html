@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Social Automation | OreWire Admin</title>
+<link rel="stylesheet" href="/admin/css/admin.css" />
+<style>
+nav li a { color: inherit; text-decoration: none; display: flex; align-items: center; gap: 8px; width: 100%; }
+.social-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+@media (max-width: 900px) { .social-grid { grid-template-columns: 1fr; } }
+.social-card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px 18px;
+}
+.social-card h2 { font-size: 15px; margin: 0 0 12px; }
+.social-card .hint { font-size: 12px; color: var(--muted); margin: 0 0 12px; line-height: 1.4; }
+.social-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.social-stat { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+.social-stat .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.social-stat .value { font-size: 20px; font-weight: 700; margin-top: 4px; }
+.status-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+  background: var(--surface-2); color: var(--muted);
+}
+.status-badge.ok { background: #dcfce7; color: #166534; }
+.status-badge.needs_login { background: #fef3c7; color: #92400e; }
+.status-badge.error { background: #fee2e2; color: #991b1b; }
+.status-badge .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.play-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
+.form-row { display: grid; gap: 6px; margin-bottom: 12px; }
+.form-row label { font-size: 12px; color: var(--muted); }
+.form-row input[type="text"],
+.form-row input[type="password"],
+.form-row input[type="email"] {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--bg); color: inherit; font-size: 14px;
+}
+.check-row { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 8px 0; }
+.err-cell { color: #dc2626; font-size: 12px; max-width: 280px; word-break: break-word; }
+</style>
+</head>
+<body data-page="social-automation">
+<aside class="sidebar"></aside>
+<main class="main">
+  <div class="page-header">
+    <h1>Social Automation</h1>
+    <p>Daily X morning thread from briefing filings &amp; news — credentials, play/pause, and run analytics.</p>
+  </div>
+
+  <div class="social-stats" id="social-stats">
+    <div class="social-stat"><div class="label">Runs today</div><div class="value" id="stat-today">—</div></div>
+    <div class="social-stat"><div class="label">7d success rate</div><div class="value" id="stat-rate">—</div></div>
+    <div class="social-stat"><div class="label">Automation</div><div class="value" id="stat-enabled" style="font-size:16px;">—</div></div>
+    <div class="social-stat"><div class="label">Account</div><div class="value" id="stat-account" style="font-size:14px;">—</div></div>
+  </div>
+
+  <div class="social-grid">
+    <section class="social-card">
+      <h2>X credentials</h2>
+      <p class="hint">Username and password are encrypted at rest. After save, use Test login to refresh the session cookie. Passwords are never returned to the browser.</p>
+      <form id="creds-form" onsubmit="saveCredentials(event)">
+        <div class="form-row">
+          <label for="x-username">Username</label>
+          <input id="x-username" type="text" autocomplete="username" placeholder="@handle" required />
+        </div>
+        <div class="form-row">
+          <label for="x-password">Password</label>
+          <input id="x-password" type="password" autocomplete="new-password" placeholder="••••••••" required />
+        </div>
+        <div class="form-row">
+          <label for="x-email">Email (optional, for login challenges)</label>
+          <input id="x-email" type="email" autocomplete="email" placeholder="account@email.com" />
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+          <button class="btn btn-primary btn-sm" type="submit">Save credentials</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="testLogin()">Test login</button>
+          <span class="status-badge" id="account-badge"><span class="dot"></span><span id="account-badge-text">—</span></span>
+        </div>
+        <p class="hint" id="creds-meta" style="margin-top:10px;"></p>
+      </form>
+    </section>
+
+    <section class="social-card">
+      <h2>Automation</h2>
+      <p class="hint" id="schedule-hint">Daily cron after the morning briefing. Paused until credentials + Test login succeed and you hit Play.</p>
+      <div class="check-row">
+        <input type="checkbox" id="dry-run" onchange="saveDryRun()" />
+        <label for="dry-run">Dry run (compose &amp; log only — do not post to X)</label>
+      </div>
+      <div class="play-row">
+        <button class="btn btn-primary btn-sm" type="button" id="btn-play" onclick="togglePlay()">Play</button>
+        <button class="btn btn-ghost btn-sm" type="button" onclick="runNow()">Run now</button>
+        <button class="btn btn-ghost btn-sm" type="button" onclick="refreshAll()">Refresh</button>
+      </div>
+      <p class="hint" id="last-run-hint" style="margin-top:12px;"></p>
+    </section>
+  </div>
+
+  <section class="social-card" style="margin-bottom:24px;">
+    <div class="toolbar" style="margin:0 0 12px;padding:0;">
+      <h2 style="margin:0;font-size:15px;">Recent runs</h2>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="loadAnalytics()" style="margin-left:auto;">Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Status</th>
+            <th>Trigger</th>
+            <th>Items</th>
+            <th>Thread</th>
+            <th>Error</th>
+          </tr>
+        </thead>
+        <tbody id="runs-body">
+          <tr class="empty-row"><td colspan="6">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+<script src="/admin/js/admin-sidebar.js"></script>
+<script src="/admin/js/legacy-admin.js"></script>
+<script>
+let _social = { settings: null, account: null };
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function setBadge(status) {
+  const el = document.getElementById('account-badge');
+  const text = document.getElementById('account-badge-text');
+  el.className = 'status-badge ' + (status || '');
+  text.textContent = status || '—';
+}
+
+async function loadStatus() {
+  const r = await fetch('/api/admin/social/status');
+  if (!r.ok) throw new Error('Failed to load status');
+  const data = await r.json();
+  _social.settings = data.settings;
+  _social.account = data.account;
+
+  const s = data.settings || {};
+  const a = data.account || {};
+  document.getElementById('dry-run').checked = !!s.dry_run;
+  document.getElementById('stat-enabled').textContent = s.enabled ? 'Playing' : 'Paused';
+  document.getElementById('btn-play').textContent = s.enabled ? 'Pause' : 'Play';
+  document.getElementById('schedule-hint').textContent =
+    `Schedule: ${s.cron || '0 8 * * *'} (${s.timezone || 'America/Toronto'}) · ${s.items_min}–${s.items_max} items · dry_run=${!!s.dry_run}`;
+
+  setBadge(a.status);
+  document.getElementById('stat-account').textContent = a.configured
+    ? (a.usernameHint || a.usernameMasked || 'set')
+    : 'Not set';
+  const meta = [];
+  if (a.passwordSet) meta.push('Password set');
+  if (a.sessionSet) meta.push('Session cached');
+  if (a.lastLoginAt) meta.push('Last login ' + new Date(a.lastLoginAt).toLocaleString());
+  if (a.lastError) meta.push('Error: ' + a.lastError);
+  document.getElementById('creds-meta').textContent = meta.join(' · ') || 'No credentials saved yet.';
+
+  const lr = data.lastRun;
+  if (lr) {
+    document.getElementById('last-run-hint').innerHTML =
+      `Last run: <strong>${esc(lr.status)}</strong> at ${esc(new Date(lr.started_at).toLocaleString())}` +
+      (lr.thread_url ? ` · <a href="${esc(lr.thread_url)}" target="_blank" rel="noopener">thread</a>` : '') +
+      (lr.error ? ` · ${esc(lr.error)}` : '');
+  } else {
+    document.getElementById('last-run-hint').textContent = 'No runs yet.';
+  }
+}
+
+async function loadAnalytics() {
+  const r = await fetch('/api/admin/social/analytics?limit=40');
+  if (!r.ok) throw new Error('Failed to load analytics');
+  const data = await r.json();
+  const c = data.counters || {};
+  document.getElementById('stat-today').textContent = c.runsToday ?? 0;
+  document.getElementById('stat-rate').textContent =
+    c.successRate7d == null ? '—' : `${c.successRate7d}%`;
+
+  const body = document.getElementById('runs-body');
+  const rows = data.runs || [];
+  if (!rows.length) {
+    body.innerHTML = '<tr class="empty-row"><td colspan="6">No runs yet</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map((run) => {
+    const when = run.started_at ? new Date(run.started_at).toLocaleString() : '—';
+    const link = run.thread_url
+      ? `<a href="${esc(run.thread_url)}" target="_blank" rel="noopener">Open</a>`
+      : (run.dry_run ? 'dry-run' : '—');
+    return `<tr>
+      <td>${esc(when)}</td>
+      <td>${esc(run.status)}${run.dry_run ? ' <span style="color:var(--muted)">(dry)</span>' : ''}</td>
+      <td>${esc(run.trigger)}</td>
+      <td>${esc(run.item_count)}</td>
+      <td>${link}</td>
+      <td class="err-cell">${esc(run.error || '')}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function refreshAll() {
+  try {
+    await Promise.all([loadStatus(), loadAnalytics()]);
+  } catch (err) {
+    toast(err.message || 'Refresh failed', 'err');
+  }
+}
+
+async function saveCredentials(e) {
+  e.preventDefault();
+  const username = document.getElementById('x-username').value.trim();
+  const password = document.getElementById('x-password').value;
+  const email = document.getElementById('x-email').value.trim();
+  try {
+    const r = await fetch('/api/admin/social/x/credentials', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, email: email || undefined }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Save failed');
+    document.getElementById('x-password').value = '';
+    toast('Credentials saved — run Test login', 'ok');
+    await loadStatus();
+  } catch (err) {
+    toast(err.message || 'Save failed', 'err');
+  }
+}
+
+async function testLogin() {
+  toast('Testing login…', 'ok');
+  try {
+    const r = await fetch('/api/admin/social/x/login-test', { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok || !data.ok) throw new Error(data.error || 'Login failed');
+    toast(`Login OK${data.user?.username ? ' (@' + data.user.username + ')' : ''}`, 'ok');
+    await loadStatus();
+  } catch (err) {
+    toast(err.message || 'Login failed', 'err');
+    await loadStatus();
+  }
+}
+
+async function saveDryRun() {
+  const dryRun = document.getElementById('dry-run').checked;
+  try {
+    const r = await fetch('/api/admin/social/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dryRun }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Update failed');
+    _social.settings = data.settings;
+    toast(dryRun ? 'Dry run on' : 'Dry run off — live posts enabled', 'ok');
+    await loadStatus();
+  } catch (err) {
+    toast(err.message || 'Update failed', 'err');
+    document.getElementById('dry-run').checked = !!_social.settings?.dry_run;
+  }
+}
+
+async function togglePlay() {
+  const next = !_social.settings?.enabled;
+  try {
+    const r = await fetch('/api/admin/social/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: next }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Update failed');
+    toast(next ? 'Automation playing' : 'Automation paused', 'ok');
+    await loadStatus();
+  } catch (err) {
+    toast(err.message || 'Update failed', 'err');
+  }
+}
+
+async function runNow() {
+  toast('Running thread…', 'ok');
+  try {
+    const r = await fetch('/api/admin/social/run-now', { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok && !data.ok) throw new Error(data.error || 'Run failed');
+    if (data.skipped) {
+      toast(`Skipped: ${data.reason || 'no items'}`, 'ok');
+    } else if (data.dryRun) {
+      toast(`Dry run OK — ${data.itemCount || 0} items composed`, 'ok');
+    } else {
+      toast(`Posted${data.threadUrl ? ' — open thread from analytics' : ''}`, 'ok');
+    }
+    await refreshAll();
+  } catch (err) {
+    toast(err.message || 'Run failed', 'err');
+    await refreshAll();
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  refreshAll();
+});
+</script>
+</body>
+</html>

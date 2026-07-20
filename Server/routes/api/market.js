@@ -24,6 +24,7 @@ const {
   setMoversCached,
   clearMoversCache,
 } = require('../../lib/market/movers-cache');
+const { getMoversSnapshot, refreshMoversSnapshot } = require('../../lib/market/movers-refresh');
 const { listSymbols } = require('../../lib/market/instrument-symbols-store');
 const { fetchTvQuote } = require('../../lib/market/tv-quote');
 const { isTvSymbolHealthy } = require('../../lib/market/symbol-health');
@@ -141,33 +142,44 @@ router.get('/batch', async (req, res) => {
 });
 
 // GET /api/market/movers?exchange=TSXV&limit=10
-// exchange=ALL  -> top gainers/losers across all quoted companies in DB
+// Preferred source: shared TradingView scanner snapshot (server polls once/min,
+// every browser reads this). Falls back to DB quote snapshots, then a live sample.
 router.get('/movers', async (req, res) => {
   try {
-  const exchange = (req.query.exchange || 'ALL').toUpperCase();
-  const limit = Math.min(parseInt(req.query.limit || '10', 10), 50);
-  const cacheKey = `${exchange}:${limit}`;
-  const cached = getMoversCached(cacheKey);
-  if (cached) return res.json(cached);
+    const exchange = (req.query.exchange || 'ALL').toUpperCase();
+    const limit = Math.min(parseInt(req.query.limit || '10', 10), 50);
+    const cacheKey = `${exchange}:${limit}`;
+    const cached = getMoversCached(cacheKey);
+    if (cached) return res.json(cached);
 
-  const { buildMoversPayload } = require('../../lib/company-quote-refresh');
-  const fromDb = await buildMoversPayload(exchange, limit);
+    const snap = getMoversSnapshot(exchange, limit);
+    if (snap && (snap.gainers.length > 0 || snap.losers.length > 0)) {
+      setMoversCached(cacheKey, snap);
+      return res.json(snap);
+    }
 
-  if (fromDb.quotedCount > 0) {
-    const result = {
-      exchange: fromDb.exchange,
-      updatedAt: fromDb.updatedAt,
-      gainers: fromDb.gainers,
-      losers: fromDb.losers,
-    };
+    // Snapshot empty/stale — kick a refresh (non-blocking if already running) and
+    // fall through to DB quotes so the page still renders.
+    refreshMoversSnapshot({ reason: 'on-demand' }).catch(() => {});
+
+    const { buildMoversPayload } = require('../../lib/company-quote-refresh');
+    const fromDb = await buildMoversPayload(exchange, limit);
+
+    if (fromDb.quotedCount > 0) {
+      const result = {
+        exchange: fromDb.exchange,
+        updatedAt: fromDb.updatedAt,
+        gainers: fromDb.gainers,
+        losers: fromDb.losers,
+        source: 'db',
+      };
+      setMoversCached(cacheKey, result);
+      return res.json(result);
+    }
+
+    const result = await fetchMoversLiveSample(exchange, limit);
     setMoversCached(cacheKey, result);
-    return res.json(result);
-  }
-
-  // Fallback until the first background refresh completes.
-  const result = await fetchMoversLiveSample(exchange, limit);
-  setMoversCached(cacheKey, result);
-  res.json(result);
+    res.json(result);
   } catch (err) {
     console.error('Movers query failed:', err?.message || err);
     res.status(503).json({ exchange: 'ALL', updatedAt: new Date().toISOString(), gainers: [], losers: [] });
