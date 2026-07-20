@@ -5,11 +5,13 @@ const { startWatchlistNewsAlertsScheduler } = require('../watchlist/news-alerts-
 const { startWatchlistFilingAlertsScheduler } = require('../watchlist/filing-alerts-scheduler');
 const { startCompanyQuoteScheduler } = require('../market/company-quote-scheduler');
 const { maybeKickInitialRefresh } = require('../market/company-quote-refresh');
+const { startMoversScheduler } = require('../market/movers-scheduler');
 const { startNewsRssScheduler } = require('./news-rss');
 const { startVaTasksScheduler } = require('./va-tasks');
 const { startUsageLogPruneScheduler } = require('./usage-log-prune');
 const { startSymbolHealthScheduler } = require('../market/symbol-health-scheduler');
 const { startTickerRecheckScheduler } = require('./ticker-recheck');
+const { startSocialScheduler } = require('../social/scheduler');
 
 async function startPipelineSchedulers() {
   const cfg = await initPipelineConfig();
@@ -46,6 +48,12 @@ function startBackgroundSchedulers({ server, app } = {}) {
   }
 
   try {
+    startMoversScheduler();
+  } catch (err) {
+    console.error('[movers] Scheduler failed to start:', err?.message || err);
+  }
+
+  try {
     startNewsRssScheduler();
   } catch (err) {
     console.error('[news-rss] Scheduler failed to start:', err?.message || err);
@@ -73,6 +81,14 @@ function startBackgroundSchedulers({ server, app } = {}) {
     startTickerRecheckScheduler();
   } catch (err) {
     console.error('[ticker-recheck] Scheduler failed to start:', err?.message || err);
+  }
+
+  try {
+    startSocialScheduler().catch((err) => {
+      console.error('[social] Scheduler failed to start:', err?.message || err);
+    });
+  } catch (err) {
+    console.error('[social] Scheduler failed to start:', err?.message || err);
   }
 
   if (process.env.RELAY_ENABLED === 'true' && server && app) {

@@ -28,7 +28,7 @@ async function fetchFlaggedCompanies({ limit = null, ticker = null } = {}) {
     // Skip companies that already have an OPEN suggestion awaiting the VA.
     `id NOT IN (SELECT company_id FROM va_tasks
                  WHERE error_type = 'ticker_suggestion' AND company_id IS NOT NULL
-                   AND status IN ('open', 'in_progress'))`,
+                   AND status IN ('open', 'in_progress', 'do_later'))`,
   ];
   if (ticker) {
     params.push(String(ticker).toUpperCase());

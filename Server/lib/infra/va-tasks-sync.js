@@ -338,7 +338,7 @@ async function resolveAutoTask(sourceKey) {
   await db.query(
     `UPDATE va_tasks
      SET status = 'resolved', resolved_at = NOW(), resolved_by = 'system'
-     WHERE source_key = $1 AND auto_managed = TRUE AND status IN ('open', 'in_progress')`,
+     WHERE source_key = $1 AND auto_managed = TRUE AND status IN ('open', 'in_progress', 'do_later')`,
     [sourceKey],
   );
 }
@@ -358,7 +358,7 @@ async function syncVaTasks() {
       `UPDATE va_tasks
        SET status = 'resolved', resolved_at = NOW(), resolved_by = 'system'
        WHERE auto_managed = TRUE
-         AND status IN ('open', 'in_progress')
+         AND status IN ('open', 'in_progress', 'do_later')
          AND NOT (source_key = ANY($1::text[]))`,
       [activeKeys],
     );
@@ -366,7 +366,7 @@ async function syncVaTasks() {
     await db.query(
       `UPDATE va_tasks
        SET status = 'resolved', resolved_at = NOW(), resolved_by = 'system'
-       WHERE auto_managed = TRUE AND status IN ('open', 'in_progress')`,
+       WHERE auto_managed = TRUE AND status IN ('open', 'in_progress', 'do_later')`,
     );
   }
 
@@ -375,7 +375,7 @@ async function syncVaTasks() {
     `UPDATE va_tasks
      SET status = 'resolved', resolved_at = NOW(), resolved_by = 'system'
      WHERE auto_managed = TRUE
-       AND status IN ('open', 'in_progress')
+       AND status IN ('open', 'in_progress', 'do_later')
        AND source_key = 'companies|symbol_invalid'`,
   );
 

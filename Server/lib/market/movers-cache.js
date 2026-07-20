@@ -1,4 +1,9 @@
-const MOVERS_CACHE_TTL_MS = 30 * 60 * 1000;
+// Short TTL — the minute poller refreshes the snapshot; this just absorbs
+// concurrent page loads between polls so we don't stampede the DB/TV.
+const MOVERS_CACHE_TTL_MS = Math.max(
+  5_000,
+  parseInt(process.env.MOVERS_CACHE_TTL_MS || String(45 * 1000), 10) || 45_000,
+);
 const moversCache = new Map();
 
 function getMoversCached(key) {
@@ -23,4 +28,5 @@ module.exports = {
   getMoversCached,
   setMoversCached,
   clearMoversCache,
+  MOVERS_CACHE_TTL_MS,
 };

@@ -3,7 +3,7 @@ import { ArrowDownRight, ArrowUpRight, TrendingUp, TrendingDown } from "lucide-r
 import { Link, useNavigate } from "react-router-dom";
 import { fetchMovers, companySlug, type MoverItem } from "@/lib/api";
 
-const REFETCH_MS = 30 * 60 * 1000;
+const REFETCH_MS = 60 * 1000;
 
 function fmtPrice(n: number | null): string {
   if (n == null) return "-";

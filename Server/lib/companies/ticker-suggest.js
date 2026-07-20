@@ -198,7 +198,7 @@ async function createTickerSuggestionTask(company, suggestion) {
        sample_detail = EXCLUDED.sample_detail,
        last_seen_at = NOW(),
        -- refresh content but never resurrect a task a VA already closed
-       status = CASE WHEN va_tasks.status IN ('done','resolved','dismissed')
+       status = CASE WHEN va_tasks.status IN ('done','resolved','dismissed','do_later','in_progress')
                      THEN va_tasks.status ELSE 'open' END
      RETURNING id`,
     [

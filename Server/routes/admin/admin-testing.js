@@ -11,7 +11,6 @@ const {
   getDraftPrompt,
   saveDraftPrompt,
   clearDraftPrompt,
-  listCustomizedTypes,
 } = require('../../lib/scraper/analyzer/prompt-store');
 const {
   DEFAULT_SAMPLE_SIZE,
@@ -59,11 +58,11 @@ async function buildModelOptions() {
   return { models, activeModel: activeModel || models[0] || 'deepseek-chat', providerType };
 }
 
-// Resolve the prompt state for a filing type: the built-in default, the LIVE
-// production override (if saved), and any testing-only draft. `prompt`/`source`
-// describe what the editor should show (draft first, then production, then
-// default) so a draft-in-progress is never lost on reload.
-async function buildPromptPayload(filingType) {
+// Resolve the single general prompt used by filings testing (not per-type).
+// Production analysis may still use per-type splits; the Testing tab always
+// edits this one shared prompt for all filing types.
+async function buildPromptPayload() {
+  const filingType = null;
   const [productionPrompt, draftPrompt, isProductionCustom] = await Promise.all([
     getTypePrompt(filingType),
     getDraftPrompt(filingType),
@@ -72,7 +71,7 @@ async function buildPromptPayload(filingType) {
   const defaultPrompt = defaultPromptForType(filingType);
   const source = draftPrompt ? 'draft' : (productionPrompt ? 'production' : 'default');
   return {
-    type: filingType,
+    type: null,
     defaultPrompt,
     productionPrompt: productionPrompt || null,
     draftPrompt: draftPrompt || null,
@@ -105,18 +104,24 @@ router.get('/filings/models', async (_req, res) => {
   }
 });
 
-// GET /api/admin/testing/filings/types — canonical types, which are customized,
-// and how many untested filings remain per type (+ overall total).
+// GET /api/admin/testing/filings/types — filing types that still have untested
+// filings (count > 0), plus overall untested total. Empty types are omitted.
 router.get('/filings/types', async (_req, res) => {
   try {
-    const [customized, counts] = await Promise.all([
-      listCustomizedTypes(),
-      untestedCountsByType(),
-    ]);
+    const counts = await untestedCountsByType();
+    const byType = counts.byType || {};
+    // Prefer canonical order; append any non-canonical labels (e.g. "Other") last.
+    const seen = new Set();
+    const types = [];
+    for (const t of CANONICAL_TYPES) {
+      if ((byType[t] || 0) > 0) { types.push(t); seen.add(t); }
+    }
+    for (const t of Object.keys(byType).sort()) {
+      if (!seen.has(t) && byType[t] > 0) types.push(t);
+    }
     res.json({
-      types: CANONICAL_TYPES,
-      customized,
-      counts: counts.byType,
+      types,
+      counts: byType,
       untestedTotal: counts.total,
     });
   } catch (err) {
@@ -155,35 +160,31 @@ router.post('/filings/backfill-type/stop', (_req, res) => {
   res.json(stopBackfill());
 });
 
-// GET /api/admin/testing/filings/prompt?type=<type> — default, production, and
-// draft prompt state for a type
-router.get('/filings/prompt', async (req, res) => {
-  const type = req.query.type ? String(req.query.type) : null;
+// GET /api/admin/testing/filings/prompt — single general prompt (draft / production / default)
+router.get('/filings/prompt', async (_req, res) => {
   try {
-    res.json(await buildPromptPayload(type));
+    res.json(await buildPromptPayload());
   } catch (err) {
     console.error('Testing get prompt failed:', err?.message || err);
     res.status(500).json({ error: 'Failed to load prompt' });
   }
 });
 
-// PUT /api/admin/testing/filings/prompt — save a per-type prompt (type optional = default).
-// target: 'draft' (default, testing only) or 'production' (LIVE — used by real
-// filing analysis). Promoting to production clears the draft copy.
+// PUT /api/admin/testing/filings/prompt — save the single general filings prompt.
+// target: 'draft' (testing only) or 'production' (LIVE general override).
 router.put('/filings/prompt', express.json({ limit: '512kb' }), async (req, res) => {
   const prompt = req.body?.prompt;
-  const type = req.body?.type ? String(req.body.type) : null;
   const target = req.body?.target === 'production' ? 'production' : 'draft';
   if (typeof prompt !== 'string') return res.status(400).json({ error: 'prompt (string) is required' });
   if (!prompt.trim()) return res.status(400).json({ error: 'Prompt cannot be empty' });
   try {
     if (target === 'production') {
-      await saveTypePrompt(type, prompt);
-      await clearDraftPrompt(type);
+      await saveTypePrompt(null, prompt);
+      await clearDraftPrompt(null);
     } else {
-      await saveDraftPrompt(type, prompt);
+      await saveDraftPrompt(null, prompt);
     }
-    res.json({ ok: true, target, ...(await buildPromptPayload(type)) });
+    res.json({ ok: true, target, ...(await buildPromptPayload()) });
   } catch (err) {
     console.error('Testing save prompt failed:', err?.message || err);
     res.status(500).json({ error: 'Failed to save prompt' });
@@ -209,7 +210,7 @@ router.post('/filings/select', express.json(), async (req, res) => {
     const filings = await pickUntestedFilings(count, filingType);
     const stats = await testedStats();
     const { models, activeModel, providerType } = await buildModelOptions();
-    const promptPayload = await buildPromptPayload(filingType);
+    const promptPayload = await buildPromptPayload();
     res.json({
       batchId: crypto.randomUUID(),
       requested: count,

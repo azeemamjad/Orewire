@@ -3055,6 +3055,9 @@ function renderVaTaskDetailEmpty() {
   const el = document.getElementById('va-task-detail');
   if (!el) return;
   el.innerHTML = '<div class="va-task-detail-empty">Select a task for details and actions</div>';
+  document.querySelectorAll('#va-tasks-body tr.va-task-row-selected').forEach((row) => {
+    row.classList.remove('va-task-row-selected');
+  });
 }
 
 function vaSeverityClass(sev) {
@@ -3108,6 +3111,7 @@ async function loadVaTasks() {
     if (openEl) {
       const total = pg.total ?? _vaTasksCache.length;
       if (_vaFilter === 'open') openEl.textContent = `${total} open task(s)`;
+      else if (_vaFilter === 'do_later') openEl.textContent = `${total} do-later task(s)`;
       else if (_vaFilter === 'done') openEl.textContent = `${total} closed task(s)`;
       else openEl.textContent = `${total} task(s)`;
     }
@@ -3126,13 +3130,17 @@ async function loadVaTasks() {
     tbody.innerHTML = _vaTasksCache.map((t) => {
       const when = t.lastSeenAt ? new Date(t.lastSeenAt).toLocaleString() : 'N/A';
       const open = t.status === 'open' || t.status === 'in_progress';
-      const selected = t.id === _vaSelectedId ? ' outline:2px solid var(--accent);' : '';
-      return `<tr class="${open ? 'va-task-row-open' : ''}" style="cursor:pointer;${selected}" onclick="selectVaTask(${t.id})">
+      const classes = [
+        open ? 'va-task-row-open' : '',
+        t.status === 'do_later' ? 'va-task-row-later' : '',
+        t.id === _vaSelectedId ? 'va-task-row-selected' : '',
+      ].filter(Boolean).join(' ');
+      return `<tr class="${classes}" style="cursor:pointer;" data-va-id="${t.id}" onclick="selectVaTask(${t.id})">
         <td class="${vaSeverityClass(t.severity)}">${esc(t.severity)}</td>
         <td style="font-size:12px;">${esc(t.module)}</td>
         <td>${esc(t.title)}</td>
         <td>${t.occurrenceCount > 1 ? `<strong>${t.occurrenceCount}</strong>` : '1'}</td>
-        <td>${esc(t.status)}</td>
+        <td>${esc(formatVaStatus(t.status))}</td>
         <td style="font-size:12px;color:var(--muted);">${esc(when)}</td>
       </tr>`;
     }).join('');
@@ -3146,8 +3154,15 @@ async function loadVaTasks() {
   }
 }
 
+function highlightVaTaskRow(id) {
+  document.querySelectorAll('#va-tasks-body tr[data-va-id]').forEach((row) => {
+    row.classList.toggle('va-task-row-selected', Number(row.dataset.vaId) === Number(id));
+  });
+}
+
 function selectVaTask(id) {
   _vaSelectedId = id;
+  highlightVaTaskRow(id);
   const t = _vaTasksCache.find((x) => x.id === id);
   const el = document.getElementById('va-task-detail');
   if (!el || !t) return;
@@ -3186,12 +3201,14 @@ function selectVaTask(id) {
       <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'dismissed')">Reject</button>
       ${actionBtn}
       <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'in_progress')">▶ In progress</button>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'do_later')">Later</button>
       <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'open')">Reopen</button>`;
   } else {
     actions = `
       ${findTickerBtn}
       ${actionBtn}
       <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'in_progress')">▶ In progress</button>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'do_later')">Later</button>
       <button class="btn btn-primary btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'done')">✓ Done</button>
       <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'dismissed')">Dismiss</button>
       <button class="btn btn-ghost btn-sm" type="button" onclick="updateVaTaskStatus(${t.id}, 'open')">Reopen</button>`;
@@ -3204,7 +3221,7 @@ function selectVaTask(id) {
     ${suggestionBlock}
     ${sample}
     <div style="margin-top:10px;font-size:12px;color:var(--muted);">
-      Occurrences: <strong>${t.occurrenceCount}</strong> · Status: <strong>${esc(t.status)}</strong>
+      Occurrences: <strong>${t.occurrenceCount}</strong> · Status: <strong>${esc(formatVaStatus(t.status))}</strong>
     </div>
     <div class="va-task-actions">${actions}</div>
     <div style="margin-top:14px;">
@@ -3222,11 +3239,19 @@ async function updateVaTaskStatus(id, status) {
       body: JSON.stringify({ status }),
     }).then((x) => x.json());
     if (r.error) { toast(r.error, 'err'); return; }
-    toast(status === 'done' ? 'Task marked done' : `Status: ${status}`);
+    if (status === 'done') toast('Task marked done');
+    else if (status === 'do_later') toast('Moved to Do later');
+    else toast(`Status: ${formatVaStatus(status)}`);
     await syncVaTasks();
     loadVaTasks();
     if (typeof refreshVaTasksBadge === 'function') refreshVaTasksBadge();
   } catch (err) { toast(err.message, 'err'); }
+}
+
+function formatVaStatus(status) {
+  if (status === 'do_later') return 'do later';
+  if (status === 'in_progress') return 'in progress';
+  return status || '';
 }
 
 async function applyVaTaskSuggestion(id) {

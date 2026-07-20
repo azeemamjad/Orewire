@@ -118,7 +118,7 @@
         <label style="font-size:13px;display:inline-flex;align-items:center;gap:6px;">
           Filing type
           <select id="test-type" onchange="onTypeChange()" style="padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);max-width:260px;">
-            <option value="">Default (all types)</option>
+            <option value="">All types</option>
           </select>
         </label>
         <label style="font-size:13px;display:inline-flex;align-items:center;gap:6px;">
@@ -128,7 +128,7 @@
         <button class="btn btn-primary btn-sm" type="button" id="test-select-btn" onclick="selectFilings()">Select random filings</button>
         <button class="btn btn-ghost btn-sm" type="button" id="test-reset-btn" onclick="resetTests()">Reset tested history</button>
       </div>
-      <p class="test-hint" style="margin-top:8px;">Pick a filing type to edit and test its dedicated prompt (production uses your saved per-type prompt; “Default (all types)” is the fallback). Selecting a type also filters the sample to that type.</p>
+      <p class="test-hint" style="margin-top:8px;">Filing type only filters which filings are sampled. One shared system prompt is used for every type (edit it in step 2).</p>
       <div id="test-selected" style="margin-top:12px;"></div>
     </div>
 
@@ -338,28 +338,30 @@
       const r = await fetch('/api/admin/testing/filings/types');
       if (!r.ok) return;
       const d = await r.json();
-      const custom = new Set(d.customized || []);
       const counts = d.counts || {};
       const sel = document.getElementById('test-type');
       const prev = sel.value;
       const total = d.untestedTotal ?? 0;
-      // The number after each type is how many untested filings remain for it.
-      const opts = [`<option value="">Default (all types) — ${total} untested</option>`];
+      // Backend already omits zero-count types; keep the guard client-side too.
+      const opts = [`<option value="">All types — ${total} untested</option>`];
       for (const t of (d.types || [])) {
         const n = counts[t] || 0;
-        opts.push(`<option value="${esc(t)}">${esc(t)} (${n})${custom.has(t) ? ' ●' : ''}</option>`);
+        if (n <= 0) continue;
+        opts.push(`<option value="${esc(t)}">${esc(t)} (${n})</option>`);
       }
       sel.innerHTML = opts.join('');
-      if (prev) sel.value = prev;
+      if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
+      else { sel.value = ''; T.filingType = ''; }
     } catch { /* ignore */ }
   }
 
-  async function onTypeChange() {
-    const type = document.getElementById('test-type').value;
-    T.filingType = type;
+  function onTypeChange() {
+    T.filingType = document.getElementById('test-type').value;
+  }
+
+  async function loadGeneralPrompt() {
     try {
-      const qs = type ? `?type=${encodeURIComponent(type)}` : '';
-      const r = await fetch('/api/admin/testing/filings/prompt' + qs);
+      const r = await fetch('/api/admin/testing/filings/prompt');
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || 'Failed to load prompt');
       applyPromptPayload(d);
@@ -367,8 +369,7 @@
     } catch (e) { notify(e.message, 'err'); }
   }
 
-  // Load a prompt payload (default/production/draft) into the editor and reflect
-  // which source is showing in the status line.
+  // Load the single general prompt into the editor.
   function applyPromptPayload(d) {
     T.defaultPrompt = d.defaultPrompt || '';
     T.productionPrompt = d.productionPrompt || '';
@@ -377,10 +378,9 @@
     const shown = (d.prompt != null ? d.prompt : d.defaultPrompt) || '';
     T.savedPrompt = shown;
     document.getElementById('test-prompt').value = shown;
-    const label = T.filingType || 'default';
-    if (d.source === 'draft') setPromptStatus(`draft · testing only, NOT live (${label})`);
-    else if (d.source === 'production') setPromptStatus(`LIVE production prompt (${label})`);
-    else setPromptStatus(`built-in default${T.filingType ? ' for ' + T.filingType : ''}`);
+    if (d.source === 'draft') setPromptStatus('draft · testing only, NOT live (all types)');
+    else if (d.source === 'production') setPromptStatus('LIVE production prompt (all types)');
+    else setPromptStatus('built-in default (all types)');
   }
 
   function fillModels(models, activeModel, preserve) {
@@ -628,7 +628,7 @@
     const r = await fetch('/api/admin/testing/filings/prompt', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, type: T.filingType || null, target }),
+      body: JSON.stringify({ prompt, target }),
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || 'Failed to save');
@@ -644,8 +644,7 @@
     try {
       const d = await savePromptRequest(prompt, 'draft');
       applyPromptPayload(d);
-      notify(`Draft saved for ${T.filingType || 'default'} — testing only, not live`);
-      loadTypes();
+      notify('Draft saved — testing only, not live (all types)');
     } catch (err) {
       notify(err.message || 'Failed to save', 'err');
     } finally {
@@ -653,16 +652,13 @@
     }
   }
 
-  // Promote to the LIVE production prompt. Guarded by an explicit warning +
-  // confirmation because it changes how real filings are analyzed immediately.
+  // Promote to the LIVE general production prompt. Guarded by confirmation.
   async function savePromptProduction() {
     const prompt = document.getElementById('test-prompt').value;
     if (!prompt.trim()) { notify('Prompt cannot be empty', 'err'); return; }
-    const label = T.filingType || 'Default (all types)';
     const warning =
       '⚠  PRODUCTION SYSTEM CHANGE\n\n'
-      + `You are about to replace the LIVE system prompt for “${label}”.\n\n`
-      + 'Every new analysis of real filings will use this prompt IMMEDIATELY. '
+      + 'You are about to replace the LIVE general system prompt used for filing analysis.\n\n'
       + 'This affects the production system, not just your test runs.\n\n'
       + 'Are you sure you want to save this prompt to production?';
     if (!confirm(warning)) {
@@ -674,8 +670,7 @@
     try {
       const d = await savePromptRequest(prompt, 'production');
       applyPromptPayload(d);
-      notify(`Saved to PRODUCTION for ${label} — live filing analysis now uses this prompt`);
-      loadTypes();
+      notify('Saved to PRODUCTION — live filing analysis uses this general prompt');
     } catch (err) {
       notify(err.message || 'Failed to save', 'err');
     } finally {
@@ -1117,7 +1112,7 @@
   function snapDownload() { if (!S.batchId) return; window.location.href = `/api/admin/testing/snapshots/download?batch=${encodeURIComponent(S.batchId)}`; }
   function snapInit() { snapLoadStats(); snapLoadModels(); snapLoadPrompt(); }
 
-  document.addEventListener('DOMContentLoaded', () => { loadStats(); loadTypes(); loadModels(); loadCost(); pollBackfill(); newsInit(); snapInit(); });
+  document.addEventListener('DOMContentLoaded', () => { loadStats(); loadTypes(); loadModels(); loadCost(); loadGeneralPrompt(); pollBackfill(); newsInit(); snapInit(); });
 </script>
 </body>
 </html>
