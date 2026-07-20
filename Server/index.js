@@ -73,7 +73,20 @@ app.post('/admin/logout', auth.adminLogout);
 
 // Everything else under /admin requires a valid admin cookie.
 app.use('/admin', auth.requireAdminPage);
-app.use('/admin', express.static(path.join(__dirname, 'public', 'admin'), { index: 'dashboard.html' }));
+// Avoid stale admin JS/CSS after deploys (CDN/browser often cache /admin/js/*).
+app.use('/admin', (_req, res, next) => {
+  if (/\.(js|css|html)$/i.test(_req.path)) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+  }
+  next();
+});
+app.use('/admin', express.static(path.join(__dirname, 'public', 'admin'), {
+  index: 'dashboard.html',
+  etag: false,
+  lastModified: false,
+  maxAge: 0,
+}));
 
 app.get('/', (_req, res) => res.redirect('/admin/dashboard.html'));
 
