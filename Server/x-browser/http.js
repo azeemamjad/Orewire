@@ -63,7 +63,7 @@ function createRouter({ manager, screencast, config, mountPath = '' }) {
       if (!checkPassword(req.body?.password)) {
         return res.status(401).json({ error: 'Wrong password' });
       }
-      setSessionCookie(res, createSessionCookieValue(), { path: base || '/' });
+      setSessionCookie(res, createSessionCookieValue(), { path: '/' });
       res.json({ ok: true, redirect: `${base}/` });
     } catch (err) {
       res.status(500).json({ error: err.message || 'Login failed' });
@@ -71,7 +71,7 @@ function createRouter({ manager, screencast, config, mountPath = '' }) {
   });
 
   router.post('/api/logout-viewer', (_req, res) => {
-    clearSessionCookie(res, { path: base || '/' });
+    clearSessionCookie(res, { path: '/' });
     res.json({ ok: true });
   });
 
@@ -180,7 +180,21 @@ function createApp(opts) {
 }
 
 function attachWebSocket(server, { screencast, path: wsPath = '/ws' }) {
-  const wss = new WebSocketServer({ server, path: wsPath });
+  const wss = new WebSocketServer({ noServer: true });
+
+  server.on('upgrade', (request, socket, head) => {
+    let pathname = '/';
+    try {
+      pathname = new URL(request.url || '/', 'http://localhost').pathname;
+    } catch {
+      socket.destroy();
+      return;
+    }
+    if (pathname !== wsPath) return;
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit('connection', ws, request);
+    });
+  });
 
   wss.on('connection', async (ws, req) => {
     const cookies = parseCookies(req);
