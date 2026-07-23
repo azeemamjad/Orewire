@@ -25,7 +25,9 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
   background: var(--surface-2); color: var(--muted);
 }
 .status-badge.ok { background: #dcfce7; color: #166534; }
-.status-badge.needs_login { background: #fef3c7; color: #92400e; }
+.status-badge.needs_login,
+.status-badge.unknown,
+.status-badge.error { background: #fef3c7; color: #92400e; }
 .status-badge.error { background: #fee2e2; color: #991b1b; }
 .status-badge .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .play-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
@@ -33,12 +35,42 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
 .form-row label { font-size: 12px; color: var(--muted); }
 .form-row input[type="text"],
 .form-row input[type="password"],
-.form-row input[type="email"] {
+.form-row input[type="email"],
+.form-row input[type="url"] {
   width: 100%; padding: 8px 10px; border: 1px solid var(--border);
   border-radius: 6px; background: var(--bg); color: inherit; font-size: 14px;
 }
 .check-row { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 8px 0; }
 .err-cell { color: #dc2626; font-size: 12px; max-width: 280px; word-break: break-word; }
+details.legacy { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
+details.legacy summary {
+  cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted);
+  list-style: none;
+}
+details.legacy summary::-webkit-details-marker { display: none; }
+details.legacy summary::before { content: '▸ '; }
+details.legacy[open] summary::before { content: '▾ '; }
+.social-tabs {
+  display: flex; gap: 4px; margin-bottom: 16px;
+  border-bottom: 1px solid var(--border); padding-bottom: 0;
+}
+.social-tab {
+  appearance: none; border: none; background: transparent;
+  padding: 10px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+  color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.social-tab.active { color: inherit; border-bottom-color: var(--accent, #2563eb); }
+.social-pane { display: none; }
+.social-pane.active { display: block; }
+.compose-area {
+  width: 100%; min-height: 140px; padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--bg); color: inherit; font-size: 14px;
+  font-family: inherit; resize: vertical; line-height: 1.45; box-sizing: border-box;
+}
+.compose-meta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.compose-preview { margin-top: 12px; font-size: 12px; color: var(--muted); }
+.compose-preview ol { margin: 6px 0 0; padding-left: 18px; }
+.compose-preview li { margin-bottom: 6px; white-space: pre-wrap; word-break: break-word; color: inherit; }
 </style>
 </head>
 <body data-page="social-automation">
@@ -46,54 +78,86 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
 <main class="main">
   <div class="page-header">
     <h1>Social Automation</h1>
-    <p>Daily X morning thread from briefing filings &amp; news — credentials, play/pause, and run analytics.</p>
+    <p>Daily X morning thread from briefing filings &amp; news — posted via WebBridge from a logged-in Chrome session.</p>
   </div>
 
   <div class="social-stats" id="social-stats">
     <div class="social-stat"><div class="label">Runs today</div><div class="value" id="stat-today">—</div></div>
     <div class="social-stat"><div class="label">7d success rate</div><div class="value" id="stat-rate">—</div></div>
     <div class="social-stat"><div class="label">Automation</div><div class="value" id="stat-enabled" style="font-size:16px;">—</div></div>
-    <div class="social-stat"><div class="label">Account</div><div class="value" id="stat-account" style="font-size:14px;">—</div></div>
+    <div class="social-stat"><div class="label">Bridge</div><div class="value" id="stat-bridge" style="font-size:14px;">—</div></div>
   </div>
 
+  <div class="social-tabs" role="tablist">
+    <button type="button" class="social-tab active" data-tab="automation" onclick="switchSocialTab('automation')">Automation</button>
+    <button type="button" class="social-tab" data-tab="compose" onclick="switchSocialTab('compose')">Compose</button>
+  </div>
+
+  <div id="pane-automation" class="social-pane active">
   <div class="social-grid">
     <section class="social-card">
-      <h2>X credentials</h2>
-      <p class="hint">Username and password are encrypted at rest. After save, use Test login to refresh the session cookie. Passwords are never returned to the browser.</p>
-      <form id="creds-form" onsubmit="saveCredentials(event)">
+      <h2>WebBridge connection</h2>
+      <p class="hint">
+        On the VA laptop: <code>cd Server && npm run webbridge</code>, load
+        <code>Server/public/webbridge-extension</code> in Chrome, paste your
+        <strong>ngrok authtoken</strong> in the extension popup, then paste the
+        Connection URL and bridge token here. Guide:
+        <code>Server/lib/webbridge/README.md</code>.
+      </p>
+      <form id="bridge-form" onsubmit="saveBridge(event)">
         <div class="form-row">
-          <label for="x-username">Username</label>
-          <input id="x-username" type="text" autocomplete="username" placeholder="@handle" required />
+          <label for="bridge-url">Bridge URL (from extension)</label>
+          <input id="bridge-url" type="url" autocomplete="off" placeholder="https://….ngrok-free.app" required />
         </div>
         <div class="form-row">
-          <label for="x-password">Password</label>
-          <input id="x-password" type="password" autocomplete="new-password" placeholder="••••••••" />
-        </div>
-        <div class="form-row">
-          <label for="x-email">Email (optional, for login challenges)</label>
-          <input id="x-email" type="email" autocomplete="email" placeholder="account@email.com" />
+          <label for="bridge-token">Bridge token (from extension, write-only)</label>
+          <input id="bridge-token" type="password" autocomplete="new-password" placeholder="Copy from OreWire Bridge popup" />
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-          <button class="btn btn-primary btn-sm" type="submit">Save credentials</button>
-          <button class="btn btn-ghost btn-sm" type="button" onclick="testLogin()">Test login</button>
-          <span class="status-badge" id="account-badge"><span class="dot"></span><span id="account-badge-text">—</span></span>
+          <button class="btn btn-primary btn-sm" type="submit">Save connection</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="testBridge()">Test connection</button>
+          <span class="status-badge" id="bridge-badge"><span class="dot"></span><span id="bridge-badge-text">—</span></span>
         </div>
-        <p class="hint" id="creds-meta" style="margin-top:10px;"></p>
-        <div style="margin-top:14px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);">
-          <div style="font-size:13px;font-weight:600;margin-bottom:6px;">Recommended: paste session cookies</div>
-          <p class="hint" style="margin:0 0 8px;">X blocks automated login from most server IPs (Cloudflare). From Chrome on your laptop: open <code>x.com</code> while logged in → F12 → Application → Cookies → <code>x.com</code> → copy <code>auth_token</code> and <code>ct0</code>.</p>
+        <p class="hint" id="bridge-meta" style="margin-top:10px;"></p>
+      </form>
+
+      <details class="legacy">
+        <summary>Legacy: server-side X login (deprecated)</summary>
+        <p class="hint" style="margin-top:10px;">
+          Password / cookie login from the Dokploy server is blocked by Cloudflare in practice.
+          Prefer WebBridge. These controls remain only for debugging.
+        </p>
+        <form id="creds-form" onsubmit="saveCredentials(event)">
           <div class="form-row">
+            <label for="x-username">Username</label>
+            <input id="x-username" type="text" autocomplete="username" placeholder="@handle" />
+          </div>
+          <div class="form-row">
+            <label for="x-password">Password</label>
+            <input id="x-password" type="password" autocomplete="new-password" placeholder="••••••••" />
+          </div>
+          <div class="form-row">
+            <label for="x-email">Email (optional)</label>
+            <input id="x-email" type="email" autocomplete="email" placeholder="account@email.com" />
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+            <button class="btn btn-ghost btn-sm" type="submit">Save credentials</button>
+            <button class="btn btn-ghost btn-sm" type="button" onclick="testLogin()">Test login</button>
+            <span class="status-badge" id="account-badge"><span class="dot"></span><span id="account-badge-text">—</span></span>
+          </div>
+          <p class="hint" id="creds-meta" style="margin-top:10px;"></p>
+          <div class="form-row" style="margin-top:12px;">
             <label for="x-cookies">Cookie string</label>
             <input id="x-cookies" type="text" autocomplete="off" placeholder="auth_token=PASTE; ct0=PASTE" />
           </div>
-          <button class="btn btn-primary btn-sm" type="button" onclick="importCookies()">Import cookies &amp; activate</button>
-        </div>
-      </form>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="importCookies()">Import cookies</button>
+        </form>
+      </details>
     </section>
 
     <section class="social-card">
       <h2>Automation</h2>
-      <p class="hint" id="schedule-hint">Daily cron after the morning briefing. Paused until credentials + Test login succeed and you hit Play.</p>
+      <p class="hint" id="schedule-hint">Daily cron after the morning briefing. Paused until WebBridge Test connection succeeds and you hit Play.</p>
       <div class="check-row">
         <input type="checkbox" id="dry-run" onchange="saveDryRun()" />
         <label for="dry-run">Dry run (compose &amp; log only — do not post to X)</label>
@@ -130,20 +194,45 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
       </table>
     </div>
   </section>
+  </div><!-- /pane-automation -->
+
+  <div id="pane-compose" class="social-pane">
+    <section class="social-card" style="margin-bottom:24px;max-width:720px;">
+      <h2>Compose &amp; post</h2>
+      <p class="hint">
+        Write a post and publish it now through WebBridge (same Chrome session as automation).
+        Use a blank line between paragraphs to post as a <strong>thread</strong>.
+      </p>
+      <label for="compose-text" style="font-size:12px;color:var(--muted);">Post text</label>
+      <textarea id="compose-text" class="compose-area" maxlength="4000"
+        placeholder="What's happening?&#10;&#10;---&#10;&#10;Second tweet in the thread…"
+        oninput="updateComposePreview()"></textarea>
+      <div class="compose-meta">
+        <span id="compose-char">0 characters · 1 tweet</span>
+        <span id="compose-bridge-hint"></span>
+      </div>
+      <div class="compose-preview" id="compose-preview"></div>
+      <div class="play-row">
+        <button class="btn btn-primary btn-sm" type="button" id="btn-compose-post" onclick="composePostNow()">Post to X</button>
+        <button class="btn btn-ghost btn-sm" type="button" onclick="document.getElementById('compose-text').value=''; updateComposePreview();">Clear</button>
+      </div>
+      <p class="hint" id="compose-result" style="margin-top:12px;"></p>
+    </section>
+  </div>
 </main>
 <div id="toast"></div>
 <script src="/admin/js/admin-sidebar.js?v=20260720"></script>
 <script src="/admin/js/legacy-admin.js"></script>
 <script>
-let _social = { settings: null, account: null };
+let _social = { settings: null, account: null, bridge: null };
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function setBadge(status) {
-  const el = document.getElementById('account-badge');
-  const text = document.getElementById('account-badge-text');
+function setBadge(elId, textId, status) {
+  const el = document.getElementById(elId);
+  const text = document.getElementById(textId);
   el.className = 'status-badge ' + (status || '');
   text.textContent = status || '—';
 }
@@ -154,25 +243,43 @@ async function loadStatus() {
   const data = await r.json();
   _social.settings = data.settings;
   _social.account = data.account;
+  _social.bridge = data.bridge;
 
   const s = data.settings || {};
   const a = data.account || {};
+  const b = data.bridge || {};
   document.getElementById('dry-run').checked = !!s.dry_run;
   document.getElementById('stat-enabled').textContent = s.enabled ? 'Playing' : 'Paused';
   document.getElementById('btn-play').textContent = s.enabled ? 'Pause' : 'Play';
   document.getElementById('schedule-hint').textContent =
     `Schedule: ${s.cron || '0 8 * * *'} (${s.timezone || 'America/Toronto'}) · ${s.items_min}–${s.items_max} items · dry_run=${!!s.dry_run}`;
 
-  setBadge(a.status);
-  document.getElementById('stat-account').textContent = a.configured
-    ? (a.usernameHint || a.usernameMasked || 'set')
+  if (b.url) document.getElementById('bridge-url').value = b.url;
+  setBadge('bridge-badge', 'bridge-badge-text', b.status || 'unknown');
+  document.getElementById('stat-bridge').textContent = b.configured
+    ? (b.status === 'ok' ? 'Connected' : (b.status || 'Set'))
     : 'Not set';
+  const bmeta = [];
+  if (b.configured) bmeta.push('Configured');
+  if (b.tokenSet) bmeta.push('Token set');
+  if (b.lastOkAt) bmeta.push('Last OK ' + new Date(b.lastOkAt).toLocaleString());
+  if (b.lastError) bmeta.push('Error: ' + b.lastError);
+  if (b.fromEnv) bmeta.push('Env override');
+  document.getElementById('bridge-meta').textContent = bmeta.join(' · ') || 'Paste ngrok URL + daemon token.';
+  const composeHint = document.getElementById('compose-bridge-hint');
+  if (composeHint) {
+    composeHint.textContent = b.configured
+      ? (b.status === 'ok' ? 'Bridge ready' : 'Bridge set — Test connection on Automation tab')
+      : 'Configure WebBridge on the Automation tab first';
+  }
+
+  setBadge('account-badge', 'account-badge-text', a.status);
   const meta = [];
   if (a.passwordSet) meta.push('Password set');
   if (a.sessionSet) meta.push('Session cached');
   if (a.lastLoginAt) meta.push('Last login ' + new Date(a.lastLoginAt).toLocaleString());
   if (a.lastError) meta.push('Error: ' + a.lastError);
-  document.getElementById('creds-meta').textContent = meta.join(' · ') || 'No credentials saved yet.';
+  document.getElementById('creds-meta').textContent = meta.join(' · ') || 'Legacy credentials unused for posting.';
 
   const lr = data.lastRun;
   if (lr) {
@@ -224,6 +331,42 @@ async function refreshAll() {
   }
 }
 
+async function saveBridge(e) {
+  e.preventDefault();
+  const url = document.getElementById('bridge-url').value.trim();
+  const token = document.getElementById('bridge-token').value;
+  if (!url) { toast('Bridge URL required', 'err'); return; }
+  try {
+    const r = await fetch('/api/admin/social/bridge', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, token: token || undefined }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Save failed');
+    document.getElementById('bridge-token').value = '';
+    toast('Bridge saved — run Test connection', 'ok');
+    await loadStatus();
+  } catch (err) {
+    toast(err.message || 'Save failed', 'err');
+  }
+}
+
+async function testBridge() {
+  toast('Testing WebBridge…', 'ok');
+  try {
+    const r = await fetch('/api/admin/social/bridge/test', { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok || !data.ok) throw new Error(data.error || 'Bridge test failed');
+    const n = data.data?.connections;
+    toast(`Bridge OK${n != null ? ` · ${n} extension connection(s)` : ''}`, 'ok');
+    await loadStatus();
+  } catch (err) {
+    toast(err.message || 'Bridge test failed', 'err');
+    await loadStatus();
+  }
+}
+
 async function saveCredentials(e) {
   e.preventDefault();
   const username = document.getElementById('x-username').value.trim();
@@ -239,7 +382,7 @@ async function saveCredentials(e) {
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || 'Save failed');
     document.getElementById('x-password').value = '';
-    toast('Credentials saved — run Test login', 'ok');
+    toast('Credentials saved (legacy)', 'ok');
     await loadStatus();
   } catch (err) {
     toast(err.message || 'Save failed', 'err');
@@ -247,7 +390,7 @@ async function saveCredentials(e) {
 }
 
 async function testLogin() {
-  toast('Testing login (may take up to a minute)…', 'ok');
+  toast('Testing legacy login…', 'ok');
   try {
     const r = await fetch('/api/admin/social/x/login-test', { method: 'POST' });
     const data = await r.json();
@@ -291,7 +434,7 @@ async function saveDryRun() {
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || 'Update failed');
     _social.settings = data.settings;
-    toast(dryRun ? 'Dry run on' : 'Dry run off — live posts enabled', 'ok');
+    toast(dryRun ? 'Dry run on' : 'Dry run off — live posts via WebBridge', 'ok');
     await loadStatus();
   } catch (err) {
     toast(err.message || 'Update failed', 'err');
@@ -336,8 +479,83 @@ async function runNow() {
   }
 }
 
+function switchSocialTab(name) {
+  document.querySelectorAll('.social-tab').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.tab === name);
+  });
+  document.querySelectorAll('.social-pane').forEach((pane) => {
+    pane.classList.toggle('active', pane.id === 'pane-' + name);
+  });
+}
+
+function splitComposeTweets(raw) {
+  return String(raw || '')
+    .split(/\n\s*\n+|\n\s*---+\s*\n/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+function updateComposePreview() {
+  const raw = document.getElementById('compose-text').value;
+  const tweets = splitComposeTweets(raw);
+  const chars = raw.length;
+  const over = tweets.find((t) => t.length > 280);
+  document.getElementById('compose-char').textContent =
+    `${chars} characters · ${tweets.length || 0} tweet${tweets.length === 1 ? '' : 's'}` +
+    (over ? ` · over 280 (${over.length})` : '');
+  const prev = document.getElementById('compose-preview');
+  if (!tweets.length) {
+    prev.innerHTML = '';
+    return;
+  }
+  prev.innerHTML =
+    '<div style="font-weight:600;margin-bottom:4px;">Preview</div><ol>' +
+    tweets.map((t, i) => `<li><span style="color:var(--muted)">${t.length}/280</span> — ${esc(t)}</li>`).join('') +
+    '</ol>';
+}
+
+async function composePostNow() {
+  const text = document.getElementById('compose-text').value.trim();
+  const tweets = splitComposeTweets(text);
+  if (!tweets.length) { toast('Write a post first', 'err'); return; }
+  if (tweets.some((t) => t.length > 280)) {
+    toast('Each tweet must be ≤ 280 characters', 'err');
+    return;
+  }
+  const btn = document.getElementById('btn-compose-post');
+  const out = document.getElementById('compose-result');
+  btn.disabled = true;
+  btn.textContent = 'Posting…';
+  out.textContent = '';
+  toast('Posting via WebBridge…', 'ok');
+  try {
+    const r = await fetch('/api/admin/social/compose-post', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.ok) throw new Error(data.error || 'Post failed');
+    const link = data.threadUrl
+      ? ` · <a href="${esc(data.threadUrl)}" target="_blank" rel="noopener">Open on X</a>`
+      : '';
+    out.innerHTML = `Posted ${data.tweetCount || tweets.length} tweet(s)${link}`;
+    toast('Posted to X', 'ok');
+    document.getElementById('compose-text').value = '';
+    updateComposePreview();
+    await refreshAll();
+  } catch (err) {
+    out.textContent = err.message || 'Post failed';
+    toast(err.message || 'Post failed', 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Post to X';
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   refreshAll();
+  updateComposePreview();
 });
 </script>
 </body>

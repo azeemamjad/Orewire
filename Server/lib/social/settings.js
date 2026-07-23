@@ -13,12 +13,22 @@ const DEFAULTS = {
 
 async function getSettings() {
   const r = await db.query(
-    `SELECT enabled, cron, timezone, items_min, items_max, dry_run, updated_at
+    `SELECT enabled, cron, timezone, items_min, items_max, dry_run, updated_at,
+            bridge_url, bridge_token_enc, bridge_status, last_bridge_error, last_bridge_ok_at
        FROM social_automation_settings WHERE platform = $1`,
     [PLATFORM],
   );
   if (!r.rows.length) {
-    return { platform: PLATFORM, ...DEFAULTS, updated_at: null };
+    return {
+      platform: PLATFORM,
+      ...DEFAULTS,
+      updated_at: null,
+      bridge_url: null,
+      bridge_configured: false,
+      bridge_status: 'unknown',
+      last_bridge_error: null,
+      last_bridge_ok_at: null,
+    };
   }
   const row = r.rows[0];
   return {
@@ -30,6 +40,11 @@ async function getSettings() {
     items_max: Number(row.items_max) || 7,
     dry_run: !!row.dry_run,
     updated_at: row.updated_at,
+    bridge_url: row.bridge_url || null,
+    bridge_configured: !!(row.bridge_url && row.bridge_token_enc) || !!(process.env.SOCIAL_BRIDGE_URL && process.env.SOCIAL_BRIDGE_TOKEN),
+    bridge_status: row.bridge_status || 'unknown',
+    last_bridge_error: row.last_bridge_error || null,
+    last_bridge_ok_at: row.last_bridge_ok_at || null,
   };
 }
 

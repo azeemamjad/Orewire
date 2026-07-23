@@ -27,7 +27,7 @@ function inferCommodity(summary, tickerSummary) {
 router.get('/stats', async (req, res) => {
   try {
     const [companies, filings, analyzed, pending, noteworthy, watch, routine] = await Promise.all([
-      db.query('SELECT COUNT(*) as c FROM companies').then(r => parseInt(r.rows[0].c, 10)),
+      db.query('SELECT COUNT(*) as c FROM companies WHERE archived_at IS NULL').then(r => parseInt(r.rows[0].c, 10)),
       // Total filings = every row in filings (analyzed or not).
       db.query('SELECT COUNT(*) as c FROM filings').then(r => parseInt(r.rows[0].c, 10)),
       db.query('SELECT COUNT(*) as c FROM filings WHERE analyzed = 1').then(r => parseInt(r.rows[0].c, 10)),
@@ -51,7 +51,7 @@ router.get('/', async (req, res) => {
     const { company_id, verdict, search, commodity, exchange, limit, page } = req.query;
 
     // Build the shared WHERE clause for both the data and count queries.
-    let where = ' WHERE 1=1';
+    let where = ' WHERE 1=1 AND (f.company_id IS NULL OR c.archived_at IS NULL)';
     const params = [];
     let paramIdx = 0;
 

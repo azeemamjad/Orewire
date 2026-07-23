@@ -109,6 +109,8 @@ function buildFeedFilters({
     extraClause += ` AND n.sentiment = $${filterParams.length}`;
   }
   extraClause += severityClause(severity);
+  // Hide news linked to archived companies (unlinked news still shows)
+  extraClause += ' AND (n.company_id IS NULL OR c.archived_at IS NULL)';
   return extraClause;
 }
 

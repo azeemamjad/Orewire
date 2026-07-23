@@ -107,15 +107,17 @@ function countryClause(country, paramIdx) {
 // Routes
 // ---------------------------------------------------------------------------
 
-// GET /api/companies?page=1&limit=20&search=&exchange=&commodity=&continent=&country=&missing=
+// GET /api/companies?page=1&limit=20&search=&exchange=&commodity=&continent=&country=&missing=&archived=
 // `missing` filters to companies lacking enrichment data:
 //   description | website | headquarters | people | any
+// `archived=1` → only archived; default → exclude archived (public + main admin list)
 router.get('/', async (req, res) => {
   try {
-  const { search, exchange, commodity, continent, country, missing, page = '1', limit = '20' } = req.query;
+  const { search, exchange, commodity, continent, country, missing, archived, page = '1', limit = '20' } = req.query;
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
   const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
   const offset = (pageNum - 1) * limitNum;
+  const wantArchived = archived === '1' || archived === 'true';
 
   // Plain-English search: "gold companies in Africa" → commodity + continent filters.
   let effectiveSearch = search || null;
@@ -137,6 +139,12 @@ router.get('/', async (req, res) => {
 
   const where = [];
   const params = [];
+
+  if (wantArchived) {
+    where.push('archived_at IS NOT NULL');
+  } else {
+    where.push('archived_at IS NULL');
+  }
 
   if (effectiveSearch) {
     params.push(`%${effectiveSearch}%`);
@@ -219,7 +227,9 @@ router.get('/', async (req, res) => {
 router.get('/exchanges', async (_req, res) => {
   try {
     const result = await db.query(
-      'SELECT DISTINCT exchange FROM companies WHERE exchange IS NOT NULL ORDER BY exchange'
+      `SELECT DISTINCT exchange FROM companies
+        WHERE exchange IS NOT NULL AND archived_at IS NULL
+        ORDER BY exchange`
     );
     res.json(result.rows.map(r => r.exchange));
   } catch (err) {
@@ -430,6 +440,8 @@ router.get('/:idOrSlug', async (req, res) => {
 
   const row = result.rows[0];
   if (!row) return res.status(404).json({ error: 'Not found' });
+  // Archived companies are hidden from the public site (admin uses list?archived=1)
+  if (row.archived_at) return res.status(404).json({ error: 'Not found' });
 
   const symbols = await listSymbols('company', { entityId: row.id });
   const defaultListing = await getDefaultSymbol('company', { entityId: row.id });
@@ -515,8 +527,59 @@ router.get('/:idOrSlug', async (req, res) => {
   }
 });
 
+// POST /api/companies/:id/archive — soft-delete (hide from site; keep in Archive tab)
+router.post('/:id/archive', async (req, res) => {
+  try {
+    const result = await db.query(
+      `UPDATE companies SET archived_at = NOW(), updated_at = NOW()
+        WHERE id = $1 AND archived_at IS NULL
+        RETURNING id, name, archived_at`,
+      [req.params.id],
+    );
+    if (!result.rows[0]) {
+      return res.status(404).json({ error: 'Company not found or already archived' });
+    }
+    res.json({ ok: true, company: result.rows[0] });
+  } catch (err) {
+    console.error('Company archive failed:', err?.message || err);
+    res.status(503).json({ error: 'Database unavailable' });
+  }
+});
+
+// POST /api/companies/:id/restore — un-archive
+router.post('/:id/restore', async (req, res) => {
+  try {
+    const result = await db.query(
+      `UPDATE companies SET archived_at = NULL, updated_at = NOW()
+        WHERE id = $1 AND archived_at IS NOT NULL
+        RETURNING id, name, archived_at`,
+      [req.params.id],
+    );
+    if (!result.rows[0]) {
+      return res.status(404).json({ error: 'Company not found or not archived' });
+    }
+    res.json({ ok: true, company: result.rows[0] });
+  } catch (err) {
+    console.error('Company restore failed:', err?.message || err);
+    res.status(503).json({ error: 'Database unavailable' });
+  }
+});
+
+// DELETE /api/companies/:id — hard delete (Archive tab only; must already be archived)
 router.delete('/:id', async (req, res) => {
   try {
+    const force = req.query.force === '1' || req.body?.force === true;
+    const check = await db.query(
+      'SELECT id, name, archived_at FROM companies WHERE id = $1',
+      [req.params.id],
+    );
+    const row = check.rows[0];
+    if (!row) return res.status(404).json({ error: 'Company not found' });
+    if (!row.archived_at && !force) {
+      return res.status(400).json({
+        error: 'Archive the company first, then delete it from the Archive tab',
+      });
+    }
     await db.query('DELETE FROM companies WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
   } catch (err) {

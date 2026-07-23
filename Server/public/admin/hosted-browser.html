@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>X Browser | OreWire Admin</title>
+<link rel="stylesheet" href="/admin/css/admin.css" />
+<style>
+nav li a { color: inherit; text-decoration: none; display: flex; align-items: center; gap: 8px; width: 100%; }
+.hb-card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px 18px; margin-bottom: 16px; max-width: 760px;
+}
+.hb-card h2 { font-size: 15px; margin: 0 0 10px; }
+.hb-card .hint { font-size: 13px; color: var(--muted); margin: 0 0 12px; line-height: 1.45; }
+.hb-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.hb-stat { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+.hb-stat .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.hb-stat .value { font-size: 16px; font-weight: 700; margin-top: 4px; word-break: break-all; }
+.play-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+code { font-size: 12px; }
+</style>
+</head>
+<body data-page="hosted-browser">
+<aside class="sidebar"></aside>
+<main class="main">
+  <div class="page-header">
+    <h1>X Browser</h1>
+    <p>Standalone Chromium service for X automation. Log in through the password-gated viewer; OreWire posts via API token.</p>
+  </div>
+
+  <div class="hb-stats">
+    <div class="hb-stat"><div class="label">Service</div><div class="value" id="stat-url">—</div></div>
+    <div class="hb-stat"><div class="label">Browser</div><div class="value" id="stat-running">—</div></div>
+    <div class="hb-stat"><div class="label">X session</div><div class="value" id="stat-logged-in">—</div></div>
+  </div>
+
+  <section class="hb-card">
+    <h2>Manual login (password site)</h2>
+    <p class="hint">
+      Run the browser on its own process: <code>cd Server && npm run x-browser</code><br/>
+      Set <code>X_BROWSER_PASSWORD</code> in <code>.env</code>, then open the viewer and sign into X on the live screen.
+    </p>
+    <div class="play-row">
+      <a class="btn btn-primary btn-sm" id="viewer-link" href="#" target="_blank" rel="noopener">Open password viewer →</a>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="refreshStatus()">Refresh status</button>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="doStart()">Start browser</button>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="doWipe()">Wipe X session</button>
+    </div>
+    <p class="hint" id="hb-meta" style="margin-top:12px;"></p>
+  </section>
+
+  <section class="hb-card">
+    <h2>Wire OreWire → X Browser</h2>
+    <p class="hint">
+      In <code>Server/.env</code> on the main app:<br/>
+      <code>X_BROWSER_URL=http://127.0.0.1:10088</code><br/>
+      <code>X_BROWSER_TOKEN=</code> (from x-browser startup log or <code>~/.orewire-x-browser/api-token.txt</code>)<br/>
+      <code>HOSTED_BROWSER_POST=1</code>
+    </p>
+  </section>
+</main>
+<div id="toast"></div>
+<script src="/admin/js/admin-sidebar.js?v=20260720"></script>
+<script src="/admin/js/legacy-admin.js"></script>
+<script>
+async function refreshStatus() {
+  const meta = document.getElementById('hb-meta');
+  try {
+    const r = await fetch('/api/admin/hosted-browser/status');
+    const st = await r.json();
+    if (!r.ok) throw new Error(st.error || 'status failed');
+    document.getElementById('stat-running').textContent = st.running ? 'Running' : 'Stopped';
+    document.getElementById('stat-logged-in').textContent = st.loggedIn ? 'Logged in' : 'Not logged in';
+    document.getElementById('stat-url').textContent = st.viewerUrl || st.remoteUrl || 'embedded / unset';
+    const link = document.getElementById('viewer-link');
+    if (st.viewerUrl) {
+      link.href = st.viewerUrl;
+      link.style.pointerEvents = '';
+      link.style.opacity = '1';
+    } else {
+      link.href = '#';
+      link.style.opacity = '0.5';
+    }
+    meta.textContent = st.profileDir ? `Profile: ${st.profileDir}` : (st.error || '');
+  } catch (err) {
+    meta.textContent = err.message || 'Failed to load status — is X Browser running and X_BROWSER_URL set?';
+    document.getElementById('stat-running').textContent = 'Unreachable';
+  }
+}
+
+async function doStart() {
+  const r = await fetch('/api/admin/hosted-browser/start', { method: 'POST' });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) toast(data.error || 'Start failed', 'err');
+  else toast('Browser start requested');
+  refreshStatus();
+}
+
+async function doWipe() {
+  if (!confirm('Wipe the X session on the browser service?')) return;
+  const r = await fetch('/api/admin/hosted-browser/logout', { method: 'POST' });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) toast(data.error || 'Wipe failed', 'err');
+  else toast('Session wiped');
+  refreshStatus();
+}
+
+document.addEventListener('DOMContentLoaded', refreshStatus);
+</script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>X Browser · OreWire</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body class="viewer-body">
+  <header class="top">
+    <div>
+      <strong>OreWire X Browser</strong>
+      <span class="muted" id="status-line">Connecting…</span>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn" id="btn-login-x">Open X login</button>
+      <button type="button" class="btn" id="btn-home">X home</button>
+      <button type="button" class="btn danger" id="btn-wipe">Logout X session</button>
+      <button type="button" class="btn ghost" id="btn-lock">Lock viewer</button>
+    </div>
+  </header>
+  <main class="stage-wrap">
+    <canvas id="screen" width="1280" height="800" tabindex="0"></canvas>
+    <p class="hint">Click the screen to focus. Type and click as in a normal browser to finish X login. Session stays on this server until you wipe it.</p>
+  </main>
+<script src="/viewer.js"></script>
+</body>
+</html>

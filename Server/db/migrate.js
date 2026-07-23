@@ -834,6 +834,17 @@ async function migrate() {
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_social_post_items_run ON social_post_items(run_id, position)`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_social_post_items_source ON social_post_items(kind, source_id)`);
 
+  // WebBridge (ngrok) connection for live X posting from a logged-in Chrome session
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS bridge_url TEXT`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS bridge_token_enc TEXT`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS bridge_status TEXT DEFAULT 'unknown'`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS last_bridge_error TEXT`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS last_bridge_ok_at TIMESTAMPTZ`);
+
+  // Soft-delete: archived companies are hidden from public site until hard-deleted from Archive tab
+  await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_companies_archived_at ON companies(archived_at) WHERE archived_at IS NOT NULL`);
+
   console.log('[DB] All migrations complete');
 }
 

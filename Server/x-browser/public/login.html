@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>X Browser Login · OreWire</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body class="login-body">
+  <form class="login-card" id="login-form">
+    <div class="brand">OreWire</div>
+    <h1>X Browser</h1>
+    <p class="sub">Enter the access password to open the hosted Chromium session and log into X.</p>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required autofocus />
+    <button type="submit" class="btn primary" id="btn">Unlock browser</button>
+    <p class="err" id="err" hidden></p>
+  </form>
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const err = document.getElementById('err');
+  const btn = document.getElementById('btn');
+  err.hidden = true;
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: document.getElementById('password').value }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || 'Login failed');
+    location.href = '/';
+  } catch (ex) {
+    err.textContent = ex.message || 'Login failed';
+    err.hidden = false;
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

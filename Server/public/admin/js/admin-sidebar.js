@@ -12,6 +12,7 @@ const ADMIN_NAV = [
   { page: 'ai', href: 'ai.html', icon: '🧠', label: 'AI' },
   { page: 'testing', href: 'testing.html', icon: '🧪', label: 'Testing' },
   { page: 'social-automation', href: 'social-automation.html', icon: 'X', label: 'Social Automation' },
+  { page: 'hosted-browser', href: 'hosted-browser.html', icon: '🕸', label: 'X Browser' },
   { page: 'va-tasks', href: 'va-tasks.html', icon: '📋', label: 'VA Tasks', badge: 'va' },
   { page: 'users', href: 'users.html', icon: '👤', label: 'Users' },
   { page: 'contact-messages', href: 'contact-messages.html', icon: '📧', label: 'Contact', badge: 'contact' },

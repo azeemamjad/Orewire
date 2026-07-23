@@ -195,6 +195,7 @@ async function fetchMoversLiveSample(exchange, limit) {
       `SELECT DISTINCT ON (ticker, exchange) ticker, name, exchange, market_cap, shares_outstanding
          FROM companies
         WHERE ticker IS NOT NULL
+          AND archived_at IS NULL
           AND exchange IN ('TSXV','TSX','CSE','ASX')
         ORDER BY ticker, exchange, market_cap DESC NULLS LAST
         LIMIT $1`,
@@ -207,7 +208,7 @@ async function fetchMoversLiveSample(exchange, limit) {
     const r = await db.query(
       `SELECT DISTINCT ON (ticker, exchange) ticker, name, exchange, market_cap, shares_outstanding
          FROM companies
-        WHERE ticker IS NOT NULL AND exchange = $1
+        WHERE ticker IS NOT NULL AND exchange = $1 AND archived_at IS NULL
         ORDER BY ticker, exchange, market_cap DESC NULLS LAST
         LIMIT $2`,
       [exchange, Math.max(20, limit * 4)]

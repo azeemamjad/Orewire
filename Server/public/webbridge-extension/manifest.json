@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_extName__",
+  "description": "__MSG_extDescription__",
+  "version": "0.2.3",
+  "default_locale": "en",
+  "permissions": [
+    "tabs",
+    "activeTab",
+    "debugger",
+    "scripting",
+    "storage",
+    "alarms",
+    "tabGroups",
+    "windows",
+    "nativeMessaging",
+    "history"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup/index.html"
+  }
+}

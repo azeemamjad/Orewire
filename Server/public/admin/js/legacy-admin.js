@@ -15,10 +15,12 @@ function initAdminPage() {
   if (page === 'dashboard') loadDashboard();
   if (page === 'companies') {
     loadExchanges();
+    applyCompaniesDeepLinkParams();
     loadCompanies().then(() => {
       const sp = new URLSearchParams(window.location.search);
       const editId = sp.get('edit');
       if (editId) openEditProfile(parseInt(editId, 10));
+      maybeFlashHighlightedCompany();
     });
   }
   if (page === 'filings') {
@@ -103,6 +105,72 @@ async function loadDashboard() {
 }
 
 // ── Companies ──
+let _coScope = 'active'; // 'active' | 'archive'
+let _coHighlightId = null;
+let _coFlashTimer = null;
+let _coFlashClickHandler = null;
+
+function setCompaniesScope(scope) {
+  _coScope = scope === 'archive' ? 'archive' : 'active';
+  document.querySelectorAll('.co-scope-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.scope === _coScope);
+  });
+  const missing = document.getElementById('co-missing');
+  const addBtn = document.getElementById('co-add-btn');
+  const rebuildBtn = document.getElementById('co-rebuild-btn');
+  if (missing) missing.disabled = _coScope === 'archive';
+  if (addBtn) addBtn.style.display = _coScope === 'archive' ? 'none' : '';
+  if (rebuildBtn) rebuildBtn.style.display = _coScope === 'archive' ? 'none' : '';
+  _coPage = 1;
+  loadCompanies();
+}
+
+function applyCompaniesDeepLinkParams() {
+  const sp = new URLSearchParams(window.location.search);
+  const searchEl = document.getElementById('co-search');
+  const missingEl = document.getElementById('co-missing');
+  if (sp.get('search') && searchEl) searchEl.value = sp.get('search');
+  if (sp.get('missing') && missingEl) missingEl.value = sp.get('missing');
+  if (sp.get('flagged') === '1' && missingEl) missingEl.value = 'flagged';
+  if (sp.get('archived') === '1') setCompaniesScope('archive');
+  const hid = sp.get('highlight');
+  if (hid) _coHighlightId = parseInt(hid, 10) || null;
+}
+
+function clearCompanyFlash() {
+  if (_coFlashTimer) {
+    clearTimeout(_coFlashTimer);
+    _coFlashTimer = null;
+  }
+  if (_coFlashClickHandler) {
+    document.removeEventListener('click', _coFlashClickHandler, true);
+    _coFlashClickHandler = null;
+  }
+  document.querySelectorAll('tr.co-highlight-flash').forEach((row) => {
+    row.classList.remove('co-highlight-flash');
+  });
+}
+
+function maybeFlashHighlightedCompany() {
+  if (!_coHighlightId) return;
+  const row = document.querySelector(`tr[data-company-id="${_coHighlightId}"]`);
+  if (!row) return;
+  clearCompanyFlash();
+  row.classList.add('co-highlight-flash');
+  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  _coFlashClickHandler = (ev) => {
+    if (row.contains(ev.target) || ev.target === row) {
+      clearCompanyFlash();
+      _coHighlightId = null;
+    }
+  };
+  document.addEventListener('click', _coFlashClickHandler, true);
+  _coFlashTimer = setTimeout(() => {
+    clearCompanyFlash();
+    _coHighlightId = null;
+  }, 10_000);
+}
+
 async function loadExchanges() {
   try {
     const exc = await fetch(`${API}/api/companies/exchanges`).then(r => r.json());
@@ -126,7 +194,8 @@ async function loadCompanies() {
   const params   = new URLSearchParams();
   if (search)   params.set('search', search);
   if (exchange) params.set('exchange', exchange);
-  if (missing)  params.set('missing', missing);
+  if (missing && _coScope !== 'archive') params.set('missing', missing);
+  if (_coScope === 'archive') params.set('archived', '1');
   params.set('page', _coPage);
   params.set('limit', '20');
 
@@ -142,13 +211,17 @@ async function loadCompanies() {
     const rows   = result.data || [];
     const pg     = result.pagination || {};
 
-    document.getElementById('co-count').textContent = `${pg.total ?? rows.length} companies`;
+    document.getElementById('co-count').textContent = _coScope === 'archive'
+      ? `${pg.total ?? rows.length} archived`
+      : `${pg.total ?? rows.length} companies`;
     document.getElementById('co-page-info').textContent = `Page ${pg.page ?? 1} of ${pg.totalPages ?? 1}`;
     document.getElementById('co-prev').disabled = !pg.hasPrev;
     document.getElementById('co-next').disabled = !pg.hasNext;
 
     if (!rows.length) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No companies found. Import an Excel file first.</td></tr>';
+      tbody.innerHTML = _coScope === 'archive'
+        ? '<tr class="empty-row"><td colspan="8">Archive is empty.</td></tr>'
+        : '<tr class="empty-row"><td colspan="8">No companies found. Import an Excel file first.</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(c => {
@@ -171,8 +244,17 @@ async function loadCompanies() {
       const suggestBtn = flagged
         ? `<button class="btn btn-ghost btn-sm" title="Search the web for this company's new ticker and file a VA suggestion" onclick="findNewTicker(${c.id}, this)">🔎 Find ticker</button>`
         : '';
+      const actions = _coScope === 'archive'
+        ? `<button class="btn btn-primary btn-sm" onclick="restoreCompany(${c.id})">Restore</button>
+           <button class="btn btn-danger btn-sm" onclick="hardDeleteCompany(${c.id})">Delete forever</button>`
+        : `${migrateBtn}
+          ${suggestBtn}
+          <button class="btn btn-ghost btn-sm" onclick="openEditProfile(${c.id})">✎ Edit</button>
+          ${c.ticker ? `<button class="btn btn-primary btn-sm" title="Pull profile from ${esc(c.exchange ?? 'exchange')} listing" onclick="quickProfile('${esc(c.ticker).replace(/'/g,"\\'")}')">▶ Profile</button>` : ''}
+          <button class="btn btn-ghost btn-sm" title="Scrape SEDAR/ASX filings" onclick="quickScrape('${esc(c.name).replace(/'/g,"\\'")}','${esc(c.exchange??'')}','${esc(c.ticker??'')}')">📄 Filings</button>
+          <button class="btn btn-danger btn-sm" title="Move to Archive" onclick="archiveCompany(${c.id})">Archive</button>`;
       return `
-      <tr>
+      <tr data-company-id="${c.id}">
         <td><strong>${esc(c.name)}</strong></td>
         <td><span class="badge badge-pending">${esc(c.exchange ?? '-')}</span></td>
         <td>${esc(c.ticker ?? '-')}</td>
@@ -183,18 +265,49 @@ async function loadCompanies() {
           ${badge(has.desc, 'Desc')}${badge(has.web, 'Web')}${badge(has.hq, 'HQ')}${badge(has.ta, 'TA')}${badge(has.ppl, 'People')}
         </td>
         <td style="display:flex;gap:6px;flex-wrap:wrap;">
-          ${migrateBtn}
-          ${suggestBtn}
-          <button class="btn btn-ghost btn-sm" onclick="openEditProfile(${c.id})">✎ Edit</button>
-          ${c.ticker ? `<button class="btn btn-primary btn-sm" title="Pull profile from ${esc(c.exchange ?? 'exchange')} listing" onclick="quickProfile('${esc(c.ticker).replace(/'/g,"\\'")}')">▶ Profile</button>` : ''}
-          <button class="btn btn-ghost btn-sm" title="Scrape SEDAR/ASX filings" onclick="quickScrape('${esc(c.name).replace(/'/g,"\\'")}','${esc(c.exchange??'')}','${esc(c.ticker??'')}')">📄 Filings</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteCompany(${c.id})">✕</button>
+          ${actions}
         </td>
       </tr>`;
     }).join('');
+    maybeFlashHighlightedCompany();
   } catch (e) {
     tbody.innerHTML = `<tr class="empty-row"><td colspan="8">Error: ${esc(e.message)}</td></tr>`;
   }
+}
+
+async function archiveCompany(id) {
+  if (!confirm('Move this company to Archive? It will disappear from the public site (filings/news linked to it stay hidden until restored).')) return;
+  const r = await fetch(`${API}/api/companies/${id}/archive`, { method: 'POST' });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    toast(data.error || 'Archive failed', 'err');
+    return;
+  }
+  toast('Company archived');
+  loadCompanies();
+}
+
+async function restoreCompany(id) {
+  const r = await fetch(`${API}/api/companies/${id}/restore`, { method: 'POST' });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    toast(data.error || 'Restore failed', 'err');
+    return;
+  }
+  toast('Company restored');
+  loadCompanies();
+}
+
+async function hardDeleteCompany(id) {
+  if (!confirm('Permanently delete this archived company? This cannot be undone.')) return;
+  const r = await fetch(`${API}/api/companies/${id}`, { method: 'DELETE' });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    toast(data.error || 'Delete failed', 'err');
+    return;
+  }
+  toast('Company deleted');
+  loadCompanies();
 }
 
 // Friendly wording for the "no suggestion filed" outcomes of ticker research,
@@ -315,10 +428,8 @@ function quickScrape(name, exchange, ticker) {
 }
 
 async function deleteCompany(id) {
-  if (!confirm('Delete this company?')) return;
-  await fetch(`${API}/api/companies/${id}`, { method: 'DELETE' });
-  toast('Company deleted');
-  loadCompanies();
+  // Back-compat: old ✕ button → archive
+  return archiveCompany(id);
 }
 
 // ── Migrate flagged company data → renamed / new company ─────────────────
@@ -3160,6 +3271,32 @@ function highlightVaTaskRow(id) {
   });
 }
 
+/** Prefer deep-link with search+highlight when the task has a companyId. */
+function openVaTaskSection(ev, taskId) {
+  const t = _vaTasksCache.find((x) => x.id === taskId);
+  if (!t) return true;
+  let url = t.actionUrl;
+  if (t.companyId && /\/admin\/companies\.html/i.test(String(url || ''))) {
+    const nameMatch = String(t.title || '').match(/^(.+?)\s*\(/);
+    const name = (nameMatch && nameMatch[1]) || '';
+    const sp = new URLSearchParams();
+    if (name) sp.set('search', name.trim());
+    sp.set('highlight', String(t.companyId));
+    if (/flagged/i.test(url) || t.errorType === 'symbol_invalid' || t.errorType === 'ticker_suggestion') {
+      sp.set('flagged', '1');
+    }
+    if (/missing=people/i.test(url)) sp.set('missing', 'people');
+    url = `/admin/companies.html?${sp.toString()}`;
+  }
+  if (ev && (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button === 1)) {
+    // let browser handle new-tab modifiers with updated href
+    if (ev.currentTarget) ev.currentTarget.setAttribute('href', url);
+    return true;
+  }
+  window.location.href = url;
+  return false;
+}
+
 function selectVaTask(id) {
   _vaSelectedId = id;
   highlightVaTaskRow(id);
@@ -3170,7 +3307,7 @@ function selectVaTask(id) {
     ? `<div style="margin-top:12px;font-size:12px;"><strong>Sample:</strong><pre style="white-space:pre-wrap;margin:6px 0 0;padding:10px;background:var(--bg);border-radius:6px;font-size:11px;">${esc(t.sampleDetail)}</pre></div>`
     : '';
   const actionBtn = t.actionUrl
-    ? `<a class="btn btn-ghost btn-sm" href="${esc(t.actionUrl)}">Open section →</a>`
+    ? `<a class="btn btn-ghost btn-sm" href="${esc(t.actionUrl)}" onclick="return openVaTaskSection(event, ${t.id})">Open section →</a>`
     : '';
 
   // Invalid/stale ticker rows: let the VA research a replacement right here — it

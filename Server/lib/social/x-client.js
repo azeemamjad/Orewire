@@ -1,7 +1,7 @@
 /**
- * X client for Social Automation: login → cache cookies → postThread.
- * Tries HTTP + browser login through residential proxies; cookie paste is the
- * reliable path when X/Cloudflare blocks datacenter IPs.
+ * LEGACY X client (server-side login / GraphQL post).
+ * Live posting now goes through WebBridge — see bridge-client.js.
+ * These helpers remain only for Admin "Legacy" debugging.
  */
 const {
   getDecryptedCredentials,
@@ -250,40 +250,10 @@ async function postThread(pages, { dryRun = false } = {}) {
     };
   }
 
-  const session = await ensureSession();
-  const tweets = pages.map((text) => ({ text }));
-
-  // Prefer posting via residential proxy if available
-  const proxies = await listSocialProxyUrls();
-  let lastErr = null;
-  for (const proxyUrl of proxies) {
-    try {
-      const client = XHttpClient.fromCookieString(session.cookieString, {
-        fetchFn: await makeFetch(proxyUrl),
-      });
-      const results = await client.postThread(tweets);
-      const threadUrl = extractThreadUrl(results, session.username);
-      return { dryRun: false, threadUrl, results };
-    } catch (err) {
-      lastErr = err;
-      const msg = err?.message || String(err);
-      if (/auth|cookie|login|401|403|csrf|session/i.test(msg) && !isCloudflareBlock(err)) {
-        await markAccountStatus('needs_login', msg);
-        const fresh = await loginWithStoredCredentials();
-        const retry = XHttpClient.fromCookieString(fresh.cookieString, {
-          fetchFn: await makeFetch(proxyUrl),
-        });
-        const results = await retry.postThread(tweets);
-        const threadUrl = extractThreadUrl(results, fresh.user?.username || session.username);
-        return { dryRun: false, threadUrl, results };
-      }
-      console.warn('[social-x] postThread attempt failed:', friendlyLoginError(err));
-    }
-  }
-
-  const msg = friendlyLoginError(lastErr || new Error('postThread failed'));
-  await markAccountStatus('error', msg);
-  throw new Error(msg);
+  // Live GraphQL / cookie posting is deprecated — Cloudflare blocks the server.
+  throw new Error(
+    'Server-side X posting is deprecated. Configure WebBridge (ngrok URL + token) in Social Automation.',
+  );
 }
 
 module.exports = {

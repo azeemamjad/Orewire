@@ -203,7 +203,8 @@ async function collectActiveTasks() {
   try {
     const missing = await db.query(`
       SELECT COUNT(*)::int AS count FROM companies c
-      WHERE NOT EXISTS (SELECT 1 FROM company_people p WHERE p.company_id = c.id)
+      WHERE c.archived_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM company_people p WHERE p.company_id = c.id)
     `);
     const count = missing.rows[0]?.count || 0;
     if (count >= 10) {
@@ -229,6 +230,7 @@ async function collectActiveTasks() {
       SELECT id, name, exchange, ticker, symbol_flagged_reason, symbol_flagged_tv_symbol
         FROM companies
        WHERE symbol_flagged_at IS NOT NULL
+         AND archived_at IS NULL
        ORDER BY symbol_flagged_at DESC NULLS LAST
        LIMIT 200
     `);
@@ -236,13 +238,14 @@ async function collectActiveTasks() {
       const ex = row.exchange || '';
       const tk = row.ticker || '';
       const sym = row.symbol_flagged_tv_symbol || `${ex}:${tk}`;
+      const search = encodeURIComponent(row.name || tk || '');
       tasks.push({
         sourceKey: `companies|symbol_invalid|${row.id}`,
         module: 'companies',
         errorType: 'symbol_invalid',
         title: `${row.name} (${sym})`,
         description: `${row.symbol_flagged_reason || 'TradingView symbol returned no price.'} Fix in Companies → Market Symbols, or use "Find new ticker" to research a replacement.`,
-        actionUrl: '/admin/companies.html?flagged=1',
+        actionUrl: `/admin/companies.html?search=${search}&highlight=${row.id}&flagged=1`,
         severity: 'medium',
         occurrenceCount: 1,
         sampleDetail: sym || null,
