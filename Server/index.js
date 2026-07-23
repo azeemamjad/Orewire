@@ -92,6 +92,7 @@ app.use('/admin', express.static(path.join(__dirname, 'public', 'admin'), {
 app.get('/', (_req, res) => res.redirect('/admin/dashboard.html'));
 
 const migrate = require('./db/migrate');
+const http = require('http');
 
 async function start() {
   try {
@@ -118,7 +119,21 @@ async function start() {
     console.error('[usage-log] Startup prune failed (non-fatal):', err?.message || err);
   }
 
-  const server = app.listen(PORT, () => {
+  const server = http.createServer(app);
+
+  // Embed password-gated X Browser under /x-browser (same origin as Admin / Cloudflare)
+  try {
+    const { attachXBrowser, shouldEmbed } = require('./x-browser/embed');
+    if (shouldEmbed()) {
+      attachXBrowser(app, server, { mountPath: '/x-browser' });
+    } else {
+      console.log('[x-browser] Off — set X_BROWSER_PASSWORD to embed viewer at /x-browser/login');
+    }
+  } catch (err) {
+    console.error('[x-browser] Embed failed:', err?.message || err);
+  }
+
+  server.listen(PORT, () => {
     console.log(`Mining Intel server running → http://localhost:${PORT}`);
     console.log(`Admin Relay → http://localhost:${PORT}/admin/relay.html`);
     const { startAll } = require('./lib/schedulers');
@@ -140,18 +155,6 @@ async function start() {
         });
     } else {
       console.log('[webbridge] Off — extension needs WEBBRIDGE=1 (add to .env on the VA laptop, then restart)');
-    }
-
-    // Optional: in-process Chromium (prefer standalone `npm run x-browser` instead).
-    const { isAutoStartEnabled, startHostedBrowser, remoteBase } = require('./lib/hosted-browser');
-    if (remoteBase()) {
-      console.log(`[x-browser] Using remote service ${remoteBase()} (password viewer at ${remoteBase()}/login)`);
-    } else if (isAutoStartEnabled()) {
-      startHostedBrowser({ headed: false }).catch((err) => {
-        console.error('[x-browser] Failed to start embedded browser:', err?.message || err);
-      });
-    } else {
-      console.log('[x-browser] Off — run `npm run x-browser` separately, set X_BROWSER_URL + X_BROWSER_TOKEN');
     }
   });
 }

@@ -8,10 +8,8 @@ const {
   createSessionCookieValue,
   setSessionCookie,
   clearSessionCookie,
-  requireViewerSession,
   requireApiBearer,
   loadOrCreateApiToken,
-  hasValidViewerSession,
   parseCookies,
   verifySession,
   COOKIE_NAME,
@@ -30,20 +28,32 @@ function parseTweets(body = {}) {
     .filter(Boolean);
 }
 
-function createApp({ manager, screencast, config }) {
-  const app = express();
-  app.disable('x-powered-by');
-  app.use(express.json({ limit: '1mb' }));
+/**
+ * @param {{ manager, screencast, config, mountPath?: string }} opts
+ * mountPath e.g. '/x-browser' when embedded under main OreWire app.
+ */
+function createRouter({ manager, screencast, config, mountPath = '' }) {
+  const base = String(mountPath || '').replace(/\/$/, '');
+  const router = express.Router();
 
-  app.get('/health', (_req, res) => {
-    res.json({ ok: true, service: 'orewire-x-browser' });
+  function requireViewerSession(req, res, next) {
+    const cookies = parseCookies(req);
+    if (verifySession(cookies[COOKIE_NAME])) return next();
+    if (req.path.startsWith('/api/')) {
+      return res.status(401).json({ error: 'Login required' });
+    }
+    return res.redirect(`${base}/login`);
+  }
+
+  router.get('/health', (_req, res) => {
+    res.json({ ok: true, service: 'orewire-x-browser', mountPath: base || null });
   });
 
-  app.get('/login', (_req, res) => {
+  router.get('/login', (_req, res) => {
     res.sendFile(path.join(config.publicDir, 'login.html'));
   });
 
-  app.post('/api/login', (req, res) => {
+  router.post('/api/login', (req, res) => {
     try {
       if (!accessPassword()) {
         return res.status(503).json({
@@ -53,41 +63,45 @@ function createApp({ manager, screencast, config }) {
       if (!checkPassword(req.body?.password)) {
         return res.status(401).json({ error: 'Wrong password' });
       }
-      setSessionCookie(res, createSessionCookieValue());
-      res.json({ ok: true });
+      setSessionCookie(res, createSessionCookieValue(), { path: base || '/' });
+      res.json({ ok: true, redirect: `${base}/` });
     } catch (err) {
       res.status(500).json({ error: err.message || 'Login failed' });
     }
   });
 
-  app.post('/api/logout-viewer', (_req, res) => {
-    clearSessionCookie(res);
+  router.post('/api/logout-viewer', (_req, res) => {
+    clearSessionCookie(res, { path: base || '/' });
     res.json({ ok: true });
   });
 
-  // Machine API (OreWire) + viewer session
-  app.get('/api/status', requireApiBearer, async (_req, res) => {
+  router.get('/api/status', requireApiBearer, async (_req, res) => {
     try {
       const st = await manager.status();
       st.loggedIn = st.loggedIn || (await manager.cookiesLoggedIn());
       st.apiTokenHint = `${loadOrCreateApiToken().slice(0, 8)}…`;
+      st.mountPath = base || null;
       res.json(st);
     } catch (err) {
       res.status(500).json({ error: err.message || 'status failed' });
     }
   });
 
-  app.post('/api/start', requireApiBearer, async (_req, res) => {
+  router.post('/api/start', requireApiBearer, async (_req, res) => {
     try {
       const st = await manager.start({ headed: false });
       st.loggedIn = await manager.cookiesLoggedIn();
       res.json({ ok: true, ...st });
     } catch (err) {
-      res.status(500).json({ ok: false, error: err.message });
+      console.error('[x-browser] start failed:', err?.message || err);
+      res.status(500).json({
+        ok: false,
+        error: err.message || 'Failed to start Chromium (is Playwright installed? npx playwright install chromium)',
+      });
     }
   });
 
-  app.post('/api/stop', requireApiBearer, async (_req, res) => {
+  router.post('/api/stop', requireApiBearer, async (_req, res) => {
     try {
       await screencast.stop();
       const st = await manager.stop();
@@ -97,7 +111,7 @@ function createApp({ manager, screencast, config }) {
     }
   });
 
-  app.post('/api/open-login', requireApiBearer, async (_req, res) => {
+  router.post('/api/open-login', requireApiBearer, async (_req, res) => {
     try {
       const result = await screencast.openLoginForViewer();
       res.json({ ok: true, ...result });
@@ -106,7 +120,7 @@ function createApp({ manager, screencast, config }) {
     }
   });
 
-  app.post('/api/session-logout', requireApiBearer, async (_req, res) => {
+  router.post('/api/session-logout', requireApiBearer, async (_req, res) => {
     try {
       await screencast.stop();
       const st = await manager.logout();
@@ -116,7 +130,7 @@ function createApp({ manager, screencast, config }) {
     }
   });
 
-  app.post('/api/post', requireApiBearer, async (req, res) => {
+  router.post('/api/post', requireApiBearer, async (req, res) => {
     try {
       const tweets = parseTweets(req.body || {});
       if (!tweets.length) {
@@ -130,8 +144,7 @@ function createApp({ manager, screencast, config }) {
     }
   });
 
-  // Compatibility with OreWire bridge-client style
-  app.post('/api/tool', requireApiBearer, async (req, res) => {
+  router.post('/api/tool', requireApiBearer, async (req, res) => {
     try {
       const name = req.body?.name;
       const args = req.body?.args || {};
@@ -148,17 +161,26 @@ function createApp({ manager, screencast, config }) {
     }
   });
 
-  app.get('/', requireViewerSession, (_req, res) => {
+  router.get('/', requireViewerSession, (_req, res) => {
     res.sendFile(path.join(config.publicDir, 'viewer.html'));
   });
 
-  app.use(express.static(config.publicDir));
+  router.use(express.static(config.publicDir));
 
+  return router;
+}
+
+/** Standalone app (own port). */
+function createApp(opts) {
+  const app = express();
+  app.disable('x-powered-by');
+  app.use(express.json({ limit: '1mb' }));
+  app.use(createRouter({ ...opts, mountPath: '' }));
   return app;
 }
 
-function attachWebSocket(server, { screencast }) {
-  const wss = new WebSocketServer({ server, path: '/ws' });
+function attachWebSocket(server, { screencast, path: wsPath = '/ws' }) {
+  const wss = new WebSocketServer({ server, path: wsPath });
 
   wss.on('connection', async (ws, req) => {
     const cookies = parseCookies(req);
@@ -193,4 +215,4 @@ function attachWebSocket(server, { screencast }) {
   return wss;
 }
 
-module.exports = { createApp, attachWebSocket, hasValidViewerSession };
+module.exports = { createApp, createRouter, attachWebSocket };

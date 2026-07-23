@@ -2,11 +2,21 @@
   const canvas = document.getElementById('screen');
   const ctx = canvas.getContext('2d');
   const statusLine = document.getElementById('status-line');
+  const BASE = (() => {
+    const p = location.pathname.replace(/\/$/, '') || '';
+    if (p.endsWith('/x-browser')) return p;
+    if (p.includes('/x-browser')) return p.replace(/\/[^/]*$/, '') || '/x-browser';
+    return '';
+  })();
   let viewport = { width: 1280, height: 800 };
   let ws;
 
   function setStatus(text) {
     statusLine.textContent = text;
+  }
+
+  function api(path, opts) {
+    return fetch(BASE + path, opts);
   }
 
   function canvasPoint(ev) {
@@ -25,7 +35,7 @@
 
   function connect() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    ws = new WebSocket(`${proto}://${location.host}/ws`);
+    ws = new WebSocket(`${proto}://${location.host}${BASE}/ws`);
     ws.onopen = () => setStatus('Live');
     ws.onclose = () => {
       setStatus('Disconnected — reconnecting…');
@@ -71,12 +81,6 @@
     const { x, y } = canvasPoint(ev);
     send({ type: 'mouse', event: 'up', x, y, button: ev.button === 2 ? 'right' : 'left' });
   });
-  canvas.addEventListener('mousemove', (ev) => {
-    if (ev.buttons === 0 && !ev.ctrlKey) return; // only stream moves while dragging, reduce noise
-    const { x, y } = canvasPoint(ev);
-    send({ type: 'mouse', event: 'move', x, y });
-  });
-  // Always send move on pointer for hover targets (throttled)
   let lastMove = 0;
   canvas.addEventListener('pointermove', (ev) => {
     const now = Date.now();
@@ -118,7 +122,7 @@
   });
 
   document.getElementById('btn-login-x').onclick = async () => {
-    await fetch('/api/open-login', { method: 'POST' });
+    await api('/api/open-login', { method: 'POST' });
     canvas.focus();
   };
   document.getElementById('btn-home').onclick = () => {
@@ -126,12 +130,12 @@
   };
   document.getElementById('btn-wipe').onclick = async () => {
     if (!confirm('Wipe the X session on this server? You will need to log in again.')) return;
-    await fetch('/api/session-logout', { method: 'POST' });
+    await api('/api/session-logout', { method: 'POST' });
     location.reload();
   };
   document.getElementById('btn-lock').onclick = async () => {
-    await fetch('/api/logout-viewer', { method: 'POST' });
-    location.href = '/login';
+    await api('/api/logout-viewer', { method: 'POST' });
+    location.href = BASE + '/login';
   };
 
   connect();
