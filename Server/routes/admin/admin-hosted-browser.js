@@ -10,7 +10,7 @@ const {
 
 const router = express.Router();
 
-router.get('/status', async (_req, res) => {
+router.get('/status', async (req, res) => {
   try {
     const mgr = getManager();
     const st = await mgr.status();
@@ -18,7 +18,13 @@ router.get('/status', async (_req, res) => {
       st.loggedIn = await mgr.isLoggedIn();
     }
     st.remoteUrl = remoteBase() || null;
-    st.viewerUrl = mgr.viewerUrl || (remoteBase() ? `${remoteBase()}/login` : null);
+    const { isEmbedded, getRuntime } = require('../../x-browser/runtime');
+    if (isEmbedded()) {
+      const mount = getRuntime().mountPath || '/x-browser';
+      st.viewerUrl = `${req.protocol}://${req.get('host')}${mount}/login`;
+    } else {
+      st.viewerUrl = mgr.viewerUrl || (remoteBase() ? `${remoteBase()}/login` : null);
+    }
     res.json(st);
   } catch (err) {
     console.error('[x-browser] status failed:', err?.message || err);
@@ -27,7 +33,7 @@ router.get('/status', async (_req, res) => {
       running: false,
       loggedIn: false,
       remoteUrl: remoteBase() || null,
-      viewerUrl: remoteBase() ? `${remoteBase()}/login` : null,
+      viewerUrl: `${req.protocol}://${req.get('host')}/x-browser/login`,
     });
   }
 });

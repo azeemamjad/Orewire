@@ -107,11 +107,12 @@ function requireApiBearer(req, res, next) {
   return res.status(401).json({ error: 'Unauthorized' });
 }
 
-function setSessionCookie(res, value) {
-  const secure = String(process.env.X_BROWSER_SECURE_COOKIE || '').toLowerCase() === '1';
+function setSessionCookie(res, value, { path = '/' } = {}) {
+  const secure = String(process.env.X_BROWSER_SECURE_COOKIE || '').toLowerCase() === '1'
+    || String(process.env.NODE_ENV || '').toLowerCase() === 'production';
   const parts = [
     `${COOKIE_NAME}=${encodeURIComponent(value)}`,
-    'Path=/',
+    `Path=${path || '/'}`,
     'HttpOnly',
     'SameSite=Lax',
     `Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`,
@@ -120,10 +121,10 @@ function setSessionCookie(res, value) {
   res.setHeader('Set-Cookie', parts.join('; '));
 }
 
-function clearSessionCookie(res) {
+function clearSessionCookie(res, { path = '/' } = {}) {
   res.setHeader(
     'Set-Cookie',
-    `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
+    `${COOKIE_NAME}=; Path=${path || '/'}; HttpOnly; SameSite=Lax; Max-Age=0`,
   );
 }
 

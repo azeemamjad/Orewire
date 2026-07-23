@@ -38,11 +38,11 @@ code { font-size: 12px; }
   <section class="hb-card">
     <h2>Manual login (password site)</h2>
     <p class="hint">
-      Run the browser on its own process: <code>cd Server && npm run x-browser</code><br/>
-      Set <code>X_BROWSER_PASSWORD</code> in <code>.env</code>, then open the viewer and sign into X on the live screen.
+      Open the password-gated viewer on this same server, unlock with <code>X_BROWSER_PASSWORD</code>,
+      then sign into X on the live screen.
     </p>
     <div class="play-row">
-      <a class="btn btn-primary btn-sm" id="viewer-link" href="#" target="_blank" rel="noopener">Open password viewer →</a>
+      <a class="btn btn-primary btn-sm" id="viewer-link" href="/x-browser/login" target="_blank" rel="noopener">Open password viewer →</a>
       <button class="btn btn-ghost btn-sm" type="button" onclick="refreshStatus()">Refresh status</button>
       <button class="btn btn-ghost btn-sm" type="button" onclick="doStart()">Start browser</button>
       <button class="btn btn-ghost btn-sm" type="button" onclick="doWipe()">Wipe X session</button>
@@ -51,12 +51,12 @@ code { font-size: 12px; }
   </section>
 
   <section class="hb-card">
-    <h2>Wire OreWire → X Browser</h2>
+    <h2>Dokploy / production env</h2>
     <p class="hint">
-      In <code>Server/.env</code> on the main app:<br/>
-      <code>X_BROWSER_URL=http://127.0.0.1:10088</code><br/>
-      <code>X_BROWSER_TOKEN=</code> (from x-browser startup log or <code>~/.orewire-x-browser/api-token.txt</code>)<br/>
-      <code>HOSTED_BROWSER_POST=1</code>
+      Required: <code>X_BROWSER_PASSWORD=your-secret</code><br/>
+      Optional: <code>HOSTED_BROWSER_POST=1</code><br/>
+      Do <strong>not</strong> set <code>X_BROWSER_URL=http://127.0.0.1:10088</code> on the main app —
+      the browser is embedded at <code>/x-browser</code> on this same service.
     </p>
   </section>
 </main>
@@ -72,16 +72,11 @@ async function refreshStatus() {
     if (!r.ok) throw new Error(st.error || 'status failed');
     document.getElementById('stat-running').textContent = st.running ? 'Running' : 'Stopped';
     document.getElementById('stat-logged-in').textContent = st.loggedIn ? 'Logged in' : 'Not logged in';
-    document.getElementById('stat-url').textContent = st.viewerUrl || st.remoteUrl || 'embedded / unset';
+    document.getElementById('stat-url').textContent = st.viewerUrl || '/x-browser/login';
     const link = document.getElementById('viewer-link');
-    if (st.viewerUrl) {
-      link.href = st.viewerUrl;
-      link.style.pointerEvents = '';
-      link.style.opacity = '1';
-    } else {
-      link.href = '#';
-      link.style.opacity = '0.5';
-    }
+    const href = st.viewerUrl || '/x-browser/login';
+    link.href = href.startsWith('http') ? href : href;
+    link.style.opacity = '1';
     meta.textContent = st.profileDir ? `Profile: ${st.profileDir}` : (st.error || '');
   } catch (err) {
     meta.textContent = err.message || 'Failed to load status — is X Browser running and X_BROWSER_URL set?';

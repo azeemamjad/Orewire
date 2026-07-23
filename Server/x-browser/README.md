@@ -1,42 +1,32 @@
-# OreWire X Browser (standalone)
+# OreWire X Browser
 
-Persistent Chromium on this machine for X/Twitter automation. VAs log in through a **password-gated webpage** (remote screen + mouse/keyboard). OreWire posts via HTTP + Bearer token.
+Password-gated Chromium for X/Twitter, embedded in the main OreWire server.
 
-## Run (separate from main OreWire server)
+## Production (Dokploy — recommended)
 
-```bash
-cd Server
-# once
-npx playwright install chromium
-
-# in .env
-X_BROWSER_PASSWORD=choose-a-strong-password
-# optional:
-# X_BROWSER_PORT=10088
-# X_BROWSER_PROFILE=~/.orewire-x-browser
-
-npm run x-browser
-```
-
-Open **http://SERVER:10088/login** → enter password → **Open X login** → sign in on the live screen.
-
-## OreWire wiring
-
-On start, the service prints an API token (also in `~/.orewire-x-browser/api-token.txt`).
-
-In OreWire `.env` / Admin Social Automation bridge fields:
+In Dokploy env for the **main** Server service:
 
 ```
-X_BROWSER_URL=http://127.0.0.1:10088
-X_BROWSER_TOKEN=<token from x-browser>
+X_BROWSER_PASSWORD=your-strong-password
 HOSTED_BROWSER_POST=1
 ```
 
-Or paste the URL + token into Social Automation → WebBridge settings (same client path).
+**Do not** set `X_BROWSER_URL=http://127.0.0.1:10088` on that service.
 
-## API
+Redeploy, then open:
 
-- `GET /api/status` — Bearer
-- `POST /api/post` `{ "tweets": ["…"] }` — Bearer
-- `POST /api/tool` `{ "name": "post_x_thread", "args": { "tweets": [] } }` — Bearer
-- Viewer uses cookie session after `/api/login`
+`https://backend.orewire.com/x-browser/login`
+
+Unlock with the password → **Open X login** → sign in on the live screen.
+
+Admin → **X Browser** → Start / status uses the same in-process browser.
+
+Ensure the Docker image can run Playwright Chromium (this project’s Playwright base image, or run `npx playwright install chromium` in the image).
+
+## Optional standalone process
+
+```bash
+cd Server && npm run x-browser
+```
+
+Only needed if the browser runs on a **different** host. Then set `X_BROWSER_URL` + `X_BROWSER_TOKEN` on OreWire and `X_BROWSER_EMBED=0`.

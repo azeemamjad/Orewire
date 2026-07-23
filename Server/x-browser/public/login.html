@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>X Browser Login · OreWire</title>
-<link rel="stylesheet" href="/style.css" />
+<link rel="stylesheet" href="style.css" />
 </head>
 <body class="login-body">
   <form class="login-card" id="login-form">
@@ -17,21 +17,26 @@
     <p class="err" id="err" hidden></p>
   </form>
 <script>
+function basePath() {
+  const m = location.pathname.match(/^(.*?)\/login\/?$/);
+  return (m && m[1]) || '';
+}
 document.getElementById('login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const err = document.getElementById('err');
   const btn = document.getElementById('btn');
+  const base = basePath();
   err.hidden = true;
   btn.disabled = true;
   try {
-    const r = await fetch('/api/login', {
+    const r = await fetch(base + '/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: document.getElementById('password').value }),
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || 'Login failed');
-    location.href = '/';
+    location.href = data.redirect || (base + '/');
   } catch (ex) {
     err.textContent = ex.message || 'Login failed';
     err.hidden = false;
