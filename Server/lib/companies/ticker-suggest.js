@@ -182,6 +182,9 @@ async function createTickerSuggestionTask(company, suggestion) {
     + `\n\nSuggested: ${proposed}${suggestion.new_company_name ? ` — ${suggestion.new_company_name}` : ''}`
     + ` (confidence ${(suggestion.confidence * 100).toFixed(0)}%${suggestion.verified ? ', price-verified' : ''}).`;
 
+  const searchQ = encodeURIComponent(company.name || company.ticker || '');
+  const actionUrl = `/admin/companies.html?search=${searchQ}&highlight=${company.id}&flagged=1`;
+
   const r = await db.query(
     `INSERT INTO va_tasks
        (source_key, module, error_type, title, description, action_url, severity,
@@ -193,6 +196,7 @@ async function createTickerSuggestionTask(company, suggestion) {
      ON CONFLICT (source_key) DO UPDATE SET
        title = EXCLUDED.title,
        description = EXCLUDED.description,
+       action_url = EXCLUDED.action_url,
        payload = EXCLUDED.payload,
        source_url = EXCLUDED.source_url,
        sample_detail = EXCLUDED.sample_detail,
@@ -205,7 +209,7 @@ async function createTickerSuggestionTask(company, suggestion) {
       sourceKey,
       title,
       description,
-      '/admin/companies.html?flagged=1',
+      actionUrl,
       proposed,
       JSON.stringify(suggestion),
       suggestion.source_url || null,

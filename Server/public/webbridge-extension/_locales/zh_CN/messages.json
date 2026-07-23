@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "WebBridge",
+    "description": "扩展显示名称"
+  },
+  "extDescription": {
+    "message": "AI 工具浏览器自动化桥接",
+    "description": "扩展描述"
+  }
+}

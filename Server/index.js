@@ -50,6 +50,7 @@ adminApiRouter.use('/filings', require('./routes/admin/admin-filings'));
 adminApiRouter.use('/companies', require('./routes/admin/admin-companies'));
 adminApiRouter.use('/testing', require('./routes/admin/admin-testing'));
 adminApiRouter.use('/social', require('./routes/admin/admin-social'));
+adminApiRouter.use('/hosted-browser', require('./routes/admin/admin-hosted-browser'));
 adminApiRouter.use('/contact-messages', require('./routes/api/contact').adminRouter);
 app.use('/api', apiRouter);
 app.use('/api/admin', adminApiRouter);
@@ -124,6 +125,34 @@ async function start() {
     startAll({ server, app }).catch((err) => {
       console.error('[schedulers] Failed to start:', err?.message || err);
     });
+
+    // VA laptop: set WEBBRIDGE=1 in .env (or npm run webbridge) so the Chrome extension can connect.
+    // Leave unset/false on Dokploy — production only calls the public ngrok URL.
+    const webbridgeOn =
+      process.env.WEBBRIDGE === '1' ||
+      process.env.WEBBRIDGE === 'true' ||
+      process.argv.includes('--webbridge');
+    if (webbridgeOn) {
+      require('./lib/webbridge/start')
+        .startWebBridge()
+        .catch((err) => {
+          console.error('[webbridge] Failed to start:', err?.message || err);
+        });
+    } else {
+      console.log('[webbridge] Off — extension needs WEBBRIDGE=1 (add to .env on the VA laptop, then restart)');
+    }
+
+    // Optional: in-process Chromium (prefer standalone `npm run x-browser` instead).
+    const { isAutoStartEnabled, startHostedBrowser, remoteBase } = require('./lib/hosted-browser');
+    if (remoteBase()) {
+      console.log(`[x-browser] Using remote service ${remoteBase()} (password viewer at ${remoteBase()}/login)`);
+    } else if (isAutoStartEnabled()) {
+      startHostedBrowser({ headed: false }).catch((err) => {
+        console.error('[x-browser] Failed to start embedded browser:', err?.message || err);
+      });
+    } else {
+      console.log('[x-browser] Off — run `npm run x-browser` separately, set X_BROWSER_URL + X_BROWSER_TOKEN');
+    }
   });
 }
 

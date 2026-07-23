@@ -9,6 +9,16 @@
 nav li a { color: inherit; text-decoration: none; display: flex; align-items: center; gap: 8px; width: 100%; }
 .cron-builder { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
 .cron-preview { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.co-scope-btn.active { background: var(--primary, #1d4ed8); color: #fff; }
+@keyframes co-flash-row {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(250, 204, 21, 0.55); }
+}
+tr.co-highlight-flash {
+  animation: co-flash-row 0.9s ease-in-out infinite;
+  outline: 2px solid #eab308;
+  outline-offset: -2px;
+}
 </style>
 </head>
 <body data-page="companies">
@@ -21,7 +31,11 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
       <p>All tracked mining companies</p>
     </div>
 
-    <div class="toolbar">
+    <div class="toolbar" style="gap:8px;align-items:center;">
+      <div class="seg" role="tablist" aria-label="Companies scope" style="display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+        <button type="button" class="btn btn-ghost btn-sm co-scope-btn active" data-scope="active" onclick="setCompaniesScope('active')" style="border:0;border-radius:0;">Active</button>
+        <button type="button" class="btn btn-ghost btn-sm co-scope-btn" data-scope="archive" onclick="setCompaniesScope('archive')" style="border:0;border-radius:0;">Archive</button>
+      </div>
       <input type="search" id="co-search" placeholder="Search name / ticker…" oninput="_coPage=1;loadCompanies()" />
       <select id="co-exchange" onchange="_coPage=1;loadCompanies()">
         <option value="">All exchanges</option>
@@ -36,8 +50,8 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
         <option value="transfer_agent">Missing transfer agent</option>
         <option value="people">No managers/directors</option>
       </select>
-      <button class="btn btn-primary btn-sm" onclick="openAddCompanyModal()">+ Add company</button>
-      <button class="btn btn-ghost btn-sm" title="Visit company websites and rebuild Management/Board with AI" onclick="rebuildPeople()">🔁 Rebuild people</button>
+      <button class="btn btn-primary btn-sm" id="co-add-btn" onclick="openAddCompanyModal()">+ Add company</button>
+      <button class="btn btn-ghost btn-sm" id="co-rebuild-btn" title="Visit company websites and rebuild Management/Board with AI" onclick="rebuildPeople()">🔁 Rebuild people</button>
       <button class="btn btn-ghost btn-sm" onclick="_coPage=1;loadCompanies()">↻ Refresh</button>
       <span id="co-count" class="text-muted" style="margin-left:auto;font-size:12px;"></span>
     </div>

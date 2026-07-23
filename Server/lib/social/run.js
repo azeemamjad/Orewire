@@ -3,7 +3,12 @@ const { getSettings, updateSettings, PLATFORM } = require('./settings');
 const { getAccount, publicAccount, markAccountStatus } = require('./accounts');
 const { selectThreadItems } = require('./select');
 const { composeThread } = require('./compose');
-const { postThread } = require('./x-client');
+const {
+  postThread,
+  isBridgeConfigured,
+  getBridgeCredentials,
+  getBridgePublic,
+} = require('./bridge-client');
 
 let running = false;
 
@@ -79,7 +84,7 @@ async function insertItems(runId, composedItems, intro, close) {
 }
 
 /**
- * Orchestrate select → compose → post → log.
+ * Orchestrate select → compose → post via WebBridge → log.
  * @param {{ trigger?: 'cron'|'manual', force?: boolean }} opts
  */
 async function runSocialPost(opts = {}) {
@@ -102,16 +107,26 @@ async function runSocialPost(opts = {}) {
     }
   }
 
-  const account = await getAccount();
-  if (!account?.password_enc) {
-    return { ok: false, error: 'X credentials not configured' };
-  }
-  if (account.status === 'needs_login' && !settings.dry_run && trigger === 'cron') {
-    return { ok: false, error: 'Account needs login — open Social Automation and Test login' };
+  const dryRun = settings.dry_run;
+  if (!dryRun) {
+    let creds;
+    try {
+      creds = await getBridgeCredentials();
+    } catch (err) {
+      return { ok: false, error: err?.message || 'Invalid bridge URL' };
+    }
+    if (!isBridgeConfigured(creds)) {
+      return { ok: false, error: 'WebBridge not configured — paste ngrok URL + token in Social Automation' };
+    }
+    if (settings.bridge_status !== 'ok' && trigger === 'cron') {
+      return {
+        ok: false,
+        error: 'WebBridge not verified — open Social Automation and Test connection',
+      };
+    }
   }
 
   running = true;
-  const dryRun = settings.dry_run;
   const runId = await createRun({ trigger, dryRun });
 
   try {
@@ -144,12 +159,10 @@ async function runSocialPost(opts = {}) {
         hashtags: composed.hashtags,
         dryRun,
         pageCount: composed.pages.length,
+        via: dryRun ? 'local' : 'webbridge',
         preview: dryRun ? composed.pages : undefined,
       },
     });
-
-    // After first successful live post, leave dry_run as-is (admin must uncheck).
-    // Safety default: dry_run stays true until admin turns it off.
 
     return {
       ok: true,
@@ -168,12 +181,15 @@ async function runSocialPost(opts = {}) {
       error: msg,
       payload: {},
     });
-    if (/auth|login|cookie|csrf|session/i.test(msg)) {
-      await markAccountStatus('needs_login', msg);
-      // Auto-pause cron on auth failure
+    if (/bridge|ngrok|extension|unauthorized|401/i.test(msg)) {
+      // Auto-pause cron on bridge failure so we don't spam errors
       if (settings.enabled) {
         await updateSettings({ enabled: false });
       }
+    }
+    // Legacy account status (no longer required for posting)
+    if (/auth|login|cookie|csrf|session/i.test(msg)) {
+      await markAccountStatus('needs_login', msg).catch(() => {});
     }
     return { ok: false, runId, error: msg };
   } finally {
@@ -182,9 +198,10 @@ async function runSocialPost(opts = {}) {
 }
 
 async function getStatusSnapshot() {
-  const [settings, account, lastRun] = await Promise.all([
+  const [settings, account, bridge, lastRun] = await Promise.all([
     getSettings(),
     getAccount(),
+    getBridgePublic(),
     db.query(
       `SELECT id, started_at, finished_at, status, trigger, item_count, thread_url, error, dry_run
          FROM social_post_runs
@@ -198,6 +215,7 @@ async function getStatusSnapshot() {
   return {
     settings,
     account: publicAccount(account),
+    bridge,
     lastRun: lastRun.rows[0] || null,
     cronEnabledEnv: process.env.SOCIAL_X_CRON_ENABLED !== 'false',
   };

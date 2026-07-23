@@ -6,12 +6,35 @@ const {
   publicAccount,
   getAccount,
 } = require('../../lib/social/accounts');
-const { loginWithStoredCredentials } = require('../../lib/social/x-client');
+const { loginWithStoredCredentials, importSessionCookies } = require('../../lib/social/x-client');
+const {
+  saveBridgeConfig,
+  getBridgePublic,
+  ping: pingBridge,
+  isBridgeConfigured,
+  getBridgeCredentials,
+  postThread,
+} = require('../../lib/social/bridge-client');
 const { runSocialPost, getStatusSnapshot } = require('../../lib/social/run');
 const { getAnalytics } = require('../../lib/social/analytics');
 const { rescheduleSocialScheduler } = require('../../lib/social/scheduler');
+const db = require('../../db');
+const { PLATFORM } = require('../../lib/social/settings');
 
 const router = express.Router();
+
+function parseTweetsFromBody(body = {}) {
+  if (Array.isArray(body.tweets)) {
+    return body.tweets.map((t) => String(t ?? '').trim()).filter(Boolean);
+  }
+  const raw = String(body.text || body.content || '').trim();
+  if (!raw) return [];
+  // Blank line or --- separates thread tweets
+  return raw
+    .split(/\n\s*\n+|\n\s*---+\s*\n/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
 
 // GET /api/admin/social/status
 router.get('/status', async (_req, res) => {
@@ -34,16 +57,24 @@ router.put('/settings', async (req, res) => {
       }
     }
 
-    // Play requires credentials + successful login status
+    // Play requires WebBridge configured + last test OK
     if (body.enabled === true) {
-      const account = await getAccount();
-      if (!account?.password_enc) {
-        return res.status(400).json({ error: 'Save X credentials before enabling automation' });
+      let creds;
+      try {
+        creds = await getBridgeCredentials();
+      } catch (err) {
+        return res.status(400).json({ error: err?.message || 'Invalid bridge URL' });
       }
-      if (account.status !== 'ok') {
+      if (!isBridgeConfigured(creds)) {
         return res.status(400).json({
-          error: 'Test login must succeed before enabling automation',
-          status: account.status,
+          error: 'Save WebBridge URL + token and Test connection before enabling',
+        });
+      }
+      const bridge = await getBridgePublic();
+      if (bridge.status !== 'ok') {
+        return res.status(400).json({
+          error: 'Test connection must succeed before enabling automation',
+          status: bridge.status,
         });
       }
     }
@@ -72,7 +103,35 @@ router.put('/settings', async (req, res) => {
   }
 });
 
-// PUT /api/admin/social/x/credentials
+// PUT /api/admin/social/bridge — save ngrok URL + bearer token
+router.put('/bridge', async (req, res) => {
+  try {
+    const { url, token } = req.body || {};
+    const bridge = await saveBridgeConfig({ url, token });
+    res.json({ bridge });
+  } catch (err) {
+    console.error('[social] save bridge failed:', err?.message || err);
+    res.status(400).json({ error: err?.message || 'Failed to save bridge config' });
+  }
+});
+
+// POST /api/admin/social/bridge/test — ping daemon via ngrok
+router.post('/bridge/test', async (_req, res) => {
+  try {
+    const result = await pingBridge();
+    const bridge = await getBridgePublic();
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, error: result.error, bridge, data: result.data || null });
+    }
+    res.json({ ok: true, bridge, data: result.data });
+  } catch (err) {
+    console.error('[social] bridge test failed:', err?.message || err);
+    const bridge = await getBridgePublic().catch(() => null);
+    res.status(400).json({ ok: false, error: err?.message || 'Bridge test failed', bridge });
+  }
+});
+
+// PUT /api/admin/social/x/credentials — LEGACY (server-side login; prefer WebBridge)
 router.put('/x/credentials', async (req, res) => {
   try {
     const { username, password, email } = req.body || {};
@@ -84,7 +143,7 @@ router.put('/x/credentials', async (req, res) => {
   }
 });
 
-// POST /api/admin/social/x/login-test
+// POST /api/admin/social/x/login-test — LEGACY
 router.post('/x/login-test', async (_req, res) => {
   try {
     const account = await getAccount();
@@ -109,6 +168,28 @@ router.post('/x/login-test', async (_req, res) => {
   }
 });
 
+// POST /api/admin/social/x/import-cookies — LEGACY
+router.post('/x/import-cookies', async (req, res) => {
+  try {
+    const cookieString = String(req.body?.cookies || req.body?.cookieString || '').trim();
+    if (!cookieString) return res.status(400).json({ error: 'cookies required' });
+    const result = await importSessionCookies(cookieString);
+    const updated = await getAccount();
+    res.json({
+      ok: true,
+      user: result.user
+        ? { id: result.user.id, username: result.user.username, name: result.user.name }
+        : null,
+      account: publicAccount(updated),
+      verified: !!result.verified,
+      warning: result.warning || null,
+    });
+  } catch (err) {
+    console.error('[social] import-cookies failed:', err?.message || err);
+    res.status(400).json({ ok: false, error: err?.message || 'Import failed' });
+  }
+});
+
 // POST /api/admin/social/run-now
 router.post('/run-now', async (_req, res) => {
   try {
@@ -120,6 +201,74 @@ router.post('/run-now', async (_req, res) => {
   } catch (err) {
     console.error('[social] run-now failed:', err?.message || err);
     res.status(500).json({ error: err?.message || 'Run failed' });
+  }
+});
+
+// POST /api/admin/social/compose-post — write a post/thread and publish via WebBridge now
+router.post('/compose-post', async (req, res) => {
+  let runId = null;
+  try {
+    const tweets = parseTweetsFromBody(req.body || {});
+    if (!tweets.length) {
+      return res.status(400).json({ error: 'Write at least one tweet (blank line separates a thread)' });
+    }
+    if (tweets.length > 10) {
+      return res.status(400).json({ error: 'Max 10 tweets per thread' });
+    }
+    for (const t of tweets) {
+      if (t.length > 280) {
+        return res.status(400).json({ error: `A tweet is over 280 characters (${t.length})` });
+      }
+    }
+
+    let creds;
+    try {
+      creds = await getBridgeCredentials();
+    } catch (err) {
+      return res.status(400).json({ error: err?.message || 'Invalid bridge URL' });
+    }
+    if (!isBridgeConfigured(creds)) {
+      return res.status(400).json({ error: 'Configure WebBridge connection first' });
+    }
+
+    const ins = await db.query(
+      `INSERT INTO social_post_runs (platform, status, trigger, dry_run, item_count, payload)
+       VALUES ($1, 'running', 'compose', FALSE, $2, $3::jsonb)
+       RETURNING id`,
+      [PLATFORM, tweets.length, JSON.stringify({ tweets, via: 'compose' })],
+    );
+    runId = ins.rows[0].id;
+
+    const posted = await postThread(tweets, { dryRun: false });
+
+    await db.query(
+      `UPDATE social_post_runs
+          SET finished_at = NOW(),
+              status = 'success',
+              thread_url = $2,
+              payload = payload || $3::jsonb
+        WHERE id = $1`,
+      [runId, posted.threadUrl || null, JSON.stringify({ mode: posted.results?.mode || null })],
+    );
+
+    res.json({
+      ok: true,
+      runId,
+      tweetCount: posted.tweetCount || tweets.length,
+      threadUrl: posted.threadUrl || null,
+    });
+  } catch (err) {
+    const msg = err?.message || String(err);
+    console.error('[social] compose-post failed:', msg);
+    if (runId) {
+      await db.query(
+        `UPDATE social_post_runs
+            SET finished_at = NOW(), status = 'error', error = $2
+          WHERE id = $1`,
+        [runId, msg],
+      ).catch(() => {});
+    }
+    res.status(400).json({ ok: false, runId, error: msg });
   }
 });
 

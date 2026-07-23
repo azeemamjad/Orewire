@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "OreWire Bridge",
+    "description": "Extension display name"
+  },
+  "extDescription": {
+    "message": "OreWire X posting bridge \u2014 reserved ngrok domain + daemon",
+    "description": "Extension description"
+  }
+}
