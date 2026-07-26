@@ -281,8 +281,16 @@ async function fetchCompanyNews(companyName, ticker, companyId = null, { skipCoo
   const newIds = [];
   let inserted = 0;
 
+  let blockedPublishers = new Set();
+  try {
+    const blockedRes = await db.query(`SELECT source FROM market_news_blocked_sources`);
+    blockedPublishers = new Set(blockedRes.rows.map((r) => r.source));
+  } catch { /* table may not exist yet during boot */ }
+
   for (const item of allItems) {
     try {
+      const publisher = item.source || 'News';
+      if (blockedPublishers.has(publisher)) continue;
       const result = await db.query(
         `INSERT INTO ${TABLE_MARKET} (title, link, source, pub_date, description, category, company_id, ticker)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -291,7 +299,7 @@ async function fetchCompanyNews(companyName, ticker, companyId = null, { skipCoo
         [
           item.title,
           item.link,
-          item.source || 'News',
+          publisher,
           item.pubDate ? new Date(item.pubDate) : new Date(),
           item.description,
           category,

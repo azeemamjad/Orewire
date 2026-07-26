@@ -845,6 +845,17 @@ async function migrate() {
   await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_companies_archived_at ON companies(archived_at) WHERE archived_at IS NOT NULL`);
 
+  // Market news publisher blocklist — blocked sources are hidden from the public platform
+  await safeQuery(`
+    CREATE TABLE IF NOT EXISTS market_news_blocked_sources (
+      source     TEXT PRIMARY KEY,
+      blocked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      blocked_by TEXT,
+      note       TEXT
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_market_news_source ON market_news(source)`);
+
   console.log('[DB] All migrations complete');
 }
 

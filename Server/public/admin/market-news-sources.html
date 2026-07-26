@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Market News Sources | OreWire Admin</title>
+<link rel="stylesheet" href="/admin/css/admin.css" />
+<style>
+nav li a { color: inherit; text-decoration: none; display: flex; align-items: center; gap: 8px; width: 100%; }
+.mns-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .mns-layout { grid-template-columns: 1fr; } }
+.mns-panel { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; min-height: 280px; }
+.mns-panel h2 { font-size: 15px; margin: 0 0 10px; }
+.mns-layout tbody tr { cursor: pointer; }
+.mns-layout tbody tr:hover { background: var(--surface-2); }
+.mns-layout tbody tr.mns-row-selected,
+.mns-layout tbody tr.mns-row-selected:hover {
+  background: #dbeafe;
+  box-shadow: inset 3px 0 0 #2563eb;
+}
+.mns-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+.mns-badge-blocked { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
+.mns-badge-active { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
+.mns-empty { color: var(--muted); font-size: 14px; padding: 28px 12px; text-align: center; }
+.mns-news-title { font-size: 13px; font-weight: 600; }
+.mns-news-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.mns-news-sum { font-size: 12px; color: var(--text-2); margin-top: 4px; }
+.mns-detail-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.mns-detail-head .mns-source-name { font-size: 16px; font-weight: 700; margin-right: auto; }
+.mns-pagination { display: flex; align-items: center; gap: 10px; margin-top: 14px; justify-content: flex-end; }
+</style>
+</head>
+<body data-page="market-news-sources">
+<aside class="sidebar"></aside>
+<main class="main">
+  <div class="page-header">
+    <h1>Market news sources</h1>
+    <p>Publishers behind Google market news. Block a source to hide all of its headlines from the public platform.</p>
+  </div>
+
+  <div class="toolbar">
+    <input type="search" id="mns-search" placeholder="Search sources…" style="min-width:200px;" onkeydown="if(event.key==='Enter'){ _mnsPage=1; loadMarketNewsSources(); }" />
+    <select id="mns-filter" onchange="_mnsPage=1; loadMarketNewsSources()">
+      <option value="all">All sources</option>
+      <option value="active">Active only</option>
+      <option value="blocked">Blocked only</option>
+    </select>
+    <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;">
+      Per page
+      <select id="mns-limit" onchange="_mnsPage=1; loadMarketNewsSources()">
+        <option value="20">20</option>
+        <option value="25" selected>25</option>
+        <option value="50">50</option>
+        <option value="75">75</option>
+        <option value="100">100</option>
+      </select>
+    </label>
+    <button class="btn btn-primary btn-sm" type="button" onclick="_mnsPage=1; loadMarketNewsSources()">Search</button>
+    <button class="btn btn-ghost btn-sm" type="button" onclick="loadMarketNewsSources()">Refresh</button>
+    <span id="mns-count" style="margin-left:auto;font-size:12px;color:var(--muted);"></span>
+  </div>
+
+  <div class="mns-layout">
+    <div class="mns-panel">
+      <h2>Sources</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th>Articles</th>
+              <th>Last published</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="mns-sources-body">
+            <tr class="empty-row"><td colspan="5">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="mns-pagination" id="mns-pagination">
+        <span id="mns-page-info" style="font-size:12px;color:var(--muted);"></span>
+        <button class="btn btn-ghost btn-sm" id="mns-prev" type="button" onclick="mnsChangePage(-1)">← Prev</button>
+        <button class="btn btn-ghost btn-sm" id="mns-next" type="button" onclick="mnsChangePage(1)">Next →</button>
+      </div>
+    </div>
+
+    <div class="mns-panel" id="mns-detail">
+      <div class="mns-empty">Select a source to view its market news</div>
+    </div>
+  </div>
+</main>
+<div id="toast"></div>
+<script src="/admin/js/admin-sidebar.js?v=20260726"></script>
+<script src="/admin/js/legacy-admin.js"></script>
+</body>
+</html>
