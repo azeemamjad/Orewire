@@ -206,12 +206,13 @@
         <label for="news-prompt" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
           <span>News enrichment prompt <span id="news-prompt-status" style="font-weight:400;color:var(--muted);font-size:12px;"></span></span>
           <span style="display:inline-flex;gap:6px;">
-            <button class="btn btn-primary btn-sm" type="button" id="news-prompt-save-btn" onclick="newsSavePrompt()">Save prompt</button>
+            <button class="btn btn-secondary btn-sm" type="button" id="news-prompt-save-btn" onclick="newsSavePromptDraft()">Save draft</button>
+            <button class="btn btn-primary btn-sm" type="button" id="news-prompt-save-prod-btn" onclick="newsSavePromptProduction()">Save for production</button>
             <button class="btn btn-ghost btn-sm" type="button" onclick="newsResetPrompt()">Reset to default</button>
           </span>
         </label>
         <textarea id="news-prompt" rows="8" spellcheck="false"></textarea>
-        <p class="test-hint" style="margin-top:6px;">Saved to the database and used by the production news pipeline. Output must be a JSON array of {title, summary, commodity, sentiment}.</p>
+        <p class="test-hint" style="margin-top:6px;"><strong>Save draft</strong> keeps your edits for testing only — it does <strong>not</strong> change the live news pipeline. <strong>Save for production</strong> replaces the LIVE enrichment prompt (asks for confirmation first). “Reset to default” loads the built-in prompt into the editor.</p>
       </div>
     </div>
 
@@ -810,33 +811,87 @@
     try { const r = await fetch('/api/admin/testing/filings/models'); if (!r.ok) return; const d = await r.json(); newsFillModels(d.models, d.activeModel); } catch { /* ignore */ }
   }
   function newsSetPromptStatus(t) { const el = document.getElementById('news-prompt-status'); if (el) el.textContent = t ? `· ${t}` : ''; }
+
+  function newsApplyPromptPayload(d) {
+    if (!d) return;
+    N.defaultPrompt = d.defaultPrompt || N.defaultPrompt || '';
+    N.savedPrompt = (d.prompt != null ? d.prompt : d.defaultPrompt) || '';
+    document.getElementById('news-prompt').value = N.savedPrompt;
+    if (d.source === 'draft') newsSetPromptStatus('DRAFT (testing only — not live)');
+    else if (d.source === 'production') newsSetPromptStatus('LIVE production prompt');
+    else newsSetPromptStatus('built-in default');
+  }
+
   async function newsLoadPrompt() {
     try {
-      const r = await fetch('/api/admin/testing/news/prompt'); const d = await r.json(); if (!r.ok) return;
-      N.defaultPrompt = d.defaultPrompt || '';
-      N.savedPrompt = (d.prompt != null ? d.prompt : d.defaultPrompt) || '';
-      document.getElementById('news-prompt').value = N.savedPrompt;
-      newsSetPromptStatus(d.isCustom ? 'custom saved prompt' : 'built-in default');
+      const r = await fetch('/api/admin/testing/news/prompt');
+      const d = await r.json();
+      if (!r.ok) return;
+      newsApplyPromptPayload(d);
       document.getElementById('news-step2').hidden = false;
     } catch { /* ignore */ }
   }
+
   function newsResetPrompt() {
     document.getElementById('news-prompt').value = N.defaultPrompt;
-    newsSetPromptStatus('default (unsaved — click Save to persist)');
-    notify('Prompt reset to default');
+    newsSetPromptStatus('built-in default (unsaved — use Save draft or Save for production to persist)');
+    notify('Prompt reset to built-in default');
   }
-  async function newsSavePrompt() {
+
+  async function newsSavePromptRequest(prompt, target) {
+    const r = await fetch('/api/admin/testing/news/prompt', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, target }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || 'Failed to save');
+    return data;
+  }
+
+  async function newsSavePromptDraft() {
     const prompt = document.getElementById('news-prompt').value;
     if (!prompt.trim()) { notify('Prompt cannot be empty', 'err'); return; }
-    const btn = document.getElementById('news-prompt-save-btn'); btn.disabled = true;
+    const btn = document.getElementById('news-prompt-save-btn');
+    btn.disabled = true;
     try {
-      const r = await fetch('/api/admin/testing/news/prompt', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt }) });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.error || 'Failed to save');
-      N.savedPrompt = prompt; newsSetPromptStatus('custom saved prompt');
-      notify('News prompt saved — production will use it');
-    } catch (e) { notify(e.message || 'Failed', 'err'); } finally { btn.disabled = false; }
+      const d = await newsSavePromptRequest(prompt, 'draft');
+      newsApplyPromptPayload(d);
+      notify('Draft saved — testing only, not live');
+    } catch (e) {
+      notify(e.message || 'Failed', 'err');
+    } finally {
+      btn.disabled = false;
+    }
   }
+
+  async function newsSavePromptProduction() {
+    const prompt = document.getElementById('news-prompt').value;
+    if (!prompt.trim()) { notify('Prompt cannot be empty', 'err'); return; }
+    const warning =
+      '⚠  PRODUCTION SYSTEM CHANGE\n\n'
+      + 'You are about to replace the LIVE news enrichment prompt used by the production pipeline.\n\n'
+      + 'This affects the live system, not just your test runs.\n\n'
+      + 'Are you sure you want to save this prompt to production?';
+    if (!confirm(warning)) {
+      notify('Cancelled — production prompt unchanged', 'ok');
+      return;
+    }
+    const btn = document.getElementById('news-prompt-save-prod-btn');
+    btn.disabled = true;
+    try {
+      const d = await newsSavePromptRequest(prompt, 'production');
+      newsApplyPromptPayload(d);
+      notify('Saved to PRODUCTION — live news enrichment uses this prompt');
+    } catch (e) {
+      notify(e.message || 'Failed', 'err');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // Back-compat for any leftover callers
+  async function newsSavePrompt() { return newsSavePromptDraft(); }
 
   function newsRenderSelected() {
     const el = document.getElementById('news-selected');
@@ -855,10 +910,7 @@
       const data = await r.json(); if (!r.ok) throw new Error(data.error || 'Failed to select');
       N.batchId = data.batchId; N.companies = data.companies || []; N.anyDone = false;
       newsFillModels(data.models, data.activeModel);
-      N.defaultPrompt = data.defaultPrompt || '';
-      N.savedPrompt = (data.prompt != null ? data.prompt : data.defaultPrompt) || '';
-      document.getElementById('news-prompt').value = N.savedPrompt;
-      newsSetPromptStatus(data.isCustom ? 'custom saved prompt' : 'built-in default');
+      newsApplyPromptPayload(data);
       newsRenderSelected();
       document.getElementById('news-step2').hidden = false;
       document.getElementById('news-step3').hidden = N.companies.length === 0;
@@ -925,7 +977,14 @@
         + (res.raw ? `<details><summary>Raw response</summary><pre>${esc(res.raw)}</pre></details>` : '');
     } else {
       const items = res.items || [];
-      const rows = items.map((it) => `<tr><td>${newsSource(it.source)}</td><td>${esc(it.title || '—')}</td><td style="color:var(--text-2);">${esc(it.summary || '—')}</td><td style="font-family:ui-monospace,monospace;font-size:11px;">${esc(it.commodity || '—')}</td><td>${newsSentiment(it.sentiment)}</td></tr>`).join('');
+      const rows = items.map((it) => {
+        const release = it.description
+          ? `<details style="margin-top:4px;"><summary>News release</summary><div style="margin-top:6px;font-size:12px;color:var(--text-2);white-space:pre-wrap;">${esc(it.original_title ? `${it.original_title}\n\n` : '')}${esc(it.description)}</div>${it.link ? `<div style="margin-top:6px;"><a href="${esc(it.link)}" target="_blank" rel="noopener">Open link</a></div>` : ''}</details>`
+          : (it.original_title && it.original_title !== it.title
+            ? `<div style="margin-top:4px;font-size:11px;color:var(--muted);">Original: ${esc(it.original_title)}</div>`
+            : '');
+        return `<tr><td>${newsSource(it.source)}</td><td>${esc(it.title || '—')}${release}</td><td style="color:var(--text-2);">${esc(it.summary || '—')}</td><td style="font-family:ui-monospace,monospace;font-size:11px;">${esc(it.commodity || '—')}</td><td>${newsSentiment(it.sentiment)}</td></tr>`;
+      }).join('');
       body = `<div class="table-wrap" style="margin-top:8px;"><table style="font-size:12.5px;"><thead><tr><th>Source</th><th>Title</th><th>Summary</th><th>Commodity</th><th>Sentiment</th></tr></thead><tbody>${rows || '<tr class="empty-row"><td colspan="5">No items</td></tr>'}</tbody></table></div>`;
     }
     const badge = res.ok === false ? '<span class="badge badge-error">error</span>' : `<span class="badge badge-analyzed">${(res.items || []).length} items</span>`;
