@@ -3557,12 +3557,57 @@ let _mnsSelected = null;
 let _mnsCache = [];
 let _mnsLoadSeq = 0;
 let _mnsNewsSeq = 0;
+let _mnsDelegatesBound = false;
+
+function mnsEncodeSource(source) {
+  return encodeURIComponent(String(source || ''));
+}
+
+function mnsDecodeSource(encoded) {
+  try {
+    return decodeURIComponent(String(encoded || ''));
+  } catch {
+    return String(encoded || '');
+  }
+}
 
 function initMarketNewsSources() {
   _mnsPage = 1;
   _mnsNewsPage = 1;
   _mnsSelected = null;
+  bindMarketNewsSourcesDelegates();
   loadMarketNewsSources();
+}
+
+function bindMarketNewsSourcesDelegates() {
+  if (_mnsDelegatesBound) return;
+  _mnsDelegatesBound = true;
+
+  document.getElementById('mns-sources-body')?.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-mns-action]');
+    if (btn) {
+      event.preventDefault();
+      event.stopPropagation();
+      const source = mnsDecodeSource(btn.getAttribute('data-source') || '');
+      const action = btn.getAttribute('data-mns-action');
+      if (action === 'block') blockMarketNewsSource(source);
+      else if (action === 'unblock') unblockMarketNewsSource(source);
+      return;
+    }
+    const row = event.target.closest('tr[data-source]');
+    if (!row) return;
+    selectMarketNewsSource(mnsDecodeSource(row.getAttribute('data-source') || ''));
+  });
+
+  document.getElementById('mns-detail')?.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-mns-action]');
+    if (!btn) return;
+    event.preventDefault();
+    const source = mnsDecodeSource(btn.getAttribute('data-source') || '');
+    const action = btn.getAttribute('data-mns-action');
+    if (action === 'block') blockMarketNewsSource(source);
+    else if (action === 'unblock') unblockMarketNewsSource(source);
+  });
 }
 
 function mnsChangePage(delta) {
@@ -3626,13 +3671,14 @@ async function loadMarketNewsSources() {
 
     tbody.innerHTML = _mnsCache.map((s) => {
       const selected = _mnsSelected === s.source ? ' mns-row-selected' : '';
+      const enc = mnsEncodeSource(s.source);
       const badge = s.blocked
         ? '<span class="mns-badge mns-badge-blocked">Blocked</span>'
         : '<span class="mns-badge mns-badge-active">Active</span>';
       const action = s.blocked
-        ? `<button class="btn btn-ghost btn-sm" type="button" onclick="event.stopPropagation(); unblockMarketNewsSource(${JSON.stringify(s.source)})">Unblock</button>`
-        : `<button class="btn btn-danger btn-sm" type="button" onclick="event.stopPropagation(); blockMarketNewsSource(${JSON.stringify(s.source)})">Block</button>`;
-      return `<tr class="${selected.trim()}" data-source="${esc(s.source)}" onclick="selectMarketNewsSource(${JSON.stringify(s.source)})">
+        ? `<button class="btn btn-ghost btn-sm" type="button" data-mns-action="unblock" data-source="${enc}">Unblock</button>`
+        : `<button class="btn btn-danger btn-sm" type="button" data-mns-action="block" data-source="${enc}">Block</button>`;
+      return `<tr class="${selected.trim()}" data-source="${enc}">
         <td>${esc(s.source)}</td>
         <td>${Number(s.itemCount || 0).toLocaleString()}</td>
         <td>${esc(mnsFmtDate(s.lastPubDate))}</td>
@@ -3650,11 +3696,12 @@ async function loadMarketNewsSources() {
 function selectMarketNewsSource(source) {
   _mnsSelected = source;
   _mnsNewsPage = 1;
+  const enc = mnsEncodeSource(source);
   document.querySelectorAll('#mns-sources-body tr.mns-row-selected').forEach((row) => {
     row.classList.remove('mns-row-selected');
   });
   document.querySelectorAll('#mns-sources-body tr[data-source]').forEach((row) => {
-    if (row.getAttribute('data-source') === source) row.classList.add('mns-row-selected');
+    if (row.getAttribute('data-source') === enc) row.classList.add('mns-row-selected');
   });
   loadMarketNewsForSource(source);
 }
@@ -3678,19 +3725,20 @@ async function loadMarketNewsForSource(source) {
     const pg = data.pagination || { page: 1, totalPages: 1, total: 0, hasPrev: false, hasNext: false };
     if (pg.page && pg.page !== _mnsNewsPage) _mnsNewsPage = pg.page;
 
+    const enc = mnsEncodeSource(source);
     const badge = data.blocked
       ? '<span class="mns-badge mns-badge-blocked">Blocked</span>'
       : '<span class="mns-badge mns-badge-active">Active</span>';
     const action = data.blocked
-      ? `<button class="btn btn-ghost btn-sm" type="button" onclick="unblockMarketNewsSource(${JSON.stringify(source)})">Unblock</button>`
-      : `<button class="btn btn-danger btn-sm" type="button" onclick="blockMarketNewsSource(${JSON.stringify(source)})">Block</button>`;
+      ? `<button class="btn btn-ghost btn-sm" type="button" data-mns-action="unblock" data-source="${enc}">Unblock</button>`
+      : `<button class="btn btn-danger btn-sm" type="button" data-mns-action="block" data-source="${enc}">Block</button>`;
 
     const items = data.items || [];
     const rows = items.length
       ? items.map((it) => {
         const company = [it.ticker, it.company].filter(Boolean).join(' · ');
         const link = it.link
-          ? `<a href="${esc(it.link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(it.title || 'Untitled')}</a>`
+          ? `<a href="${esc(it.link)}" target="_blank" rel="noopener">${esc(it.title || 'Untitled')}</a>`
           : esc(it.title || 'Untitled');
         return `<tr>
           <td>
