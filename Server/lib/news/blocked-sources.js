@@ -25,6 +25,15 @@ async function isMarketSourceBlocked(source) {
 async function blockMarketSource(source, { blockedBy = null, note = null } = {}) {
   const s = String(source || '').trim();
   if (!s) throw new Error('source is required');
+  // Ensure table exists even if migrate hasn't run yet on this instance.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS ${TABLE} (
+      source     TEXT PRIMARY KEY,
+      blocked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      blocked_by TEXT,
+      note       TEXT
+    )
+  `);
   await db.query(
     `INSERT INTO ${TABLE} (source, blocked_at, blocked_by, note)
      VALUES ($1, NOW(), $2, $3)

@@ -12,10 +12,14 @@ const {
 
 function parseSource(req) {
   const fromBody = req.body?.source;
+  if (fromBody != null && String(fromBody).trim() !== '') {
+    return String(fromBody).trim();
+  }
   const fromQuery = req.query?.source;
   const fromParam = req.params?.source;
-  const raw = fromBody != null ? fromBody : (fromQuery != null ? fromQuery : fromParam);
+  const raw = fromQuery != null ? fromQuery : fromParam;
   if (raw == null) return '';
+  // Query/path may still be percent-encoded; body is already plain text.
   try {
     return decodeURIComponent(String(raw)).trim();
   } catch {

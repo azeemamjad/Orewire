@@ -3559,18 +3559,6 @@ let _mnsLoadSeq = 0;
 let _mnsNewsSeq = 0;
 let _mnsDelegatesBound = false;
 
-function mnsEncodeSource(source) {
-  return encodeURIComponent(String(source || ''));
-}
-
-function mnsDecodeSource(encoded) {
-  try {
-    return decodeURIComponent(String(encoded || ''));
-  } catch {
-    return String(encoded || '');
-  }
-}
-
 function initMarketNewsSources() {
   _mnsPage = 1;
   _mnsNewsPage = 1;
@@ -3583,30 +3571,33 @@ function bindMarketNewsSourcesDelegates() {
   if (_mnsDelegatesBound) return;
   _mnsDelegatesBound = true;
 
-  document.getElementById('mns-sources-body')?.addEventListener('click', (event) => {
-    const btn = event.target.closest('[data-mns-action]');
-    if (btn) {
+  // Document-level so clicks still work after table re-renders.
+  document.addEventListener('click', (event) => {
+    const page = document.body?.dataset?.page;
+    if (page !== 'market-news-sources') return;
+
+    const actionBtn = event.target.closest?.('[data-mns-action]');
+    if (actionBtn) {
       event.preventDefault();
       event.stopPropagation();
-      const source = mnsDecodeSource(btn.getAttribute('data-source') || '');
-      const action = btn.getAttribute('data-mns-action');
+      const action = actionBtn.getAttribute('data-mns-action');
+      let source = _mnsSelected;
+      const idxRaw = actionBtn.getAttribute('data-mns-idx');
+      if (idxRaw != null && idxRaw !== '') {
+        const idx = parseInt(idxRaw, 10);
+        if (Number.isFinite(idx) && _mnsCache[idx]) source = _mnsCache[idx].source;
+      }
+      if (!source) return;
       if (action === 'block') blockMarketNewsSource(source);
       else if (action === 'unblock') unblockMarketNewsSource(source);
       return;
     }
-    const row = event.target.closest('tr[data-source]');
-    if (!row) return;
-    selectMarketNewsSource(mnsDecodeSource(row.getAttribute('data-source') || ''));
-  });
 
-  document.getElementById('mns-detail')?.addEventListener('click', (event) => {
-    const btn = event.target.closest('[data-mns-action]');
-    if (!btn) return;
-    event.preventDefault();
-    const source = mnsDecodeSource(btn.getAttribute('data-source') || '');
-    const action = btn.getAttribute('data-mns-action');
-    if (action === 'block') blockMarketNewsSource(source);
-    else if (action === 'unblock') unblockMarketNewsSource(source);
+    const row = event.target.closest?.('#mns-sources-body tr[data-mns-idx]');
+    if (!row) return;
+    const idx = parseInt(row.getAttribute('data-mns-idx'), 10);
+    if (!Number.isFinite(idx) || !_mnsCache[idx]) return;
+    selectMarketNewsSource(_mnsCache[idx].source);
   });
 }
 
@@ -3642,9 +3633,10 @@ async function loadMarketNewsSources() {
     const search = document.getElementById('mns-search')?.value?.trim();
     if (search) params.set('search', search);
 
-    const data = await fetch(`${API}/api/admin/market-news-sources?${params}`).then((r) => r.json());
+    const r = await fetch(`${API}/api/admin/market-news-sources?${params}`, { credentials: 'same-origin' });
+    const data = await r.json().catch(() => ({}));
     if (seq !== _mnsLoadSeq) return;
-    if (data.error) throw new Error(data.error);
+    if (!r.ok || data.error) throw new Error(data.error || `Failed to load (${r.status})`);
 
     _mnsCache = data.items || [];
     const pg = data.pagination || { page: 1, totalPages: 1, total: 0, hasPrev: false, hasNext: false };
@@ -3669,16 +3661,15 @@ async function loadMarketNewsSources() {
       return;
     }
 
-    tbody.innerHTML = _mnsCache.map((s) => {
+    tbody.innerHTML = _mnsCache.map((s, i) => {
       const selected = _mnsSelected === s.source ? ' mns-row-selected' : '';
-      const enc = mnsEncodeSource(s.source);
       const badge = s.blocked
         ? '<span class="mns-badge mns-badge-blocked">Blocked</span>'
         : '<span class="mns-badge mns-badge-active">Active</span>';
       const action = s.blocked
-        ? `<button class="btn btn-ghost btn-sm" type="button" data-mns-action="unblock" data-source="${enc}">Unblock</button>`
-        : `<button class="btn btn-danger btn-sm" type="button" data-mns-action="block" data-source="${enc}">Block</button>`;
-      return `<tr class="${selected.trim()}" data-source="${enc}">
+        ? `<button class="btn btn-ghost btn-sm" type="button" data-mns-action="unblock" data-mns-idx="${i}">Unblock</button>`
+        : `<button class="btn btn-danger btn-sm" type="button" data-mns-action="block" data-mns-idx="${i}">Block</button>`;
+      return `<tr class="${selected.trim()}" data-mns-idx="${i}">
         <td>${esc(s.source)}</td>
         <td>${Number(s.itemCount || 0).toLocaleString()}</td>
         <td>${esc(mnsFmtDate(s.lastPubDate))}</td>
@@ -3696,13 +3687,13 @@ async function loadMarketNewsSources() {
 function selectMarketNewsSource(source) {
   _mnsSelected = source;
   _mnsNewsPage = 1;
-  const enc = mnsEncodeSource(source);
   document.querySelectorAll('#mns-sources-body tr.mns-row-selected').forEach((row) => {
     row.classList.remove('mns-row-selected');
   });
-  document.querySelectorAll('#mns-sources-body tr[data-source]').forEach((row) => {
-    if (row.getAttribute('data-source') === enc) row.classList.add('mns-row-selected');
-  });
+  const idx = _mnsCache.findIndex((s) => s.source === source);
+  if (idx >= 0) {
+    document.querySelector(`#mns-sources-body tr[data-mns-idx="${idx}"]`)?.classList.add('mns-row-selected');
+  }
   loadMarketNewsForSource(source);
 }
 
@@ -3718,20 +3709,20 @@ async function loadMarketNewsForSource(source) {
       page: String(_mnsNewsPage),
       limit: String(limit),
     });
-    const data = await fetch(`${API}/api/admin/market-news-sources/news?${params}`).then((r) => r.json());
+    const r = await fetch(`${API}/api/admin/market-news-sources/news?${params}`, { credentials: 'same-origin' });
+    const data = await r.json().catch(() => ({}));
     if (seq !== _mnsNewsSeq) return;
-    if (data.error) throw new Error(data.error);
+    if (!r.ok || data.error) throw new Error(data.error || `Failed to load news (${r.status})`);
 
     const pg = data.pagination || { page: 1, totalPages: 1, total: 0, hasPrev: false, hasNext: false };
     if (pg.page && pg.page !== _mnsNewsPage) _mnsNewsPage = pg.page;
 
-    const enc = mnsEncodeSource(source);
     const badge = data.blocked
       ? '<span class="mns-badge mns-badge-blocked">Blocked</span>'
       : '<span class="mns-badge mns-badge-active">Active</span>';
     const action = data.blocked
-      ? `<button class="btn btn-ghost btn-sm" type="button" data-mns-action="unblock" data-source="${enc}">Unblock</button>`
-      : `<button class="btn btn-danger btn-sm" type="button" data-mns-action="block" data-source="${enc}">Block</button>`;
+      ? `<button class="btn btn-ghost btn-sm" type="button" data-mns-action="unblock">Unblock</button>`
+      : `<button class="btn btn-danger btn-sm" type="button" data-mns-action="block">Block</button>`;
 
     const items = data.items || [];
     const rows = items.length
@@ -3776,16 +3767,20 @@ async function loadMarketNewsForSource(source) {
 }
 
 async function blockMarketNewsSource(source) {
-  if (!source) return;
+  if (!source) {
+    toast('No source selected', 'err');
+    return;
+  }
   if (!confirm(`Block "${source}"?\n\nAll market news from this publisher will be hidden on the public platform.`)) return;
   try {
     const r = await fetch(`${API}/api/admin/market-news-sources/block`, {
       method: 'POST',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ source }),
     });
     const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data.error || 'Failed to block');
+    if (!r.ok) throw new Error(data.error || `Failed to block (${r.status})`);
     toast(`Blocked ${source}`);
     await loadMarketNewsSources();
     if (_mnsSelected === source) loadMarketNewsForSource(source);
@@ -3795,15 +3790,19 @@ async function blockMarketNewsSource(source) {
 }
 
 async function unblockMarketNewsSource(source) {
-  if (!source) return;
+  if (!source) {
+    toast('No source selected', 'err');
+    return;
+  }
   try {
     const r = await fetch(`${API}/api/admin/market-news-sources/unblock`, {
       method: 'POST',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ source }),
     });
     const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data.error || 'Failed to unblock');
+    if (!r.ok) throw new Error(data.error || `Failed to unblock (${r.status})`);
     toast(`Unblocked ${source}`);
     await loadMarketNewsSources();
     if (_mnsSelected === source) loadMarketNewsForSource(source);
