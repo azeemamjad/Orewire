@@ -170,10 +170,8 @@ function attachRelayViewer(app, httpServer) {
       socket.destroy();
       return;
     }
-    if (pathname !== WS_PATH) {
-      socket.destroy();
-      return;
-    }
+    // Only claim /relay/ws — do NOT destroy other paths (e.g. /x-browser/ws).
+    if (pathname !== WS_PATH) return;
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit('connection', ws, request);
     });

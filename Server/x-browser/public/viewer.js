@@ -11,8 +11,9 @@
   let viewport = { width: 1280, height: 800 };
   let ws;
 
-  function setStatus(text) {
+  function setStatus(text, kind) {
     statusLine.textContent = text;
+    statusLine.className = 'muted status-pill' + (kind ? ` ${kind}` : '');
   }
 
   function api(path, opts) {
@@ -36,12 +37,17 @@
   function connect() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(`${proto}://${location.host}${BASE}/ws`);
-    ws.onopen = () => setStatus('Live');
-    ws.onclose = () => {
-      setStatus('Disconnected — reconnecting…');
+    ws.onopen = () => setStatus('Live', 'ok');
+    ws.onclose = (ev) => {
+      const why = ev.code === 4401 ? 'Session expired — re-login' : 'Disconnected — reconnecting…';
+      setStatus(why, 'err');
+      if (ev.code === 4401) {
+        setTimeout(() => { location.href = BASE + '/login'; }, 800);
+        return;
+      }
       setTimeout(connect, 1500);
     };
-    ws.onerror = () => setStatus('Connection error');
+    ws.onerror = () => setStatus('Connection error', 'err');
     ws.onmessage = (ev) => {
       let msg;
       try {
@@ -53,9 +59,9 @@
         viewport = msg.viewport;
         canvas.width = viewport.width;
         canvas.height = viewport.height;
-        setStatus(`Live · ${viewport.width}×${viewport.height}`);
+        setStatus(`Live · ${viewport.width}×${viewport.height}`, 'ok');
       }
-      if (msg.type === 'error') setStatus(msg.error || 'Error');
+      if (msg.type === 'error') setStatus(msg.error || 'Error', 'err');
       if (msg.type === 'frame' && msg.data) {
         if (msg.viewport) viewport = msg.viewport;
         const img = new Image();

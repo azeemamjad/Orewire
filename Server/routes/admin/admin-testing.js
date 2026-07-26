@@ -321,11 +321,7 @@ router.post('/news/reset', express.json(), async (_req, res) => {
 // GET /api/admin/testing/news/prompt
 router.get('/news/prompt', async (_req, res) => {
   try {
-    res.json({
-      prompt: await news.getActivePrompt(),
-      defaultPrompt: news.getDefaultPrompt(),
-      isCustom: await news.isPromptCustom(),
-    });
+    res.json(await news.buildNewsPromptPayload());
   } catch (err) {
     console.error('News get prompt failed:', err?.message || err);
     res.status(500).json({ error: 'Failed to load prompt' });
@@ -333,13 +329,19 @@ router.get('/news/prompt', async (_req, res) => {
 });
 
 // PUT /api/admin/testing/news/prompt
+// target: 'draft' (testing only) or 'production' (LIVE news enrichment).
 router.put('/news/prompt', express.json({ limit: '256kb' }), async (req, res) => {
   const prompt = req.body?.prompt;
+  const target = req.body?.target === 'production' ? 'production' : 'draft';
   if (typeof prompt !== 'string') return res.status(400).json({ error: 'prompt (string) is required' });
   if (!prompt.trim()) return res.status(400).json({ error: 'Prompt cannot be empty' });
   try {
-    await news.saveTestingPrompt(prompt);
-    res.json({ ok: true, isCustom: true });
+    if (target === 'production') {
+      await news.saveProductionPrompt(prompt);
+    } else {
+      await news.saveDraftPrompt(prompt);
+    }
+    res.json({ ok: true, target, ...(await news.buildNewsPromptPayload()) });
   } catch (err) {
     console.error('News save prompt failed:', err?.message || err);
     res.status(500).json({ error: 'Failed to save prompt' });
@@ -358,9 +360,7 @@ router.post('/news/select', express.json(), async (req, res) => {
       requested: count,
       companies,
       stats,
-      prompt: await news.getActivePrompt(),
-      defaultPrompt: news.getDefaultPrompt(),
-      isCustom: await news.isPromptCustom(),
+      ...(await news.buildNewsPromptPayload()),
       models,
       activeModel,
       providerType,
@@ -427,7 +427,7 @@ router.get('/news/download', async (req, res) => {
   try {
     const rows = await news.getNewsBatchRuns(batchId);
     if (!rows.length) return res.status(404).json({ error: 'No results found for this batch' });
-    const zip = news.buildNewsBatchZip(rows);
+    const zip = await news.buildNewsBatchZip(rows);
     const stamp = new Date().toISOString().slice(0, 10);
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="news-test-${stamp}.zip"`);

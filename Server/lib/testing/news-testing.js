@@ -15,7 +15,10 @@ const { buildZip } = require('./zip');
 const DEFAULT_COMPANY_SAMPLE = 10;
 const MAX_COMPANY_SAMPLE = 200;
 const ITEMS_PER_COMPANY = 8;
+/** LIVE production prompt (read by lib/news/fetch.js). */
 const PROMPT_KEY = 'testing_news_prompt';
+/** Testing-only draft — never used by production until promoted. */
+const DRAFT_PROMPT_KEY = 'testing_news_prompt_draft';
 
 // Real-time fetch (Newsfile / ASX) only covers these exchanges, so the pool is
 // scoped to companies we can actually pull official releases for. Alias-agnostic
@@ -28,13 +31,37 @@ function getDefaultPrompt() {
 
 // ── Editable prompt (persisted in app_settings) ─────────────────────────────
 
-async function getActivePrompt() {
+async function readPromptValue(key) {
   try {
-    const r = await db.query(`SELECT value FROM app_settings WHERE key = $1`, [PROMPT_KEY]);
+    const r = await db.query(`SELECT value FROM app_settings WHERE key = $1`, [key]);
     const v = r.rows[0]?.value;
     if (v && typeof v.prompt === 'string' && v.prompt.trim()) return v.prompt;
   } catch { /* fall through */ }
-  return NEWS_SYSTEM;
+  return null;
+}
+
+async function writePromptValue(key, prompt) {
+  await db.query(
+    `INSERT INTO app_settings (key, value, updated_at)
+     VALUES ($1, $2::jsonb, NOW())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+    [key, JSON.stringify({ prompt: String(prompt ?? '') })],
+  );
+}
+
+/** LIVE production prompt (custom or null). */
+async function getProductionPrompt() {
+  return readPromptValue(PROMPT_KEY);
+}
+
+/** Testing draft prompt, or null. */
+async function getDraftPrompt() {
+  return readPromptValue(DRAFT_PROMPT_KEY);
+}
+
+/** Effective production system prompt. */
+async function getActivePrompt() {
+  return (await getProductionPrompt()) || NEWS_SYSTEM;
 }
 
 async function isPromptCustom() {
@@ -46,13 +73,39 @@ async function isPromptCustom() {
   }
 }
 
+/** @deprecated prefer saveDraftPrompt / saveProductionPrompt */
 async function saveTestingPrompt(prompt) {
-  await db.query(
-    `INSERT INTO app_settings (key, value, updated_at)
-     VALUES ($1, $2::jsonb, NOW())
-     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
-    [PROMPT_KEY, JSON.stringify({ prompt: String(prompt ?? '') })],
-  );
+  await writePromptValue(PROMPT_KEY, prompt);
+}
+
+async function saveDraftPrompt(prompt) {
+  await writePromptValue(DRAFT_PROMPT_KEY, prompt);
+}
+
+async function saveProductionPrompt(prompt) {
+  await writePromptValue(PROMPT_KEY, prompt);
+  await db.query(`DELETE FROM app_settings WHERE key = $1`, [DRAFT_PROMPT_KEY]);
+}
+
+/** Payload for the Testing → News prompt editor (mirrors filings). */
+async function buildNewsPromptPayload() {
+  const [productionPrompt, draftPrompt, isProductionCustom] = await Promise.all([
+    getProductionPrompt(),
+    getDraftPrompt(),
+    isPromptCustom(),
+  ]);
+  const defaultPrompt = getDefaultPrompt();
+  const source = draftPrompt ? 'draft' : (productionPrompt ? 'production' : 'default');
+  return {
+    defaultPrompt,
+    productionPrompt: productionPrompt || null,
+    draftPrompt: draftPrompt || null,
+    isProductionCustom,
+    hasDraft: !!draftPrompt,
+    prompt: draftPrompt || productionPrompt || defaultPrompt,
+    source,
+    isCustom: isProductionCustom,
+  };
 }
 
 // ── Selection & tracking ────────────────────────────────────────────────────
@@ -241,9 +294,13 @@ async function analyzeCompanyNews({ company, items, prompt, model, timeoutMs = 1
     const ai = arr[i] || {};
     return {
       n: i + 1,
+      id: src.id || null,
       original_title: src.title,
+      // Full release text fed to the prompt — kept for audit / ZIP export.
+      description: src.description || null,
       link: src.link || null,
       source: src.source || null,
+      pub_date: src.pub_date || null,
       title: ai.title || src.title,
       summary: ai.summary || null,
       commodity: ai.commodity || null,
@@ -270,12 +327,98 @@ function csvCell(value) {
 }
 
 function itemsToCsv(items) {
-  const lines = ['n,source,original_title,title,summary,commodity,sentiment,link'];
+  const lines = ['n,source,pub_date,original_title,description,title,summary,commodity,sentiment,link'];
   for (const it of items || []) {
-    lines.push([it.n, it.source, it.original_title, it.title, it.summary, it.commodity, it.sentiment, it.link]
-      .map(csvCell).join(','));
+    lines.push([
+      it.n, it.source, it.pub_date, it.original_title, it.description,
+      it.title, it.summary, it.commodity, it.sentiment, it.link,
+    ].map(csvCell).join(','));
   }
   return lines.join('\r\n');
+}
+
+/** Side-by-side audit CSV: news release text vs enriched output. */
+function comparisonCsv(items) {
+  const lines = [
+    'n,source,pub_date,original_title,news_release,enriched_title,summary,commodity,sentiment,link',
+  ];
+  for (const it of items || []) {
+    lines.push([
+      it.n, it.source, it.pub_date, it.original_title, it.description,
+      it.title, it.summary, it.commodity, it.sentiment, it.link,
+    ].map(csvCell).join(','));
+  }
+  return lines.join('\r\n');
+}
+
+function sourceReleasesJson(items) {
+  return (items || []).map((it) => ({
+    n: it.n,
+    id: it.id || null,
+    source: it.source || null,
+    pub_date: it.pub_date || null,
+    title: it.original_title || it.title || null,
+    description: it.description || null,
+    link: it.link || null,
+  }));
+}
+
+/** Human-readable original releases for easy prompt auditing. */
+function sourcesToTxt(items) {
+  return (items || []).map((it, i) => {
+    const n = it.n || i + 1;
+    return [
+      `=== Release ${n} ===`,
+      `Source: ${it.source || '—'}`,
+      `Date: ${it.pub_date || '—'}`,
+      `Link: ${it.link || '—'}`,
+      `Title: ${it.original_title || it.title || '—'}`,
+      '',
+      it.description || '(no description stored)',
+      '',
+    ].join('\n');
+  }).join('\n');
+}
+
+/**
+ * Older runs may lack `description` on stored results. Best-effort backfill
+ * from news_releases so ZIP downloads still include the source text.
+ */
+async function backfillItemDescriptions(companyId, items) {
+  if (!Array.isArray(items) || !items.length || !companyId) return items;
+  if (items.every((it) => it.description != null && String(it.description).trim() !== '')) {
+    return items;
+  }
+  let sources;
+  try {
+    sources = await getCompanyNewsItems(companyId, Math.max(items.length, ITEMS_PER_COMPANY));
+  } catch {
+    return items;
+  }
+  if (!sources.length) return items;
+
+  const byId = new Map(sources.map((s) => [String(s.id), s]));
+  const byLink = new Map(
+    sources.filter((s) => s.link).map((s) => [String(s.link), s]),
+  );
+
+  return items.map((it, i) => {
+    if (it.description != null && String(it.description).trim() !== '') return it;
+    const match = (it.id != null && byId.get(String(it.id)))
+      || (it.link && byLink.get(String(it.link)))
+      || sources[i]
+      || null;
+    if (!match) return it;
+    return {
+      ...it,
+      id: it.id || match.id || null,
+      description: match.description || null,
+      pub_date: it.pub_date || match.pub_date || null,
+      original_title: it.original_title || match.title || null,
+      source: it.source || match.source || null,
+      link: it.link || match.link || null,
+    };
+  });
 }
 
 function slugify(s) {
@@ -295,20 +438,27 @@ function summaryCsv(results) {
 }
 
 /** Build the export zip from stored DB rows (getNewsBatchRuns output). */
-function buildNewsBatchZip(rows) {
-  const results = rows.map((row) => ({
-    companyId: row.company_id,
-    company_name: row.company_name,
-    ticker: row.ticker,
-    model: row.model,
-    ok: row.ok,
-    itemCount: row.item_count,
-    durationMs: row.duration_ms,
-    promptTokens: row.prompt_tokens,
-    completionTokens: row.completion_tokens,
-    items: row.results,
-    error: row.error_message,
-  }));
+async function buildNewsBatchZip(rows) {
+  const results = [];
+  for (const row of rows) {
+    const rawItems = Array.isArray(row.results) ? row.results : null;
+    const items = rawItems
+      ? await backfillItemDescriptions(row.company_id, rawItems)
+      : null;
+    results.push({
+      companyId: row.company_id,
+      company_name: row.company_name,
+      ticker: row.ticker,
+      model: row.model,
+      ok: row.ok,
+      itemCount: row.item_count,
+      durationMs: row.duration_ms,
+      promptTokens: row.prompt_tokens,
+      completionTokens: row.completion_tokens,
+      items,
+      error: row.error_message,
+    });
+  }
 
   const entries = [];
   results.forEach((r, i) => {
@@ -320,6 +470,12 @@ function buildNewsBatchZip(rows) {
     };
     entries.push({ name: `${folder}/meta.json`, data: JSON.stringify(meta, null, 2) });
     if (r.ok !== false && Array.isArray(r.items)) {
+      entries.push({
+        name: `${folder}/source_releases.json`,
+        data: JSON.stringify(sourceReleasesJson(r.items), null, 2),
+      });
+      entries.push({ name: `${folder}/source_releases.txt`, data: sourcesToTxt(r.items) });
+      entries.push({ name: `${folder}/comparison.csv`, data: comparisonCsv(r.items) });
       entries.push({ name: `${folder}/enriched.json`, data: JSON.stringify(r.items, null, 2) });
       entries.push({ name: `${folder}/enriched.csv`, data: itemsToCsv(r.items) });
     } else {
@@ -335,8 +491,13 @@ module.exports = {
   ITEMS_PER_COMPANY,
   getDefaultPrompt,
   getActivePrompt,
+  getProductionPrompt,
+  getDraftPrompt,
   isPromptCustom,
   saveTestingPrompt,
+  saveDraftPrompt,
+  saveProductionPrompt,
+  buildNewsPromptPayload,
   pickUntestedCompanies,
   getCompanyById,
   getCompanyNewsItems,
