@@ -49,6 +49,7 @@ adminApiRouter.use('/storage', require('./routes/admin/admin-storage'));
 adminApiRouter.use('/filings', require('./routes/admin/admin-filings'));
 adminApiRouter.use('/companies', require('./routes/admin/admin-companies'));
 adminApiRouter.use('/testing', require('./routes/admin/admin-testing'));
+adminApiRouter.use('/market-news-sources', require('./routes/admin/admin-market-news-sources'));
 adminApiRouter.use('/social', require('./routes/admin/admin-social'));
 adminApiRouter.use('/hosted-browser', require('./routes/admin/admin-hosted-browser'));
 adminApiRouter.use('/contact-messages', require('./routes/api/contact').adminRouter);

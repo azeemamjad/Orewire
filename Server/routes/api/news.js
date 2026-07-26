@@ -7,6 +7,7 @@ const {
   TABLE_MARKET,
   buildFeedFilters,
 } = require('../../lib/news-db');
+const { blockedMarketSourcesClause } = require('../../lib/news/blocked-sources');
 const {
   OFFICIAL_RELEASE_SOURCES,
   syncOfficialCompanyReleases,
@@ -66,7 +67,10 @@ function tableForFeedOrigin(origin) {
 
 async function queryFeedTable(table, { filterParams, extraClause, limit, offset }) {
   const baseFrom = `FROM ${table} n LEFT JOIN companies c ON c.id = n.company_id`;
-  const baseWhere = `WHERE n.relevant = TRUE${extraClause}`;
+  let baseWhere = `WHERE n.relevant = TRUE${extraClause}`;
+  if (table === TABLE_MARKET) {
+    baseWhere += blockedMarketSourcesClause('n');
+  }
 
   const [itemsResult, countResult] = await Promise.all([
     db.query(
@@ -90,6 +94,7 @@ async function queryFeedTable(table, { filterParams, extraClause, limit, offset 
 }
 
 async function queryCombinedFeed({ filterParams, extraClause, limit, offset }) {
+  const marketBlocked = blockedMarketSourcesClause('n');
   const unionSql = `
     SELECT n.id, n.title, n.link, n.source, n.pub_date, n.description, n.summary,
            n.commodity, n.sentiment, n.relevant, n.ai_processed, n.company_id, n.ticker,
@@ -103,7 +108,7 @@ async function queryCombinedFeed({ filterParams, extraClause, limit, offset }) {
            n.category, n.created_at, c.name AS company_name, c.exchange AS company_exchange
       FROM ${TABLE_MARKET} n
       LEFT JOIN companies c ON c.id = n.company_id
-     WHERE n.relevant = TRUE${extraClause}
+     WHERE n.relevant = TRUE${extraClause}${marketBlocked}
   `;
 
   const [itemsResult, countResult] = await Promise.all([
@@ -244,14 +249,34 @@ async function findNewsItem({ id, link }) {
   if (Number.isFinite(id) && id > 0) {
     for (const table of [TABLE_RELEASES, TABLE_MARKET]) {
       const result = await db.query(`SELECT * FROM ${table} WHERE id = $1 LIMIT 1`, [id]);
-      if (result.rows.length) return result.rows[0];
+      if (result.rows.length) {
+        const row = result.rows[0];
+        if (table === TABLE_MARKET) {
+          const blocked = await db.query(
+            `SELECT 1 FROM market_news_blocked_sources WHERE source IS NOT DISTINCT FROM $1 LIMIT 1`,
+            [row.source],
+          );
+          if (blocked.rows.length) return null;
+        }
+        return row;
+      }
     }
     return null;
   }
   if (link) {
     for (const table of [TABLE_RELEASES, TABLE_MARKET]) {
       const result = await db.query(`SELECT * FROM ${table} WHERE link = $1 LIMIT 1`, [link]);
-      if (result.rows.length) return result.rows[0];
+      if (result.rows.length) {
+        const row = result.rows[0];
+        if (table === TABLE_MARKET) {
+          const blocked = await db.query(
+            `SELECT 1 FROM market_news_blocked_sources WHERE source IS NOT DISTINCT FROM $1 LIMIT 1`,
+            [row.source],
+          );
+          if (blocked.rows.length) return null;
+        }
+        return row;
+      }
     }
   }
   return null;

@@ -9,6 +9,7 @@ const {
   TABLE_MARKET,
   tableForSource,
 } = require('../news/db');
+const { blockedMarketSourcesClause } = require('../news/blocked-sources');
 
 const SEND_DELAY_MS = Number(process.env.WATCHLIST_NEWS_SEND_DELAY_MS || 150);
 const pendingKeys = new Set();
@@ -31,13 +32,14 @@ function parsePendingKey(key) {
 
 async function loadNewsRow(newsId, source = 'release') {
   const table = tableForSource(source);
+  const blocked = source === 'market' ? blockedMarketSourcesClause('n') : '';
   const r = await db.query(
     `SELECT n.id, n.title, n.link, n.summary, n.description, n.sentiment, n.commodity,
             n.company_id, n.ticker AS news_ticker,
             c.name AS company_name, c.ticker, c.exchange
        FROM ${table} n
        LEFT JOIN companies c ON c.id = n.company_id
-      WHERE n.id = $1 AND n.relevant = TRUE AND n.ai_processed = TRUE`,
+      WHERE n.id = $1 AND n.relevant = TRUE AND n.ai_processed = TRUE${blocked}`,
     [newsId],
   );
   return r.rows[0] || null;
@@ -157,13 +159,14 @@ async function processPendingWatchlistNewsEmails() {
 
   let total = 0;
   for (const [source, table] of [['release', TABLE_RELEASES], ['market', TABLE_MARKET]]) {
+    const blocked = source === 'market' ? blockedMarketSourcesClause('n') : '';
     const r = await db.query(
       `SELECT n.id
          FROM ${table} n
         WHERE n.relevant = TRUE
           AND n.ai_processed = TRUE
           AND GREATEST(COALESCE(n.created_at, '1970-01-01'), COALESCE(n.pub_date, '1970-01-01')) > NOW() - INTERVAL '48 hours'
-          AND (n.company_id IS NOT NULL OR n.ticker IS NOT NULL)
+          AND (n.company_id IS NOT NULL OR n.ticker IS NOT NULL)${blocked}
         ORDER BY n.id DESC
         LIMIT 30`,
     );

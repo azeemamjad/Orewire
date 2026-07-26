@@ -4,6 +4,7 @@ const db      = require('../../db');
 const { requireUser } = require('../auth');
 const { appendMarketMoveAlerts } = require('../../lib/watchlist-market-alerts');
 const { TABLE_RELEASES, TABLE_MARKET } = require('../../lib/news-db');
+const { blockedMarketSourcesClause } = require('../../lib/news/blocked-sources');
 const { safeParse, deriveCommodities, deriveContinents, deriveCountry } = require('../../lib/company-enrich');
 
 function companyPath(exchange, ticker) {
@@ -60,7 +61,7 @@ router.get('/alerts', requireUser, async (req, res) => {
                 OR UPPER(COALESCE(n.ticker, '')) = UPPER(COALESCE(c.ticker, ''))
                 OR n.category = 'company:' || c.ticker
                 OR n.category = 'company:' || c.name
-              )
+              )${blockedMarketSourcesClause('n')}
          ) combined
         ORDER BY GREATEST(COALESCE(combined.created_at, '1970-01-01'), COALESCE(combined.pub_date, '1970-01-01')) DESC
         LIMIT 20`,
