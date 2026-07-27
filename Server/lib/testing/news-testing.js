@@ -14,7 +14,8 @@ const { buildZip } = require('./zip');
 
 const DEFAULT_COMPANY_SAMPLE = 10;
 const MAX_COMPANY_SAMPLE = 200;
-const ITEMS_PER_COMPANY = 8;
+/** One release per company so N companies ⇒ N prompt tests (not a full backlog). */
+const ITEMS_PER_COMPANY = 1;
 /** LIVE production prompt (read by lib/news/fetch.js). */
 const PROMPT_KEY = 'testing_news_prompt';
 /** Testing-only draft — never used by production until promoted. */
@@ -137,15 +138,16 @@ async function getCompanyById(id) {
   return r.rows[0] || null;
 }
 
-/** Recent news-release items for a company (title + description feed the prompt). */
+/** One random news-release item for a company (title + description feed the prompt). */
 async function getCompanyNewsItems(companyId, limit = ITEMS_PER_COMPANY) {
+  const n = Math.max(1, Math.min(20, parseInt(limit, 10) || ITEMS_PER_COMPANY));
   const r = await db.query(
     `SELECT id, title, description, link, pub_date, source
        FROM news_releases
       WHERE company_id = $1
-      ORDER BY pub_date DESC NULLS LAST
+      ORDER BY random()
       LIMIT $2`,
-    [companyId, limit],
+    [companyId, n],
   );
   return r.rows;
 }
