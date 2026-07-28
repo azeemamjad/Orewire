@@ -4,6 +4,38 @@
  * CDP screencast + input relay so a VA can log into X from a password-gated webpage.
  */
 
+/** DOM key / code → Windows virtual-key code for CDP Input.dispatchKeyEvent. */
+function windowsVirtualKeyCode(key, code) {
+  const k = String(key || '');
+  const c = String(code || '');
+  const byKey = {
+    Backspace: 8,
+    Tab: 9,
+    Enter: 13,
+    Escape: 27,
+    Space: 32,
+    PageUp: 33,
+    PageDown: 34,
+    End: 35,
+    Home: 36,
+    ArrowLeft: 37,
+    ArrowUp: 38,
+    ArrowRight: 39,
+    ArrowDown: 40,
+    Insert: 45,
+    Delete: 46,
+  };
+  if (byKey[k] != null) return byKey[k];
+  if (/^Digit[0-9]$/.test(c)) return c.charCodeAt(5); // '0'..'9'
+  if (/^Key[A-Z]$/.test(c)) return c.charCodeAt(3); // 'A'..'Z'
+  if (k.length === 1) {
+    const upper = k.toUpperCase();
+    if (upper >= 'A' && upper <= 'Z') return upper.charCodeAt(0);
+    if (upper >= '0' && upper <= '9') return upper.charCodeAt(0);
+  }
+  return 0;
+}
+
 class ScreencastHub {
   constructor(manager) {
     this.manager = manager;
@@ -117,15 +149,34 @@ class ScreencastHub {
         await this.cdp.send('Input.insertText', { text: String(text) });
         return;
       }
-      const cdpType = event === 'up' ? 'keyUp' : 'keyDown';
-      await this.cdp.send('Input.dispatchKeyEvent', {
+
+      // Editing / navigation keys need windowsVirtualKeyCode (and rawKeyDown)
+      // or contenteditable fields on x.com ignore them (Backspace especially).
+      const vk = windowsVirtualKeyCode(key, code);
+      const isChar =
+        event === 'press' ||
+        (typeof text === 'string' && text.length > 0) ||
+        (typeof key === 'string' && key.length === 1 && !vk);
+      let cdpType;
+      if (event === 'up') cdpType = 'keyUp';
+      else if (isChar) cdpType = 'keyDown';
+      else cdpType = 'rawKeyDown';
+
+      const params = {
         type: cdpType,
         key: key || '',
         code: code || '',
-        text: text || undefined,
-        unmodifiedText: text || undefined,
         modifiers: Number(modifiers) || 0,
-      });
+      };
+      if (vk) {
+        params.windowsVirtualKeyCode = vk;
+        params.nativeVirtualKeyCode = vk;
+      }
+      if (isChar && text) {
+        params.text = text;
+        params.unmodifiedText = text;
+      }
+      await this.cdp.send('Input.dispatchKeyEvent', params);
       return;
     }
 
