@@ -2,6 +2,40 @@
  * Resolve HTTP(S) proxy URLs for X login/posting.
  * Order: SOCIAL_X_PROXY env → residential pool → datacenter pool → direct (null).
  */
+
+function parseEnvProxyToPlaywright(envProxy) {
+  const raw = String(envProxy || '').trim();
+  if (!raw) return null;
+  try {
+    const u = new URL(raw.includes('://') ? raw : `http://${raw}`);
+    return {
+      server: `${u.protocol}//${u.hostname}${u.port ? `:${u.port}` : ''}`,
+      username: u.username ? decodeURIComponent(u.username) : undefined,
+      password: u.password ? decodeURIComponent(u.password) : undefined,
+      label: 'SOCIAL_X_PROXY',
+      source: 'env',
+    };
+  } catch {
+    return { server: raw, label: 'SOCIAL_X_PROXY', source: 'env' };
+  }
+}
+
+async function ensureProxyCache() {
+  try {
+    const store = require('../../relay/proxy-store');
+    if (!store.getCachedProxies().length) {
+      try {
+        await store.refreshProxyCache();
+      } catch {
+        /* ignore */
+      }
+    }
+    return store;
+  } catch {
+    return null;
+  }
+}
+
 async function listSocialProxyUrls() {
   const urls = [];
   const seen = new Set();
@@ -16,14 +50,8 @@ async function listSocialProxyUrls() {
   if (envProxy) push(envProxy);
 
   try {
-    const store = require('../../relay/proxy-store');
-    if (!store.getCachedProxies().length) {
-      try {
-        await store.refreshProxyCache();
-      } catch {
-        /* ignore */
-      }
-    }
+    const store = await ensureProxyCache();
+    if (!store) throw new Error('no store');
     const enabled = store.getCachedProxies().filter((p) => p.enabled);
     const ordered = [
       ...enabled.filter((p) => p.tier === 'residential'),
@@ -50,29 +78,12 @@ async function listSocialProxyUrls() {
 /** Playwright-shaped proxies for browser login (residential first). */
 async function listPlaywrightProxies() {
   const out = [];
-  const envProxy = (process.env.SOCIAL_X_PROXY || '').trim();
-  if (envProxy) {
-    try {
-      const u = new URL(envProxy.includes('://') ? envProxy : `http://${envProxy}`);
-      out.push({
-        server: `${u.protocol}//${u.hostname}${u.port ? `:${u.port}` : ''}`,
-        username: u.username ? decodeURIComponent(u.username) : undefined,
-        password: u.password ? decodeURIComponent(u.password) : undefined,
-      });
-    } catch {
-      out.push({ server: envProxy });
-    }
-  }
+  const envParsed = parseEnvProxyToPlaywright(process.env.SOCIAL_X_PROXY);
+  if (envParsed) out.push(envParsed);
 
   try {
-    const store = require('../../relay/proxy-store');
-    if (!store.getCachedProxies().length) {
-      try {
-        await store.refreshProxyCache();
-      } catch {
-        /* ignore */
-      }
-    }
+    const store = await ensureProxyCache();
+    if (!store) throw new Error('no store');
     const enabled = store.getCachedProxies().filter((p) => p.enabled);
     const ordered = [
       ...enabled.filter((p) => p.tier === 'residential'),
@@ -85,6 +96,9 @@ async function listPlaywrightProxies() {
         server: p.server,
         username: p.username || undefined,
         password: p.password || undefined,
+        label: p.label || row.name || `residential#${row.id}`,
+        source: row.tier,
+        proxyId: row.id,
       });
     }
   } catch {
@@ -93,6 +107,45 @@ async function listPlaywrightProxies() {
 
   out.push(null); // direct
   return out;
+}
+
+/**
+ * Residential-only Playwright proxy for the X Browser (manual login + hosted posts).
+ * Never falls back to datacenter or direct IP.
+ *
+ * Resolution order: SOCIAL_X_PROXY env → first enabled residential row in proxy pool.
+ * @returns {Promise<{ server: string, username?: string, password?: string, label: string, source: string, proxyId?: number }>}
+ */
+async function requireResidentialPlaywrightProxy() {
+  const envParsed = parseEnvProxyToPlaywright(process.env.SOCIAL_X_PROXY);
+  if (envParsed?.server) return envParsed;
+
+  const store = await ensureProxyCache();
+  if (store) {
+    const residential = store
+      .getCachedProxies()
+      .filter((p) => p.enabled && p.tier === 'residential');
+    if (residential.length) {
+      // Rotate across residential rows so sessions aren't sticky to one IP forever.
+      const row = residential[Math.floor(Math.random() * residential.length)];
+      const p = store.rowToPlaywrightProxy(row);
+      if (p.server) {
+        return {
+          server: p.server,
+          username: p.username || undefined,
+          password: p.password || undefined,
+          label: p.label || row.name || `residential#${row.id}`,
+          source: 'residential',
+          proxyId: row.id,
+        };
+      }
+    }
+  }
+
+  throw new Error(
+    'X Browser requires a residential proxy. ' +
+      'Enable a residential proxy in Admin → Proxies, or set SOCIAL_X_PROXY.',
+  );
 }
 
 function isCloudflareBlock(errOrBody) {
@@ -125,6 +178,7 @@ function friendlyLoginError(err) {
 module.exports = {
   listSocialProxyUrls,
   listPlaywrightProxies,
+  requireResidentialPlaywrightProxy,
   isCloudflareBlock,
   friendlyLoginError,
 };

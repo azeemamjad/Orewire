@@ -25,6 +25,8 @@ class HostedBrowserManager {
     this.headed = false;
     this._startLock = null;
     this._postLock = null;
+    /** @type {{ label?: string, source?: string, proxyId?: number, server?: string } | null} */
+    this._proxyMeta = null;
   }
 
   getProfileDir() {
@@ -67,21 +69,38 @@ class HostedBrowserManager {
     }
 
     this.headed = !!headed;
+
+    const { requireResidentialPlaywrightProxy } = require('../social/proxy');
+    const residential = await requireResidentialPlaywrightProxy();
+    const proxy = {
+      server: residential.server,
+      ...(residential.username ? { username: residential.username } : {}),
+      ...(residential.password ? { password: residential.password } : {}),
+    };
+    this._proxyMeta = {
+      label: residential.label,
+      source: residential.source,
+      proxyId: residential.proxyId,
+      server: residential.server,
+    };
+
     this.context = await chromium.launchPersistentContext(userDataDir, {
       headless: !this.headed,
       viewport: { width: 1280, height: 800 },
       locale: 'en-US',
       userAgent: USER_AGENT,
+      proxy,
       args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
     });
 
     this.context.on('close', () => {
       this.context = null;
       this.headed = false;
+      this._proxyMeta = null;
     });
 
     console.log(
-      `[hosted-browser] Started (${this.headed ? 'headed' : 'headless'}) profile=${userDataDir}`,
+      `[hosted-browser] Started (${this.headed ? 'headed' : 'headless'}) profile=${userDataDir} proxy=${this._proxyMeta.label || this._proxyMeta.server}`,
     );
     return this.status();
   }
@@ -96,6 +115,7 @@ class HostedBrowserManager {
     const ctx = this.context;
     this.context = null;
     this.headed = false;
+    this._proxyMeta = null;
     if (!ctx) return;
     try {
       await ctx.close();
@@ -163,6 +183,14 @@ class HostedBrowserManager {
       headed: running ? this.headed : false,
       loggedIn,
       profileDir: this.getProfileDir(),
+      proxy: running && this._proxyMeta
+        ? {
+            label: this._proxyMeta.label || null,
+            source: this._proxyMeta.source || null,
+            proxyId: this._proxyMeta.proxyId || null,
+            server: this._proxyMeta.server || null,
+          }
+        : null,
     };
   }
 
