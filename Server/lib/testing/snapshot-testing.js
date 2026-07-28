@@ -19,7 +19,10 @@ const { buildZip } = require('./zip');
 
 const DEFAULT_COMPANY_SAMPLE = 10;
 const MAX_COMPANY_SAMPLE = 200;
+/** LIVE production prompt (read by lib/companies/snapshot.js). */
 const PROMPT_KEY = 'testing_snapshot_prompt';
+/** Testing-only draft — never used by production until promoted. */
+const DRAFT_PROMPT_KEY = 'testing_snapshot_prompt_draft';
 
 function getDefaultPrompt() {
   return SNAPSHOT_SYSTEM;
@@ -27,13 +30,37 @@ function getDefaultPrompt() {
 
 // ── Editable prompt (persisted in app_settings) ─────────────────────────────
 
-async function getActivePrompt() {
+async function readPromptValue(key) {
   try {
-    const r = await db.query(`SELECT value FROM app_settings WHERE key = $1`, [PROMPT_KEY]);
+    const r = await db.query(`SELECT value FROM app_settings WHERE key = $1`, [key]);
     const v = r.rows[0]?.value;
     if (v && typeof v.prompt === 'string' && v.prompt.trim()) return v.prompt;
   } catch { /* fall through */ }
-  return SNAPSHOT_SYSTEM;
+  return null;
+}
+
+async function writePromptValue(key, prompt) {
+  await db.query(
+    `INSERT INTO app_settings (key, value, updated_at)
+     VALUES ($1, $2::jsonb, NOW())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+    [key, JSON.stringify({ prompt: String(prompt ?? '') })],
+  );
+}
+
+/** LIVE production prompt (custom or null). */
+async function getProductionPrompt() {
+  return readPromptValue(PROMPT_KEY);
+}
+
+/** Testing draft prompt, or null. */
+async function getDraftPrompt() {
+  return readPromptValue(DRAFT_PROMPT_KEY);
+}
+
+/** Effective production system prompt. */
+async function getActivePrompt() {
+  return (await getProductionPrompt()) || SNAPSHOT_SYSTEM;
 }
 
 async function isPromptCustom() {
@@ -45,13 +72,39 @@ async function isPromptCustom() {
   }
 }
 
+/** @deprecated prefer saveDraftPrompt / saveProductionPrompt */
 async function saveTestingPrompt(prompt) {
-  await db.query(
-    `INSERT INTO app_settings (key, value, updated_at)
-     VALUES ($1, $2::jsonb, NOW())
-     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
-    [PROMPT_KEY, JSON.stringify({ prompt: String(prompt ?? '') })],
-  );
+  await writePromptValue(PROMPT_KEY, prompt);
+}
+
+async function saveDraftPrompt(prompt) {
+  await writePromptValue(DRAFT_PROMPT_KEY, prompt);
+}
+
+async function saveProductionPrompt(prompt) {
+  await writePromptValue(PROMPT_KEY, prompt);
+  await db.query(`DELETE FROM app_settings WHERE key = $1`, [DRAFT_PROMPT_KEY]);
+}
+
+/** Payload for the Testing → Snapshots prompt editor (mirrors news/filings). */
+async function buildSnapshotPromptPayload() {
+  const [productionPrompt, draftPrompt, isProductionCustom] = await Promise.all([
+    getProductionPrompt(),
+    getDraftPrompt(),
+    isPromptCustom(),
+  ]);
+  const defaultPrompt = getDefaultPrompt();
+  const source = draftPrompt ? 'draft' : (productionPrompt ? 'production' : 'default');
+  return {
+    defaultPrompt,
+    productionPrompt: productionPrompt || null,
+    draftPrompt: draftPrompt || null,
+    isProductionCustom,
+    hasDraft: !!draftPrompt,
+    prompt: draftPrompt || productionPrompt || defaultPrompt,
+    source,
+    isCustom: isProductionCustom,
+  };
 }
 
 // ── Selection & tracking ────────────────────────────────────────────────────
@@ -251,8 +304,13 @@ module.exports = {
   DEFAULT_COMPANY_SAMPLE,
   getDefaultPrompt,
   getActivePrompt,
+  getProductionPrompt,
+  getDraftPrompt,
   isPromptCustom,
   saveTestingPrompt,
+  saveDraftPrompt,
+  saveProductionPrompt,
+  buildSnapshotPromptPayload,
   pickUntestedCompanies,
   getCompanyById,
   snapshotTestedStats,

@@ -452,24 +452,26 @@ router.get('/snapshots/stats', async (_req, res) => {
 
 router.get('/snapshots/prompt', async (_req, res) => {
   try {
-    res.json({
-      prompt: await snap.getActivePrompt(),
-      defaultPrompt: snap.getDefaultPrompt(),
-      isCustom: await snap.isPromptCustom(),
-    });
+    res.json(await snap.buildSnapshotPromptPayload());
   } catch (err) {
     console.error('Snapshot get prompt failed:', err?.message || err);
     res.status(500).json({ error: 'Failed to load prompt' });
   }
 });
 
+// target: 'draft' (testing only) or 'production' (LIVE company snapshots).
 router.put('/snapshots/prompt', express.json({ limit: '256kb' }), async (req, res) => {
   const prompt = req.body?.prompt;
+  const target = req.body?.target === 'production' ? 'production' : 'draft';
   if (typeof prompt !== 'string') return res.status(400).json({ error: 'prompt (string) is required' });
   if (!prompt.trim()) return res.status(400).json({ error: 'Prompt cannot be empty' });
   try {
-    await snap.saveTestingPrompt(prompt);
-    res.json({ ok: true, isCustom: true });
+    if (target === 'production') {
+      await snap.saveProductionPrompt(prompt);
+    } else {
+      await snap.saveDraftPrompt(prompt);
+    }
+    res.json({ ok: true, target, ...(await snap.buildSnapshotPromptPayload()) });
   } catch (err) {
     console.error('Snapshot save prompt failed:', err?.message || err);
     res.status(500).json({ error: 'Failed to save prompt' });
@@ -487,9 +489,7 @@ router.post('/snapshots/select', express.json(), async (req, res) => {
       requested: count,
       companies,
       stats,
-      prompt: await snap.getActivePrompt(),
-      defaultPrompt: snap.getDefaultPrompt(),
-      isCustom: await snap.isPromptCustom(),
+      ...(await snap.buildSnapshotPromptPayload()),
       models,
       activeModel,
       providerType,
