@@ -418,6 +418,9 @@ async function migrate() {
   await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS created_by_admin BOOLEAN NOT NULL DEFAULT FALSE`);
   await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_set_at TIMESTAMPTZ`);
   await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS company TEXT`);
+  await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_provider TEXT`);
+  await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_subject TEXT`);
+  await safeQuery(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_oauth_identity ON users(oauth_provider, oauth_subject) WHERE oauth_provider IS NOT NULL AND oauth_subject IS NOT NULL`);
 
   // VA task queue — deduplicated items needing human attention
   await db.query(`

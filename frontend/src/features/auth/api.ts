@@ -32,6 +32,7 @@ export interface AuthResponse {
   email?: string;
   ok?: boolean;
   retryAfterMs?: number;
+  redirectTo?: string;
 }
 
 export interface ProfileResponse {
@@ -223,6 +224,21 @@ export async function forgotPassword(email: string): Promise<AuthResponse> {
 
 export async function resetPassword(email: string, otp: string, newPassword: string): Promise<AuthResponse> {
   return authRequest('/reset-password', { email, otp, newPassword });
+}
+
+export function googleAuthStartUrl(redirectTo = "/watchlist"): string {
+  const params = new URLSearchParams({
+    redirect: redirectTo,
+    frontend: typeof window !== 'undefined' ? window.location.origin : '',
+  });
+  return `${API_BASE}/auth/google/start?${params.toString()}`;
+}
+
+export async function consumeOauthToken(token: string): Promise<AuthResponse> {
+  const res = await fetch(`${API_BASE}/auth/oauth/consume?token=${encodeURIComponent(token)}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `OAuth exchange failed: ${res.status}`);
+  return data as AuthResponse;
 }
 
 export async function logout(): Promise<void> {

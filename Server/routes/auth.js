@@ -17,11 +17,15 @@ const REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const OTP_TTL_MINUTES = 10;
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
 const { sendOtpEmail, sendWelcomeEmail } = require('../lib/email');
+const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
+const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const GOOGLE_USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
 
 // In-memory store for admin sessions and revoked refresh tokens.
 // (Admin still uses opaque tokens — only user auth migrates to JWT.)
 const adminSessions = new Map();
 const revokedRefreshTokens = new Set();
+const oauthBridgeTokens = new Map();
 
 // ---------------------------------------------------------------------------
 // Crypto helpers
@@ -33,6 +37,203 @@ function sha256(str) {
 
 function generateOtpCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function randomSecretHex(bytes = 24) {
+  return crypto.randomBytes(bytes).toString('hex');
+}
+
+function googleClientId() {
+  return String(process.env.GOOGLE_CLIENT_ID || '').trim();
+}
+
+function googleClientSecret() {
+  return String(process.env.GOOGLE_CLIENT_SECRET || '').trim();
+}
+
+function callbackBase(req) {
+  const fromEnv = String(process.env.GOOGLE_CALLBACK_URL || '').trim();
+  if (fromEnv) return fromEnv.replace(/\/$/, '');
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+  const host = String(req.headers['x-forwarded-host'] || req.get('host') || '').split(',')[0].trim();
+  return `${proto}://${host}/api/auth/google/callback`;
+}
+
+function frontendOrigin(input) {
+  const raw = String(input || '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    if (!/^https?:$/.test(url.protocol)) return '';
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return '';
+  }
+}
+
+function cleanRedirectPath(input) {
+  const raw = String(input || '').trim();
+  if (!raw) return '/watchlist';
+  return raw.startsWith('/') ? raw : '/watchlist';
+}
+
+function issueOauthBridgeToken(payload) {
+  const token = randomSecretHex(24);
+  oauthBridgeTokens.set(token, {
+    payload,
+    expiresAt: Date.now() + (5 * 60 * 1000),
+  });
+  return token;
+}
+
+function consumeOauthBridgeToken(token) {
+  const key = String(token || '').trim();
+  if (!key) return null;
+  const row = oauthBridgeTokens.get(key);
+  oauthBridgeTokens.delete(key);
+  if (!row) return null;
+  if (row.expiresAt < Date.now()) return null;
+  return row.payload;
+}
+
+function encodeState(state) {
+  return jwt.sign(state, JWT_SECRET, { expiresIn: '10m' });
+}
+
+function decodeState(token) {
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch {
+    return null;
+  }
+}
+
+function base64UrlJson(obj) {
+  return Buffer.from(JSON.stringify(obj), 'utf8').toString('base64url');
+}
+
+function generateUniqueUsername(baseCandidate, fallback = 'user') {
+  const base = String(baseCandidate || fallback)
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 24) || fallback;
+  return (async () => {
+    for (let i = 0; i < 20; i += 1) {
+      const candidate = i === 0
+        ? base
+        : `${base.slice(0, Math.max(1, 24 - String(i).length - 1))}_${i}`;
+      const exists = await db.query('SELECT 1 FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1', [candidate]);
+      if (!exists.rows[0]) return candidate;
+    }
+    return `${fallback.slice(0, 16)}_${randomSecretHex(4)}`;
+  })();
+}
+
+async function exchangeGoogleCode({ code, redirectUri }) {
+  const body = new URLSearchParams({
+    code: String(code || ''),
+    client_id: googleClientId(),
+    client_secret: googleClientSecret(),
+    redirect_uri: redirectUri,
+    grant_type: 'authorization_code',
+  });
+  const res = await fetch(GOOGLE_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error_description || data.error || 'Google token exchange failed');
+  return data;
+}
+
+async function fetchGoogleUserInfo(accessToken) {
+  const res = await fetch(GOOGLE_USERINFO_URL, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error_description || data.error || 'Failed to fetch Google profile');
+  return data;
+}
+
+async function upsertGoogleUser(profile) {
+  const email = String(profile.email || '').toLowerCase().trim();
+  const subject = String(profile.sub || '').trim();
+  if (!email || !subject) throw new Error('Google profile is missing email identity');
+  if (profile.email_verified === false) throw new Error('Google account email is not verified');
+
+  const existingByOauth = await db.query(
+    `SELECT id, email, username, first_name, last_name, two_step_enabled, email_verified, must_change_password
+       FROM users
+      WHERE oauth_provider = 'google' AND oauth_subject = $1
+      LIMIT 1`,
+    [subject],
+  );
+  let user = existingByOauth.rows[0] || null;
+
+  if (!user) {
+    const existingByEmail = await db.query(
+      `SELECT id, email, username, first_name, last_name, two_step_enabled, email_verified, must_change_password
+         FROM users
+        WHERE email = $1
+        LIMIT 1`,
+      [email],
+    );
+    user = existingByEmail.rows[0] || null;
+  }
+
+  const firstName = String(profile.given_name || profile.name || 'User').trim().slice(0, 100) || 'User';
+  const lastName = String(profile.family_name || '').trim().slice(0, 100) || null;
+
+  if (user) {
+    const updated = await db.query(
+      `UPDATE users
+          SET oauth_provider = 'google',
+              oauth_subject = $1,
+              email_verified = TRUE,
+              first_name = COALESCE(NULLIF(first_name, ''), $2),
+              last_name = COALESCE(NULLIF(last_name, ''), $3)
+        WHERE id = $4
+      RETURNING id, email, username, first_name, last_name, two_step_enabled, email_verified, must_change_password`,
+      [subject, firstName, lastName, user.id],
+    );
+    return updated.rows[0];
+  }
+
+  const usernameSeed = profile.email ? profile.email.split('@')[0] : firstName;
+  const username = await generateUniqueUsername(usernameSeed, 'user');
+  const secret = randomSecretHex(24);
+  const { salt, hash } = hashPassword(secret);
+  const inserted = await db.query(
+    `INSERT INTO users
+      (first_name, last_name, username, email, password, salt, email_verified, company, oauth_provider, oauth_subject, must_change_password, password_set_at)
+     VALUES ($1, $2, $3, $4, $5, $6, TRUE, NULL, 'google', $7, FALSE, NOW())
+     RETURNING id, email, username, first_name, last_name, two_step_enabled, email_verified, must_change_password`,
+    [firstName, lastName, username, email, hash, salt, subject],
+  );
+  return inserted.rows[0];
+}
+
+function authPayloadFromUser(user) {
+  const { accessToken, refreshToken } = issueTokens(user);
+  return {
+    accessToken,
+    refreshToken,
+    accessExpiresAt: Date.now() + ACCESS_TTL_MS,
+    refreshExpiresAt: Date.now() + REFRESH_TTL_MS,
+    user: {
+      id: user.id,
+      email: user.email,
+      username: user.username || null,
+      firstName: user.first_name || null,
+      lastName: user.last_name || null,
+      twoStepEnabled: !!user.two_step_enabled,
+      mustChangePassword: !!user.must_change_password,
+    },
+    token: accessToken,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -364,12 +565,83 @@ router.post('/reset-password', express.json(), async (req, res) => {
     const verify = await consumeOtp(email, 'reset_password', otp);
     if (!verify.ok) return res.status(400).json({ error: verify.error });
     const { salt, hash } = hashPassword(newPassword);
-    await db.query(`UPDATE users SET password = $1, salt = $2 WHERE id = $3`, [hash, salt, verify.userId]);
+    await db.query(
+      `UPDATE users
+          SET password = $1,
+              salt = $2,
+              must_change_password = FALSE,
+              password_set_at = NOW()
+        WHERE id = $3`,
+      [hash, salt, verify.userId]
+    );
     res.json({ ok: true });
   } catch (err) {
     console.error('Reset password error:', err);
     res.status(500).json({ error: 'Reset failed' });
   }
+});
+
+router.get('/google/start', async (req, res) => {
+  try {
+    if (!googleClientId() || !googleClientSecret()) {
+      return res.status(500).json({ error: 'Google OAuth is not configured' });
+    }
+    const redirectPath = cleanRedirectPath(req.query.redirect);
+    const front = frontendOrigin(req.query.frontend) || frontendOrigin(process.env.FRONTEND_URL);
+    if (!front) return res.status(400).json({ error: 'Missing frontend origin' });
+    const state = encodeState({
+      redirectPath,
+      frontendOrigin: front,
+    });
+    const params = new URLSearchParams({
+      client_id: googleClientId(),
+      redirect_uri: callbackBase(req),
+      response_type: 'code',
+      scope: 'openid email profile',
+      prompt: 'select_account',
+      state,
+    });
+    res.redirect(`${GOOGLE_AUTH_URL}?${params.toString()}`);
+  } catch (err) {
+    console.error('Google start error:', err);
+    res.status(500).json({ error: 'Could not start Google sign-in' });
+  }
+});
+
+router.get('/google/callback', async (req, res) => {
+  const frontendFallback = frontendOrigin(process.env.FRONTEND_URL) || '';
+  try {
+    const { code, state } = req.query || {};
+    const decoded = decodeState(String(state || ''));
+    if (!decoded?.frontendOrigin) {
+      return res.status(400).send('Invalid or expired OAuth state.');
+    }
+    const tokens = await exchangeGoogleCode({
+      code: String(code || ''),
+      redirectUri: callbackBase(req),
+    });
+    const profile = await fetchGoogleUserInfo(tokens.access_token);
+    const user = await upsertGoogleUser(profile);
+    const auth = authPayloadFromUser(user);
+    const bridge = issueOauthBridgeToken({
+      ...auth,
+      redirectTo: cleanRedirectPath(decoded.redirectPath),
+    });
+    res.redirect(`${decoded.frontendOrigin}/auth/google/callback?token=${encodeURIComponent(bridge)}`);
+  } catch (err) {
+    console.error('Google callback error:', err);
+    const message = encodeURIComponent(err?.message || 'Google sign-in failed');
+    if (frontendFallback) {
+      return res.redirect(`${frontendFallback}/login?oauth_error=${message}`);
+    }
+    res.status(500).send('Google sign-in failed.');
+  }
+});
+
+router.get('/oauth/consume', express.json(), (req, res) => {
+  const payload = consumeOauthBridgeToken(req.query.token);
+  if (!payload) return res.status(400).json({ error: 'Invalid or expired OAuth token' });
+  res.json(payload);
 });
 
 router.post('/verify-login-otp', express.json(), async (req, res) => {

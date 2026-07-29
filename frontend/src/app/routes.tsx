@@ -19,6 +19,7 @@ import Terms from "@/features/static/pages/Terms";
 import Privacy from "@/features/static/pages/Privacy";
 import Profile from "@/features/auth/pages/Profile";
 import ChangePassword from "@/features/auth/pages/ChangePassword";
+import GoogleAuthCallback from "@/features/auth/pages/GoogleAuthCallback";
 import NotFound from "@/pages/NotFound";
 
 export default function AppRoutes() {
@@ -43,6 +44,7 @@ export default function AppRoutes() {
       <Route path="/privacy" element={<Privacy />} />
       <Route path="/profile" element={<Profile />} />
       <Route path="/change-password" element={<ChangePassword />} />
+      <Route path="/auth/google/callback" element={<GoogleAuthCallback />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Login />} />
       {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

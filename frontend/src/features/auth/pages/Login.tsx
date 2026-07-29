@@ -5,7 +5,7 @@ import SiteLayout from "@/layouts/SiteLayout";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { forgotPassword, login, register, resendOtp, resetPassword, verifyLoginOtp, verifyRegistrationOtp } from "@/lib/api";
+import { forgotPassword, googleAuthStartUrl, login, register, resendOtp, resetPassword, verifyLoginOtp, verifyRegistrationOtp } from "@/lib/api";
 
 type Mode = "signin" | "register";
 type Stage = "form" | "verify-register" | "verify-login" | "reset-request" | "reset-verify";
@@ -34,8 +34,9 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [resendLeft, setResendLeft] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(new URLSearchParams(location.search).get("oauth_error"));
   const [submitting, setSubmitting] = useState(false);
 
   const startCountdown = (seconds = 60) => {
@@ -67,12 +68,16 @@ const Login = () => {
         setStage("reset-verify");
         startCountdown(60);
       } else if (stage === "reset-verify") {
+        if (newPassword !== confirmNewPassword) {
+          throw new Error("New password and confirmation do not match");
+        }
         await resetPassword(email.trim(), otp.trim(), newPassword);
         setMode("signin");
         setStage("form");
         setPassword("");
         setOtp("");
         setNewPassword("");
+        setConfirmNewPassword("");
       } else if (mode === "signin") {
         const resp = await login(email.trim(), password);
         if (resp.requiresTwoStep) {
@@ -179,6 +184,25 @@ const Login = () => {
 
               <div className="border border-t-0 border-border bg-card p-6 md:p-8">
                 <form onSubmit={onSubmit} className="space-y-4">
+                  {stage === "form" && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => { window.location.href = googleAuthStartUrl(redirectTo); }}
+                        className="w-full h-12 border border-border bg-background hover:bg-muted/40 text-foreground font-mono text-[12px] uppercase tracking-[0.18em] font-bold inline-flex items-center justify-center gap-3 transition-colors"
+                      >
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white text-[11px] font-bold text-[#4285F4] border border-border">G</span>
+                        Continue with Google
+                      </button>
+                      <div className="relative py-1">
+                        <div className="border-t border-border" />
+                        <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card px-3 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                          Or
+                        </span>
+                      </div>
+                    </>
+                  )}
+
                   {mode === "register" && stage === "form" && (
                     <>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -280,10 +304,16 @@ const Login = () => {
                   )}
 
                   {stage === "reset-verify" && (
-                    <div>
-                      <Label className={labelClass} htmlFor="newPassword">New password</Label>
-                      <Input id="newPassword" type="password" className={fieldClass} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="••••••••" required minLength={6} />
-                    </div>
+                    <>
+                      <div>
+                        <Label className={labelClass} htmlFor="newPassword">New password</Label>
+                        <Input id="newPassword" type="password" className={fieldClass} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="••••••••" required minLength={6} />
+                      </div>
+                      <div>
+                        <Label className={labelClass} htmlFor="confirmNewPassword">Confirm new password</Label>
+                        <Input id="confirmNewPassword" type="password" className={fieldClass} value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} placeholder="••••••••" required minLength={6} />
+                      </div>
+                    </>
                   )}
 
                   {error && (
@@ -302,13 +332,13 @@ const Login = () => {
                   </button>
 
                   {mode === "signin" && stage === "form" && (
-                    <button type="button" onClick={() => { setStage("reset-request"); setError(null); }} className="text-sm text-accent hover:underline font-medium">
+                    <button type="button" onClick={() => { setStage("reset-request"); setError(null); setOtp(""); setNewPassword(""); setConfirmNewPassword(""); }} className="text-sm text-accent hover:underline font-medium">
                       Forgot password?
                     </button>
                   )}
 
                   {(stage === "verify-register" || stage === "verify-login" || stage === "reset-request" || stage === "reset-verify") && (
-                    <button type="button" onClick={() => { setStage("form"); setError(null); setOtp(""); }} className="text-sm text-muted-foreground hover:text-foreground">
+                    <button type="button" onClick={() => { setStage("form"); setError(null); setOtp(""); setNewPassword(""); setConfirmNewPassword(""); }} className="text-sm text-muted-foreground hover:text-foreground">
                       Back
                     </button>
                   )}
