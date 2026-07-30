@@ -4,4 +4,5 @@ module.exports = {
   ...require('./run'),
   ...require('./analytics'),
   ...require('./scheduler'),
+  ...require('./x-api'),
 };

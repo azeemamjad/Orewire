@@ -11,9 +11,12 @@ const {
   saveBridgeConfig,
   getBridgePublic,
   ping: pingBridge,
-  isBridgeConfigured,
-  getBridgeCredentials,
   postThread,
+  saveApiCredentials,
+  getApiPublic,
+  pingXApi,
+  isApiConfigured,
+  getApiCredentials,
 } = require('../../lib/social/bridge-client');
 const { runSocialPost, getStatusSnapshot } = require('../../lib/social/run');
 const { getAnalytics } = require('../../lib/social/analytics');
@@ -29,7 +32,6 @@ function parseTweetsFromBody(body = {}) {
   }
   const raw = String(body.text || body.content || '').trim();
   if (!raw) return [];
-  // Blank line or --- separates thread tweets
   return raw
     .split(/\n\s*\n+|\n\s*---+\s*\n/)
     .map((t) => t.trim())
@@ -57,24 +59,24 @@ router.put('/settings', async (req, res) => {
       }
     }
 
-    // Play requires WebBridge configured + last test OK
+    // Play requires X API configured + last test OK
     if (body.enabled === true) {
       let creds;
       try {
-        creds = await getBridgeCredentials();
+        creds = await getApiCredentials();
       } catch (err) {
-        return res.status(400).json({ error: err?.message || 'Invalid bridge URL' });
+        return res.status(400).json({ error: err?.message || 'Invalid X API credentials' });
       }
-      if (!isBridgeConfigured(creds)) {
+      if (!isApiConfigured(creds)) {
         return res.status(400).json({
-          error: 'Save WebBridge URL + token and Test connection before enabling',
+          error: 'Save X API credentials and Test connection before enabling',
         });
       }
-      const bridge = await getBridgePublic();
-      if (bridge.status !== 'ok') {
+      const xApi = await getApiPublic();
+      if (xApi.status !== 'ok') {
         return res.status(400).json({
           error: 'Test connection must succeed before enabling automation',
-          status: bridge.status,
+          status: xApi.status,
         });
       }
     }
@@ -103,7 +105,49 @@ router.put('/settings', async (req, res) => {
   }
 });
 
-// PUT /api/admin/social/bridge — save ngrok URL + bearer token
+// PUT /api/admin/social/x-api — save OAuth 1.0a credentials
+router.put('/x-api', async (req, res) => {
+  try {
+    const {
+      apiKey,
+      apiSecret,
+      accessToken,
+      accessTokenSecret,
+      api_key,
+      api_secret,
+      access_token,
+      access_token_secret,
+    } = req.body || {};
+    const xApi = await saveApiCredentials({
+      apiKey: apiKey ?? api_key,
+      apiSecret: apiSecret ?? api_secret,
+      accessToken: accessToken ?? access_token,
+      accessTokenSecret: accessTokenSecret ?? access_token_secret,
+    });
+    res.json({ xApi });
+  } catch (err) {
+    console.error('[social] save x-api failed:', err?.message || err);
+    res.status(400).json({ error: err?.message || 'Failed to save X API credentials' });
+  }
+});
+
+// POST /api/admin/social/x-api/test — verify against /2/users/me
+router.post('/x-api/test', async (_req, res) => {
+  try {
+    const result = await pingXApi();
+    const xApi = await getApiPublic();
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, error: result.error, xApi, user: null });
+    }
+    res.json({ ok: true, xApi, user: result.user || null });
+  } catch (err) {
+    console.error('[social] x-api test failed:', err?.message || err);
+    const xApi = await getApiPublic().catch(() => null);
+    res.status(400).json({ ok: false, error: err?.message || 'X API test failed', xApi });
+  }
+});
+
+// PUT /api/admin/social/bridge — LEGACY WebBridge
 router.put('/bridge', async (req, res) => {
   try {
     const { url, token } = req.body || {};
@@ -115,7 +159,7 @@ router.put('/bridge', async (req, res) => {
   }
 });
 
-// POST /api/admin/social/bridge/test — ping daemon via ngrok
+// POST /api/admin/social/bridge/test — LEGACY
 router.post('/bridge/test', async (_req, res) => {
   try {
     const result = await pingBridge();
@@ -131,7 +175,7 @@ router.post('/bridge/test', async (_req, res) => {
   }
 });
 
-// PUT /api/admin/social/x/credentials — LEGACY (server-side login; prefer WebBridge)
+// PUT /api/admin/social/x/credentials — LEGACY
 router.put('/x/credentials', async (req, res) => {
   try {
     const { username, password, email } = req.body || {};
@@ -204,7 +248,7 @@ router.post('/run-now', async (_req, res) => {
   }
 });
 
-// POST /api/admin/social/compose-post — write a post/thread and publish via WebBridge now
+// POST /api/admin/social/compose-post — publish via official X API
 router.post('/compose-post', async (req, res) => {
   let runId = null;
   try {
@@ -223,12 +267,12 @@ router.post('/compose-post', async (req, res) => {
 
     let creds;
     try {
-      creds = await getBridgeCredentials();
+      creds = await getApiCredentials();
     } catch (err) {
-      return res.status(400).json({ error: err?.message || 'Invalid bridge URL' });
+      return res.status(400).json({ error: err?.message || 'Invalid X API credentials' });
     }
-    if (!isBridgeConfigured(creds)) {
-      return res.status(400).json({ error: 'Configure WebBridge connection first' });
+    if (!isApiConfigured(creds)) {
+      return res.status(400).json({ error: 'Configure X API credentials first' });
     }
 
     const ins = await db.query(
@@ -248,7 +292,11 @@ router.post('/compose-post', async (req, res) => {
               thread_url = $2,
               payload = payload || $3::jsonb
         WHERE id = $1`,
-      [runId, posted.threadUrl || null, JSON.stringify({ mode: posted.results?.mode || null })],
+      [
+        runId,
+        posted.threadUrl || null,
+        JSON.stringify({ mode: posted.results?.mode || null, via: posted.via || 'x-api' }),
+      ],
     );
 
     res.json({
@@ -256,6 +304,7 @@ router.post('/compose-post', async (req, res) => {
       runId,
       tweetCount: posted.tweetCount || tweets.length,
       threadUrl: posted.threadUrl || null,
+      via: posted.via || 'x-api',
     });
   } catch (err) {
     const msg = err?.message || String(err);
@@ -284,7 +333,6 @@ router.get('/analytics', async (req, res) => {
   }
 });
 
-// Convenience: also expose settings GET
 router.get('/settings', async (_req, res) => {
   try {
     res.json({ settings: await getSettings() });

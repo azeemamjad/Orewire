@@ -1,9 +1,11 @@
 /**
- * Client for the local OreWire WebBridge daemon (via ngrok HTTPS + Bearer).
+ * Social delivery client — posts via official X API v2.
+ * Legacy WebBridge / X Browser helpers remain exported for admin debugging only.
  */
 const db = require('../../db');
 const { encrypt, decrypt } = require('./secrets');
 const { PLATFORM } = require('./settings');
+const xApi = require('./x-api');
 
 const PING_TIMEOUT_MS = Number(process.env.SOCIAL_BRIDGE_PING_TIMEOUT_MS) || 15_000;
 const POST_TIMEOUT_MS = Number(process.env.SOCIAL_BRIDGE_POST_TIMEOUT_MS) || 300_000;
@@ -26,9 +28,6 @@ async function loadBridgeRow() {
   return r.rows[0] || null;
 }
 
-/**
- * Resolve bridge URL + token (DB, with optional env overrides).
- */
 async function getBridgeCredentials() {
   const envUrl = (process.env.SOCIAL_BRIDGE_URL || '').trim();
   const envToken = (process.env.SOCIAL_BRIDGE_TOKEN || '').trim();
@@ -52,7 +51,6 @@ function isBridgeConfigured(creds) {
 }
 
 async function markBridgeStatus(status, errorMessage = null) {
-  const okAt = status === 'ok' ? new Date() : null;
   await db.query(
     `UPDATE social_automation_settings
         SET bridge_status = $2,
@@ -62,7 +60,7 @@ async function markBridgeStatus(status, errorMessage = null) {
       WHERE platform = $1`,
     [PLATFORM, status, errorMessage],
   );
-  return { status, errorMessage, okAt };
+  return { status, errorMessage };
 }
 
 async function saveBridgeConfig({ url, token } = {}) {
@@ -166,9 +164,7 @@ async function fetchBridge(path, { method = 'GET', body, timeoutMs } = {}) {
   }
 }
 
-/**
- * GET /api/status — verify daemon + extension connectivity.
- */
+/** @deprecated Legacy WebBridge health check */
 async function ping() {
   try {
     const data = await fetchBridge('/api/status', { timeoutMs: PING_TIMEOUT_MS });
@@ -191,88 +187,11 @@ async function ping() {
 }
 
 /**
- * Prefer local Playwright hosted browser when enabled / already logged in.
- * Returns null to fall through to WebBridge.
- */
-async function tryHostedBrowserPost(tweets) {
-  let prefer = false;
-  try {
-    const { preferHostedBrowserPost, getManager } = require('../hosted-browser');
-    prefer = preferHostedBrowserPost();
-    const mgr = getManager();
-    const st = await mgr.status();
-    const ready = st.running && st.loggedIn;
-
-    if (!prefer && !ready) return null;
-
-    if (!st.running) {
-      if (!prefer) return null;
-      await mgr.start({ headed: false });
-    }
-
-    const loggedIn =
-      typeof mgr.cookiesLoggedIn === 'function'
-        ? (await mgr.cookiesLoggedIn()) || (await mgr.isLoggedIn())
-        : !!st.loggedIn;
-    if (!loggedIn) {
-      if (prefer) {
-        console.warn(
-          '[bridge-client] X Browser not logged in — falling back to WebBridge',
-        );
-      }
-      return null;
-    }
-
-    const payload = await mgr.postXThread({ tweets });
-    return {
-      dryRun: false,
-      threadUrl: payload.threadUrl || null,
-      tweetCount: payload.tweetCount || tweets.length,
-      results: payload,
-      via: payload.via || 'x-browser',
-    };
-  } catch (err) {
-    console.warn(
-      '[bridge-client] Hosted browser post failed, falling back to WebBridge:',
-      err?.message || err,
-    );
-    return null;
-  }
-}
-
-/**
- * POST /api/tool post_x_thread
- * @param {string[]} pages - tweet texts in order
+ * Post thread via official X API (browser / WebBridge no longer used for delivery).
+ * @param {string[]} pages
  */
 async function postThread(pages, { dryRun = false } = {}) {
-  const tweets = (pages || []).map((p) => String(p ?? '').trim()).filter(Boolean);
-  if (!tweets.length) throw new Error('No tweets to post');
-
-  if (dryRun) {
-    return { dryRun: true, threadUrl: null, tweetCount: tweets.length, pages: tweets };
-  }
-
-  const hosted = await tryHostedBrowserPost(tweets);
-  if (hosted) return hosted;
-
-  const data = await fetchBridge('/api/tool', {
-    method: 'POST',
-    timeoutMs: POST_TIMEOUT_MS,
-    body: { name: 'post_x_thread', args: { tweets } },
-  });
-
-  const payload = data?.data || data || {};
-  if (payload.error) throw new Error(payload.error);
-
-  await markBridgeStatus('ok', null);
-
-  return {
-    dryRun: false,
-    threadUrl: payload.threadUrl || null,
-    tweetCount: payload.tweetCount || tweets.length,
-    results: payload,
-    via: 'webbridge',
-  };
+  return xApi.postThread(pages, { dryRun });
 }
 
 module.exports = {
@@ -284,4 +203,10 @@ module.exports = {
   ping,
   postThread,
   normalizeBaseUrl,
+  // X API re-exports used by admin / run
+  getApiCredentials: xApi.getApiCredentials,
+  isApiConfigured: xApi.isApiConfigured,
+  getApiPublic: xApi.getApiPublic,
+  saveApiCredentials: xApi.saveApiCredentials,
+  pingXApi: xApi.ping,
 };

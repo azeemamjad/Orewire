@@ -78,14 +78,14 @@ details.legacy[open] summary::before { content: '▾ '; }
 <main class="main">
   <div class="page-header">
     <h1>Social Automation</h1>
-    <p>Daily X morning thread from briefing filings &amp; news — posted via WebBridge from a logged-in Chrome session.</p>
+    <p>Daily X morning thread from briefing filings &amp; news — posted via the official X API.</p>
   </div>
 
   <div class="social-stats" id="social-stats">
     <div class="social-stat"><div class="label">Runs today</div><div class="value" id="stat-today">—</div></div>
     <div class="social-stat"><div class="label">7d success rate</div><div class="value" id="stat-rate">—</div></div>
     <div class="social-stat"><div class="label">Automation</div><div class="value" id="stat-enabled" style="font-size:16px;">—</div></div>
-    <div class="social-stat"><div class="label">Bridge</div><div class="value" id="stat-bridge" style="font-size:14px;">—</div></div>
+    <div class="social-stat"><div class="label">X API</div><div class="value" id="stat-xapi" style="font-size:14px;">—</div></div>
   </div>
 
   <div class="social-tabs" role="tablist">
@@ -96,38 +96,62 @@ details.legacy[open] summary::before { content: '▾ '; }
   <div id="pane-automation" class="social-pane active">
   <div class="social-grid">
     <section class="social-card">
-      <h2>WebBridge connection</h2>
+      <h2>X API connection</h2>
       <p class="hint">
-        On the VA laptop: <code>cd Server && npm run webbridge</code>, load
-        <code>Server/public/webbridge-extension</code> in Chrome, paste your
-        <strong>ngrok authtoken</strong> in the extension popup, then paste the
-        Connection URL and bridge token here. Guide:
-        <code>Server/lib/webbridge/README.md</code>.
+        Create an app at
+        <a href="https://developer.x.com/en/portal/dashboard" target="_blank" rel="noopener">developer.x.com</a>
+        with <strong>Read and Write</strong> permissions, then paste the OAuth 1.0a keys below
+        (or set <code>X_API_KEY</code> / <code>X_API_SECRET</code> / <code>X_ACCESS_TOKEN</code> /
+        <code>X_ACCESS_TOKEN_SECRET</code> in <code>.env</code>).
+        Pay-per-use billing applies (~$0.015/post, ~$0.20 if the post contains a link).
       </p>
-      <form id="bridge-form" onsubmit="saveBridge(event)">
+      <form id="xapi-form" onsubmit="saveXApi(event)">
         <div class="form-row">
-          <label for="bridge-url">Bridge URL (from extension)</label>
-          <input id="bridge-url" type="url" autocomplete="off" placeholder="https://….ngrok-free.app" required />
+          <label for="x-api-key">API Key (Consumer Key)</label>
+          <input id="x-api-key" type="password" autocomplete="off" placeholder="Leave blank to keep existing" />
         </div>
         <div class="form-row">
-          <label for="bridge-token">Bridge token (from extension, write-only)</label>
-          <input id="bridge-token" type="password" autocomplete="new-password" placeholder="Copy from OreWire Bridge popup" />
+          <label for="x-api-secret">API Key Secret</label>
+          <input id="x-api-secret" type="password" autocomplete="off" placeholder="Leave blank to keep existing" />
+        </div>
+        <div class="form-row">
+          <label for="x-access-token">Access Token</label>
+          <input id="x-access-token" type="password" autocomplete="off" placeholder="Leave blank to keep existing" />
+        </div>
+        <div class="form-row">
+          <label for="x-access-secret">Access Token Secret</label>
+          <input id="x-access-secret" type="password" autocomplete="off" placeholder="Leave blank to keep existing" />
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-          <button class="btn btn-primary btn-sm" type="submit">Save connection</button>
-          <button class="btn btn-ghost btn-sm" type="button" onclick="testBridge()">Test connection</button>
-          <span class="status-badge" id="bridge-badge"><span class="dot"></span><span id="bridge-badge-text">—</span></span>
+          <button class="btn btn-primary btn-sm" type="submit">Save credentials</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="testXApi()">Test connection</button>
+          <span class="status-badge" id="xapi-badge"><span class="dot"></span><span id="xapi-badge-text">—</span></span>
         </div>
-        <p class="hint" id="bridge-meta" style="margin-top:10px;"></p>
+        <p class="hint" id="xapi-meta" style="margin-top:10px;"></p>
       </form>
 
       <details class="legacy">
-        <summary>Legacy: server-side X login (deprecated)</summary>
+        <summary>Legacy: WebBridge / password login (unused for posting)</summary>
         <p class="hint" style="margin-top:10px;">
-          Password / cookie login from the Dokploy server is blocked by Cloudflare in practice.
-          Prefer WebBridge. These controls remain only for debugging.
+          Browser automation is no longer used for social posts. These controls remain only for debugging.
         </p>
-        <form id="creds-form" onsubmit="saveCredentials(event)">
+        <form id="bridge-form" onsubmit="saveBridge(event)">
+          <div class="form-row">
+            <label for="bridge-url">Bridge URL</label>
+            <input id="bridge-url" type="url" autocomplete="off" placeholder="https://….ngrok-free.app" />
+          </div>
+          <div class="form-row">
+            <label for="bridge-token">Bridge token</label>
+            <input id="bridge-token" type="password" autocomplete="new-password" placeholder="Legacy WebBridge token" />
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+            <button class="btn btn-ghost btn-sm" type="submit">Save bridge</button>
+            <button class="btn btn-ghost btn-sm" type="button" onclick="testBridge()">Test bridge</button>
+            <span class="status-badge" id="bridge-badge"><span class="dot"></span><span id="bridge-badge-text">—</span></span>
+          </div>
+          <p class="hint" id="bridge-meta" style="margin-top:10px;"></p>
+        </form>
+        <form id="creds-form" onsubmit="saveCredentials(event)" style="margin-top:16px;">
           <div class="form-row">
             <label for="x-username">Username</label>
             <input id="x-username" type="text" autocomplete="username" placeholder="@handle" />
@@ -157,7 +181,7 @@ details.legacy[open] summary::before { content: '▾ '; }
 
     <section class="social-card">
       <h2>Automation</h2>
-      <p class="hint" id="schedule-hint">Daily cron after the morning briefing. Paused until WebBridge Test connection succeeds and you hit Play.</p>
+      <p class="hint" id="schedule-hint">Daily cron after the morning briefing. Paused until X API Test connection succeeds and you hit Play.</p>
       <div class="check-row">
         <input type="checkbox" id="dry-run" onchange="saveDryRun()" />
         <label for="dry-run">Dry run (compose &amp; log only — do not post to X)</label>
@@ -200,7 +224,7 @@ details.legacy[open] summary::before { content: '▾ '; }
     <section class="social-card" style="margin-bottom:24px;max-width:720px;">
       <h2>Compose &amp; post</h2>
       <p class="hint">
-        Write a post and publish it now through WebBridge (same Chrome session as automation).
+        Write a post and publish it now through the official X API.
         Use a blank line between paragraphs to post as a <strong>thread</strong>.
       </p>
       <label for="compose-text" style="font-size:12px;color:var(--muted);">Post text</label>
@@ -209,7 +233,7 @@ details.legacy[open] summary::before { content: '▾ '; }
         oninput="updateComposePreview()"></textarea>
       <div class="compose-meta">
         <span id="compose-char">0 characters · 1 tweet</span>
-        <span id="compose-bridge-hint"></span>
+        <span id="compose-xapi-hint"></span>
       </div>
       <div class="compose-preview" id="compose-preview"></div>
       <div class="play-row">
@@ -224,7 +248,7 @@ details.legacy[open] summary::before { content: '▾ '; }
 <script src="/admin/js/admin-sidebar.js?v=20260720"></script>
 <script src="/admin/js/legacy-admin.js"></script>
 <script>
-let _social = { settings: null, account: null, bridge: null };
+let _social = { settings: null, account: null, xApi: null, bridge: null };
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -243,10 +267,12 @@ async function loadStatus() {
   const data = await r.json();
   _social.settings = data.settings;
   _social.account = data.account;
+  _social.xApi = data.xApi;
   _social.bridge = data.bridge;
 
   const s = data.settings || {};
   const a = data.account || {};
+  const x = data.xApi || {};
   const b = data.bridge || {};
   document.getElementById('dry-run').checked = !!s.dry_run;
   document.getElementById('stat-enabled').textContent = s.enabled ? 'Playing' : 'Paused';
@@ -254,23 +280,32 @@ async function loadStatus() {
   document.getElementById('schedule-hint').textContent =
     `Schedule: ${s.cron || '0 8 * * *'} (${s.timezone || 'America/Toronto'}) · ${s.items_min}–${s.items_max} items · dry_run=${!!s.dry_run}`;
 
+  setBadge('xapi-badge', 'xapi-badge-text', x.status || 'unknown');
+  document.getElementById('stat-xapi').textContent = x.configured
+    ? (x.status === 'ok' ? (x.username ? '@' + x.username : 'Connected') : (x.status || 'Set'))
+    : 'Not set';
+  const xmeta = [];
+  if (x.configured) xmeta.push('Configured');
+  if (x.username) xmeta.push('@' + x.username);
+  if (x.lastOkAt) xmeta.push('Last OK ' + new Date(x.lastOkAt).toLocaleString());
+  if (x.lastError) xmeta.push('Error: ' + x.lastError);
+  if (x.fromEnv) xmeta.push('Env override');
+  document.getElementById('xapi-meta').textContent = xmeta.join(' · ') || 'Paste OAuth 1.0a keys from the X Developer Portal.';
+
   if (b.url) document.getElementById('bridge-url').value = b.url;
   setBadge('bridge-badge', 'bridge-badge-text', b.status || 'unknown');
-  document.getElementById('stat-bridge').textContent = b.configured
-    ? (b.status === 'ok' ? 'Connected' : (b.status || 'Set'))
-    : 'Not set';
   const bmeta = [];
   if (b.configured) bmeta.push('Configured');
   if (b.tokenSet) bmeta.push('Token set');
   if (b.lastOkAt) bmeta.push('Last OK ' + new Date(b.lastOkAt).toLocaleString());
   if (b.lastError) bmeta.push('Error: ' + b.lastError);
-  if (b.fromEnv) bmeta.push('Env override');
-  document.getElementById('bridge-meta').textContent = bmeta.join(' · ') || 'Paste ngrok URL + daemon token.';
-  const composeHint = document.getElementById('compose-bridge-hint');
+  document.getElementById('bridge-meta').textContent = bmeta.join(' · ') || 'Unused — posts go through X API.';
+
+  const composeHint = document.getElementById('compose-xapi-hint');
   if (composeHint) {
-    composeHint.textContent = b.configured
-      ? (b.status === 'ok' ? 'Bridge ready' : 'Bridge set — Test connection on Automation tab')
-      : 'Configure WebBridge on the Automation tab first';
+    composeHint.textContent = x.configured
+      ? (x.status === 'ok' ? 'X API ready' : 'Credentials set — Test connection on Automation tab')
+      : 'Configure X API credentials on the Automation tab first';
   }
 
   setBadge('account-badge', 'account-badge-text', a.status);
@@ -331,6 +366,59 @@ async function refreshAll() {
   }
 }
 
+async function saveXApi(e) {
+  e.preventDefault();
+  const apiKey = document.getElementById('x-api-key').value.trim();
+  const apiSecret = document.getElementById('x-api-secret').value.trim();
+  const accessToken = document.getElementById('x-access-token').value.trim();
+  const accessTokenSecret = document.getElementById('x-access-secret').value.trim();
+  if (!apiKey && !apiSecret && !accessToken && !accessTokenSecret) {
+    if (_social.xApi?.configured) {
+      toast('Credentials already configured (leave fields blank to keep)', 'ok');
+      return;
+    }
+    toast('Paste all four credentials (or set them in .env)', 'err');
+    return;
+  }
+  try {
+    const r = await fetch('/api/admin/social/x-api', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiKey: apiKey || undefined,
+        apiSecret: apiSecret || undefined,
+        accessToken: accessToken || undefined,
+        accessTokenSecret: accessTokenSecret || undefined,
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Save failed');
+    document.getElementById('x-api-key').value = '';
+    document.getElementById('x-api-secret').value = '';
+    document.getElementById('x-access-token').value = '';
+    document.getElementById('x-access-secret').value = '';
+    toast('X API credentials saved — run Test connection', 'ok');
+    await loadStatus();
+  } catch (err) {
+    toast(err.message || 'Save failed', 'err');
+  }
+}
+
+async function testXApi() {
+  toast('Testing X API…', 'ok');
+  try {
+    const r = await fetch('/api/admin/social/x-api/test', { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok || !data.ok) throw new Error(data.error || 'X API test failed');
+    const handle = data.user?.username ? ` @${data.user.username}` : '';
+    toast(`X API OK${handle}`, 'ok');
+    await loadStatus();
+  } catch (err) {
+    toast(err.message || 'X API test failed', 'err');
+    await loadStatus();
+  }
+}
+
 async function saveBridge(e) {
   e.preventDefault();
   const url = document.getElementById('bridge-url').value.trim();
@@ -345,7 +433,7 @@ async function saveBridge(e) {
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || 'Save failed');
     document.getElementById('bridge-token').value = '';
-    toast('Bridge saved — run Test connection', 'ok');
+    toast('Bridge saved (legacy)', 'ok');
     await loadStatus();
   } catch (err) {
     toast(err.message || 'Save failed', 'err');
@@ -434,7 +522,7 @@ async function saveDryRun() {
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || 'Update failed');
     _social.settings = data.settings;
-    toast(dryRun ? 'Dry run on' : 'Dry run off — live posts via WebBridge', 'ok');
+    toast(dryRun ? 'Dry run on' : 'Dry run off — live posts via X API', 'ok');
     await loadStatus();
   } catch (err) {
     toast(err.message || 'Update failed', 'err');
@@ -527,7 +615,7 @@ async function composePostNow() {
   btn.disabled = true;
   btn.textContent = 'Posting…';
   out.textContent = '';
-  toast('Posting via WebBridge…', 'ok');
+  toast('Posting via X API…', 'ok');
   try {
     const r = await fetch('/api/admin/social/compose-post', {
       method: 'POST',

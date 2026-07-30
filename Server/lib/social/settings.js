@@ -11,10 +11,21 @@ const DEFAULTS = {
   dry_run: process.env.SOCIAL_X_DRY_RUN !== 'false',
 };
 
+function envXApiConfigured() {
+  return !!(
+    (process.env.X_API_KEY || process.env.TWITTER_API_KEY) &&
+    (process.env.X_API_SECRET || process.env.X_API_KEY_SECRET || process.env.TWITTER_API_SECRET) &&
+    (process.env.X_ACCESS_TOKEN || process.env.TWITTER_ACCESS_TOKEN) &&
+    (process.env.X_ACCESS_TOKEN_SECRET || process.env.TWITTER_ACCESS_TOKEN_SECRET)
+  );
+}
+
 async function getSettings() {
   const r = await db.query(
     `SELECT enabled, cron, timezone, items_min, items_max, dry_run, updated_at,
-            bridge_url, bridge_token_enc, bridge_status, last_bridge_error, last_bridge_ok_at
+            bridge_url, bridge_token_enc, bridge_status, last_bridge_error, last_bridge_ok_at,
+            x_api_key_enc, x_api_secret_enc, x_access_token_enc, x_access_secret_enc,
+            x_api_status, last_x_api_error, last_x_api_ok_at, x_api_username
        FROM social_automation_settings WHERE platform = $1`,
     [PLATFORM],
   );
@@ -28,9 +39,17 @@ async function getSettings() {
       bridge_status: 'unknown',
       last_bridge_error: null,
       last_bridge_ok_at: null,
+      x_api_configured: envXApiConfigured(),
+      x_api_status: 'unknown',
+      last_x_api_error: null,
+      last_x_api_ok_at: null,
+      x_api_username: null,
     };
   }
   const row = r.rows[0];
+  const dbApiConfigured = !!(
+    row.x_api_key_enc && row.x_api_secret_enc && row.x_access_token_enc && row.x_access_secret_enc
+  );
   return {
     platform: PLATFORM,
     enabled: !!row.enabled,
@@ -45,6 +64,11 @@ async function getSettings() {
     bridge_status: row.bridge_status || 'unknown',
     last_bridge_error: row.last_bridge_error || null,
     last_bridge_ok_at: row.last_bridge_ok_at || null,
+    x_api_configured: dbApiConfigured || envXApiConfigured(),
+    x_api_status: row.x_api_status || 'unknown',
+    last_x_api_error: row.last_x_api_error || null,
+    last_x_api_ok_at: row.last_x_api_ok_at || null,
+    x_api_username: row.x_api_username || null,
   };
 }
 

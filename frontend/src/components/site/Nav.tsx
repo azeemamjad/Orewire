@@ -59,6 +59,15 @@ const Nav = ({ showSiteTopBar = true }: NavProps) => {
   const [menuOpen, setMenuOpen] = useState(false);
 
   const username = user?.username || user?.email?.split("@")[0] || "you";
+  const initial = (
+    user?.firstName ||
+    user?.username ||
+    user?.email ||
+    "P"
+  )
+    .trim()
+    .slice(0, 1)
+    .toUpperCase() || "P";
 
   useEffect(() => {
     setMenuOpen(false);
@@ -123,44 +132,34 @@ const Nav = ({ showSiteTopBar = true }: NavProps) => {
                 <NotificationsMenu />
                 <Popover>
                   <PopoverTrigger asChild>
-                    <button className="inline-flex items-center gap-2 px-2.5 h-9 text-sm border border-border hover:bg-muted transition-colors">
-                      <span className="w-5 h-5 bg-accent text-accent-foreground grid place-items-center font-mono text-[10px] font-bold">
-                        {username.slice(0, 1).toUpperCase()}
+                    <button
+                      aria-label="Profile menu"
+                      className="inline-flex items-center gap-2 px-2.5 h-9 text-sm border border-border hover:bg-muted transition-colors"
+                    >
+                      <span className="w-6 h-6 rounded-full bg-accent text-accent-foreground grid place-items-center font-mono text-[11px] font-bold">
+                        {initial}
                       </span>
-                      <span className="font-mono text-xs hidden md:inline">@{username}</span>
+                      <span className="font-mono text-xs hidden md:inline uppercase tracking-[0.14em] font-bold">
+                        Profile
+                      </span>
                       <ChevronDown className="w-3 h-3 text-muted-foreground" />
                     </button>
                   </PopoverTrigger>
-                  <PopoverContent align="end" className="w-52 p-1">
-                    <div className="px-3 py-2 border-b border-border mb-1">
-                      <div className="font-mono text-xs font-semibold">@{username}</div>
-                      <div className="text-[11px] text-muted-foreground truncate">{user?.email}</div>
-                    </div>
-                    <Link to="/profile" className="block px-3 py-2 text-sm hover:bg-muted">
-                      Profile & Settings
+                  <PopoverContent align="end" className="w-48 p-1">
+                    <Link to="/profile" className="block px-3 py-2.5 text-sm hover:bg-muted">
+                      Profile
                     </Link>
-                    <Link to="/watchlist" className="block px-3 py-2 text-sm hover:bg-muted">
+                    <Link to="/watchlist" className="block px-3 py-2.5 text-sm hover:bg-muted">
                       Watchlist
-                    </Link>
-                    <Link to="/companies" className="block px-3 py-2 text-sm hover:bg-muted">
-                      Companies
                     </Link>
                     <button
                       onClick={handleLogout}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-muted inline-flex items-center gap-2 border-t border-border mt-1"
+                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted inline-flex items-center gap-2 border-t border-border mt-1"
                     >
                       <LogOut className="w-3.5 h-3.5" /> Sign out
                     </button>
                   </PopoverContent>
                 </Popover>
-                <button
-                  onClick={handleLogout}
-                  aria-label="Sign out"
-                  title="Sign out"
-                  className="hidden md:inline-flex items-center gap-1.5 h-9 px-3 text-xs font-mono uppercase tracking-[0.16em] font-bold border border-border hover:bg-muted transition-colors"
-                >
-                  <LogOut className="w-3.5 h-3.5" /> Sign out
-                </button>
               </>
             ) : (
               <Link
@@ -274,14 +273,28 @@ const Nav = ({ showSiteTopBar = true }: NavProps) => {
                   {isAuthenticated ? (
                     <>
                       <div className="flex items-center gap-3 px-1">
-                        <span className="w-9 h-9 bg-accent text-accent-foreground grid place-items-center font-mono text-xs font-bold">
-                          {username.slice(0, 1).toUpperCase()}
+                        <span className="w-9 h-9 rounded-full bg-accent text-accent-foreground grid place-items-center font-mono text-xs font-bold">
+                          {initial}
                         </span>
                         <div className="min-w-0">
-                          <div className="font-mono text-xs font-semibold truncate">@{username}</div>
-                          <div className="text-[11px] text-muted-foreground truncate">{user?.email}</div>
+                          <div className="text-sm font-semibold">Profile</div>
+                          <div className="text-[11px] text-muted-foreground truncate">@{username}</div>
                         </div>
                       </div>
+                      <Link
+                        to="/profile"
+                        onClick={() => setMenuOpen(false)}
+                        className="w-full inline-flex items-center justify-center h-10 border border-border text-sm font-medium hover:bg-muted transition-colors"
+                      >
+                        Profile
+                      </Link>
+                      <Link
+                        to="/watchlist"
+                        onClick={() => setMenuOpen(false)}
+                        className="w-full inline-flex items-center justify-center h-10 border border-border text-sm font-medium hover:bg-muted transition-colors"
+                      >
+                        Watchlist
+                      </Link>
                       <button
                         onClick={() => {
                           handleLogout();

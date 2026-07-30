@@ -837,12 +837,22 @@ async function migrate() {
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_social_post_items_run ON social_post_items(run_id, position)`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_social_post_items_source ON social_post_items(kind, source_id)`);
 
-  // WebBridge (ngrok) connection for live X posting from a logged-in Chrome session
+  // WebBridge (ngrok) connection — legacy; posting now uses official X API
   await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS bridge_url TEXT`);
   await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS bridge_token_enc TEXT`);
   await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS bridge_status TEXT DEFAULT 'unknown'`);
   await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS last_bridge_error TEXT`);
   await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS last_bridge_ok_at TIMESTAMPTZ`);
+
+  // Official X API v2 OAuth 1.0a credentials (encrypted)
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS x_api_key_enc TEXT`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS x_api_secret_enc TEXT`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS x_access_token_enc TEXT`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS x_access_secret_enc TEXT`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS x_api_status TEXT DEFAULT 'unknown'`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS last_x_api_error TEXT`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS last_x_api_ok_at TIMESTAMPTZ`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS x_api_username TEXT`);
 
   // Soft-delete: archived companies are hidden from public site until hard-deleted from Archive tab
   await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`);

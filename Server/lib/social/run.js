@@ -5,15 +5,15 @@ const { selectThreadItems } = require('./select');
 const { composeThread } = require('./compose');
 const {
   postThread,
-  isBridgeConfigured,
-  getBridgeCredentials,
+  getApiPublic,
+  isApiConfigured,
+  getApiCredentials,
   getBridgePublic,
 } = require('./bridge-client');
 
 let running = false;
 
 async function alreadyRanToday(timezone) {
-  // Compare calendar day in settings timezone via Postgres AT TIME ZONE
   const r = await db.query(
     `SELECT id FROM social_post_runs
       WHERE platform = $1
@@ -84,7 +84,7 @@ async function insertItems(runId, composedItems, intro, close) {
 }
 
 /**
- * Orchestrate select → compose → post via WebBridge → log.
+ * Orchestrate select → compose → post via X API → log.
  * @param {{ trigger?: 'cron'|'manual', force?: boolean }} opts
  */
 async function runSocialPost(opts = {}) {
@@ -111,17 +111,20 @@ async function runSocialPost(opts = {}) {
   if (!dryRun) {
     let creds;
     try {
-      creds = await getBridgeCredentials();
+      creds = await getApiCredentials();
     } catch (err) {
-      return { ok: false, error: err?.message || 'Invalid bridge URL' };
+      return { ok: false, error: err?.message || 'Invalid X API credentials' };
     }
-    if (!isBridgeConfigured(creds)) {
-      return { ok: false, error: 'WebBridge not configured — paste ngrok URL + token in Social Automation' };
-    }
-    if (settings.bridge_status !== 'ok' && trigger === 'cron') {
+    if (!isApiConfigured(creds)) {
       return {
         ok: false,
-        error: 'WebBridge not verified — open Social Automation and Test connection',
+        error: 'X API not configured — set credentials in Social Automation or env',
+      };
+    }
+    if (settings.x_api_status !== 'ok' && trigger === 'cron') {
+      return {
+        ok: false,
+        error: 'X API not verified — open Social Automation and Test connection',
       };
     }
   }
@@ -159,7 +162,7 @@ async function runSocialPost(opts = {}) {
         hashtags: composed.hashtags,
         dryRun,
         pageCount: composed.pages.length,
-        via: dryRun ? 'local' : 'webbridge',
+        via: dryRun ? 'local' : (posted.via || 'x-api'),
         preview: dryRun ? composed.pages : undefined,
       },
     });
@@ -181,13 +184,11 @@ async function runSocialPost(opts = {}) {
       error: msg,
       payload: {},
     });
-    if (/bridge|ngrok|extension|unauthorized|401/i.test(msg)) {
-      // Auto-pause cron on bridge failure so we don't spam errors
+    if (/x api|oauth|unauthorized|401|403|credentials|rate limit/i.test(msg)) {
       if (settings.enabled) {
         await updateSettings({ enabled: false });
       }
     }
-    // Legacy account status (no longer required for posting)
     if (/auth|login|cookie|csrf|session/i.test(msg)) {
       await markAccountStatus('needs_login', msg).catch(() => {});
     }
@@ -198,9 +199,10 @@ async function runSocialPost(opts = {}) {
 }
 
 async function getStatusSnapshot() {
-  const [settings, account, bridge, lastRun] = await Promise.all([
+  const [settings, account, xApi, bridge, lastRun] = await Promise.all([
     getSettings(),
     getAccount(),
+    getApiPublic(),
     getBridgePublic(),
     db.query(
       `SELECT id, started_at, finished_at, status, trigger, item_count, thread_url, error, dry_run
@@ -215,6 +217,7 @@ async function getStatusSnapshot() {
   return {
     settings,
     account: publicAccount(account),
+    xApi,
     bridge,
     lastRun: lastRun.rows[0] || null,
     cronEnabledEnv: process.env.SOCIAL_X_CRON_ENABLED !== 'false',
