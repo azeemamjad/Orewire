@@ -225,29 +225,32 @@ const Watchlist = () => {
   };
 
   return (
-    <SiteLayout morningBrief searchHeroBar className="min-h-screen bg-background text-foreground flex flex-col">
-      <section className="bg-background border-b border-border">
-        <div className="max-w-[1200px] mx-auto px-4 lg:px-6 py-10 lg:py-14 flex flex-col lg:flex-row lg:items-end justify-between gap-6">
-          <div>
-            <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-2">Your list</div>
-            <h1 className="font-display text-4xl lg:text-5xl font-extrabold leading-tight mb-3">Watchlist</h1>
-            <p className="text-sm text-foreground/70 max-w-md">
-              Track the juniors, indexes, commodities and currencies you care about. {companyItems.length} companies · {indexItems.length} indexes · {commodityItems.length} commodities · {currencyItems.length} currencies
-            </p>
+    <SiteLayout morningBrief className="min-h-screen bg-background text-foreground flex flex-col">
+      <section className="border-b border-border bg-card">
+        <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-8">
+          <div className="flex items-end justify-between flex-wrap gap-4">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Your list</div>
+              <h1 className="font-display text-4xl md:text-5xl font-bold leading-tight">Watchlist</h1>
+              <p className="text-muted-foreground mt-2 max-w-xl">
+                Track the juniors, indexes, commodities and currencies you care about.{" "}
+                {companyItems.length} companies · {indexItems.length} indexes · {commodityItems.length} commodities · {currencyItems.length} currencies
+              </p>
+            </div>
+            <button
+              onClick={() => { setShowResults(true); setTimeout(() => document.getElementById("watchlist-search-input")?.focus(), 50); }}
+              className="inline-flex items-center gap-2 bg-accent text-accent-foreground px-5 h-11 text-sm font-semibold hover:opacity-90 transition-opacity"
+            >
+              <Plus className="w-4 h-4" /> Add company
+            </button>
           </div>
-          <button
-            onClick={() => { setShowResults(true); setTimeout(() => document.getElementById("watchlist-search-input")?.focus(), 50); }}
-            className="inline-flex items-center gap-2 bg-accent text-accent-foreground px-5 h-11 text-sm font-semibold hover:opacity-90 transition-opacity self-start lg:self-auto"
-          >
-            <Plus className="w-4 h-4" /> Add company
-          </button>
         </div>
       </section>
 
-      <main className="flex-1 bg-surface/30">
-        <div className="max-w-[1200px] mx-auto px-4 lg:px-6 py-10 space-y-6">
+      <main className="flex-1">
+        <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-8 space-y-6">
           {/* Search */}
-          <div className="bg-surface border border-border">
+          <div className="bg-card border border-border">
             <div className="relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
@@ -266,7 +269,7 @@ const Watchlist = () => {
                   const already = items.some(i => i.itemType === "company" && i.itemKey === String(c.id));
                   return (
                     <button key={c.id} disabled={already} onClick={() => handleAddCompany(c)}
-                      className="bg-surface text-left px-4 py-3 flex items-center justify-between gap-3 hover:bg-background disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                      className="bg-card text-left px-4 py-3 flex items-center justify-between gap-3 hover:bg-background disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                       <div className="min-w-0">
                         <div className="flex items-baseline gap-2">
                           <span className="font-mono font-bold text-sm">{c.ticker || "-"}</span>
