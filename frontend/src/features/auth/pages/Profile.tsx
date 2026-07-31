@@ -3,8 +3,16 @@ import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import SiteLayout from "@/layouts/SiteLayout";
 import { Switch } from "@/components/ui/switch";
-import { fetchProfile, updateProfile, updateTwoStep, updateNotifications, type AuthUser } from "@/lib/api";
+import {
+  fetchProfile,
+  updateProfile,
+  updateTwoStep,
+  updateNotifications,
+  updateCookieConsent,
+  type AuthUser,
+} from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
+import { getCookieConsent, setCookieConsent } from "@/lib/cookie-consent";
 
 const Profile = () => {
   const navigate = useNavigate();
@@ -16,10 +24,12 @@ const Profile = () => {
   const [twoStepEnabled, setTwoStepEnabled] = useState(false);
   const [briefingEnabled, setBriefingEnabled] = useState(true);
   const [watchlistAlertsEnabled, setWatchlistAlertsEnabled] = useState(true);
+  const [analyticsEnabled, setAnalyticsEnabled] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingTwoStep, setSavingTwoStep] = useState(false);
   const [savingNotification, setSavingNotification] = useState<string | null>(null);
+  const [savingAnalytics, setSavingAnalytics] = useState(false);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) navigate("/login?redirect=/profile");
@@ -37,6 +47,11 @@ const Profile = () => {
         setTwoStepEnabled(!!data.user.twoStepEnabled);
         setBriefingEnabled(data.user.briefingEnabled !== false);
         setWatchlistAlertsEnabled(data.user.watchlistAlertsEnabled !== false);
+        const consent = data.user.cookieConsent || getCookieConsent();
+        setAnalyticsEnabled(consent === "accepted");
+        if (consent === "accepted" || consent === "necessary") {
+          setCookieConsent(consent);
+        }
       })
       .catch((err) => toast.error(err instanceof Error ? err.message : "Failed to load profile"))
       .finally(() => setLoadingProfile(false));
@@ -77,6 +92,24 @@ const Profile = () => {
       toast.error(err instanceof Error ? err.message : "Could not update notifications");
     } finally {
       setSavingNotification(null);
+    }
+  };
+
+  const onToggleAnalytics = async (next: boolean) => {
+    const prev = analyticsEnabled;
+    setAnalyticsEnabled(next);
+    setSavingAnalytics(true);
+    const choice = next ? "accepted" : "necessary";
+    try {
+      setCookieConsent(choice);
+      await updateCookieConsent(choice);
+      toast.success(next ? "Analytics cookies enabled." : "Analytics cookies turned off.");
+    } catch (err) {
+      setAnalyticsEnabled(prev);
+      setCookieConsent(prev ? "accepted" : "necessary");
+      toast.error(err instanceof Error ? err.message : "Could not update cookie preference");
+    } finally {
+      setSavingAnalytics(false);
     }
   };
 
@@ -228,6 +261,29 @@ const Profile = () => {
                 />
               </div>
             ))}
+          </div>
+        </section>
+
+        <section className="border border-border bg-surface p-6 mt-6">
+          <h2 className="font-display text-xl font-bold mb-2">Privacy</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Control optional analytics cookies. Essential cookies for sign-in still work either way.{" "}
+            <Link to="/privacy" className="underline hover:text-foreground">Privacy Policy</Link>
+          </p>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="font-medium text-sm">Analytics cookies</div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                Google Analytics helps us understand how OreWire is used.
+              </div>
+            </div>
+            <Switch
+              checked={analyticsEnabled}
+              disabled={loadingProfile || savingAnalytics}
+              onCheckedChange={onToggleAnalytics}
+              aria-label="Analytics cookies"
+              className="data-[state=checked]:bg-accent"
+            />
           </div>
         </section>
       </main>

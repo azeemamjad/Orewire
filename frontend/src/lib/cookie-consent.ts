@@ -1,4 +1,4 @@
-import { loadGoogleAnalytics } from "@/lib/google-analytics";
+import { disableGoogleAnalytics, loadGoogleAnalytics } from "@/lib/google-analytics";
 
 const STORAGE_KEY = "orewire.cookie_consent";
 const CONSENT_EVENT = "orewire-cookie-consent";
@@ -33,6 +33,7 @@ export function setCookieConsent(choice: CookieConsentChoice): void {
 
 export function applyCookieConsent(choice: CookieConsentChoice | null): void {
   if (choice === "accepted") loadGoogleAnalytics();
+  else disableGoogleAnalytics();
 }
 
 export function analyticsAllowed(): boolean {
