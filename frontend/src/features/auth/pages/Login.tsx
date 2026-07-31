@@ -35,6 +35,8 @@ const Login = () => {
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [briefingEnabled, setBriefingEnabled] = useState(false);
   const [resendLeft, setResendLeft] = useState(0);
   const [error, setError] = useState<string | null>(new URLSearchParams(location.search).get("oauth_error"));
   const [submitting, setSubmitting] = useState(false);
@@ -89,6 +91,9 @@ const Login = () => {
           navigate(redirectTo);
         }
       } else {
+        if (!acceptedTerms) {
+          throw new Error("You must agree to the terms to create an account");
+        }
         const resp = await register(
           firstName.trim(),
           lastName.trim(),
@@ -96,6 +101,7 @@ const Login = () => {
           email.trim(),
           password,
           company.trim() || undefined,
+          { acceptedTerms: true, briefingEnabled },
         );
         if (resp.requiresVerification) {
           setStage("verify-register");
@@ -316,6 +322,37 @@ const Login = () => {
                     </>
                   )}
 
+                  {mode === "register" && stage === "form" && (
+                    <div className="space-y-3 pt-1">
+                      <label className="flex items-start gap-3 text-xs leading-relaxed text-muted-foreground cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={acceptedTerms}
+                          onChange={(e) => setAcceptedTerms(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 shrink-0 accent-[hsl(var(--accent))]"
+                          required
+                        />
+                        <span>
+                          By continuing you agree to our{" "}
+                          <Link to="/terms" className="underline hover:text-foreground">terms</Link>
+                          . OreWire is editorial intelligence, not investment advice.
+                        </span>
+                      </label>
+                      <label className="flex items-start gap-3 text-xs leading-relaxed text-muted-foreground cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={briefingEnabled}
+                          onChange={(e) => setBriefingEnabled(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 shrink-0 accent-[hsl(var(--accent))]"
+                        />
+                        <span>
+                          Send me the optional{" "}
+                          <span className="text-foreground font-medium">morning summary</span> email.
+                        </span>
+                      </label>
+                    </div>
+                  )}
+
                   {error && (
                     <div className="text-sm text-destructive bg-destructive/10 border border-destructive/20 px-3 py-2">
                       {error}
@@ -324,7 +361,7 @@ const Login = () => {
 
                   <button
                     type="submit"
-                    disabled={submitting}
+                    disabled={submitting || (mode === "register" && stage === "form" && !acceptedTerms)}
                     className="w-full h-12 bg-accent text-accent-foreground hover:bg-accent/90 disabled:opacity-60 font-mono text-[12px] uppercase tracking-[0.22em] font-bold inline-flex items-center justify-center gap-2 transition-colors"
                   >
                     <Lock className="w-3.5 h-3.5" />
@@ -343,10 +380,12 @@ const Login = () => {
                     </button>
                   )}
 
-                  <p className="text-xs text-muted-foreground mt-6 leading-relaxed">
-                    By continuing you agree to our{" "}
-                    <Link to="/terms" className="underline hover:text-foreground">terms</Link>. OreWire is editorial intelligence, not investment advice.
-                  </p>
+                  {mode === "signin" && stage === "form" && (
+                    <p className="text-xs text-muted-foreground mt-6 leading-relaxed">
+                      By continuing you agree to our{" "}
+                      <Link to="/terms" className="underline hover:text-foreground">terms</Link>. OreWire is editorial intelligence, not investment advice.
+                    </p>
+                  )}
 
                   <div className="mt-6 pt-5 border-t border-border flex items-center justify-between text-xs">
                     <Link to="/" className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
@@ -354,7 +393,12 @@ const Login = () => {
                     </Link>
                     <button
                       type="button"
-                      onClick={() => setMode(mode === "register" ? "signin" : "register")}
+                      onClick={() => {
+                        setMode(mode === "register" ? "signin" : "register");
+                        setAcceptedTerms(false);
+                        setBriefingEnabled(false);
+                        setError(null);
+                      }}
                       className="text-muted-foreground hover:text-foreground"
                     >
                       {mode === "register" ? "Have an account? Sign in" : "New here? Create account"}

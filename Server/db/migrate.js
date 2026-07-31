@@ -421,6 +421,16 @@ async function migrate() {
   await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_provider TEXT`);
   await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_subject TEXT`);
   await safeQuery(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_oauth_identity ON users(oauth_provider, oauth_subject) WHERE oauth_provider IS NOT NULL AND oauth_subject IS NOT NULL`);
+  await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cookie_consent TEXT`);
+  await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cookie_consent_at TIMESTAMPTZ`);
+  await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ`);
+  // Grandfather password accounts only; Google users with NULL must accept after OAuth.
+  await safeQuery(`
+    UPDATE users
+       SET terms_accepted_at = COALESCE(created_at, NOW())
+     WHERE terms_accepted_at IS NULL
+       AND (oauth_provider IS NULL OR oauth_provider = '')
+  `);
 
   // VA task queue — deduplicated items needing human attention
   await db.query(`

@@ -6,7 +6,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import AppRoutes from "@/app/routes";
 import WatchlistAlertsRunner from "@/components/shared/WatchlistAlertsRunner";
 import ForcePasswordChangeGuard from "@/components/shared/ForcePasswordChangeGuard";
+import ForceSignupAgreementsGuard from "@/components/shared/ForceSignupAgreementsGuard";
 import ScrollToTop from "@/components/shared/ScrollToTop";
+import CookieConsent from "@/components/shared/CookieConsent";
 
 const queryClient = new QueryClient();
 
@@ -19,7 +21,9 @@ const App = () => (
       <BrowserRouter>
         <ScrollToTop />
         <ForcePasswordChangeGuard />
+        <ForceSignupAgreementsGuard />
         <AppRoutes />
+        <CookieConsent />
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

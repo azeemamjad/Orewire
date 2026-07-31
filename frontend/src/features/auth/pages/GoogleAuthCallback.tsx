@@ -21,7 +21,12 @@ const GoogleAuthCallback = () => {
       .then((resp) => {
         if (!active) return;
         setAuth(resp);
-        navigate(resp.redirectTo || "/watchlist", { replace: true });
+        const redirectTo = resp.redirectTo || "/watchlist";
+        if (resp.user?.termsAccepted === false) {
+          navigate(`/auth/agree?redirect=${encodeURIComponent(redirectTo)}`, { replace: true });
+          return;
+        }
+        navigate(redirectTo, { replace: true });
       })
       .catch((err) => {
         if (!active) return;

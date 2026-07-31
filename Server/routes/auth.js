@@ -165,7 +165,8 @@ async function upsertGoogleUser(profile) {
   if (profile.email_verified === false) throw new Error('Google account email is not verified');
 
   const existingByOauth = await db.query(
-    `SELECT id, email, username, first_name, last_name, two_step_enabled, email_verified, must_change_password
+    `SELECT id, email, username, first_name, last_name, two_step_enabled, email_verified, must_change_password,
+            terms_accepted_at, briefing_enabled
        FROM users
       WHERE oauth_provider = 'google' AND oauth_subject = $1
       LIMIT 1`,
@@ -175,7 +176,8 @@ async function upsertGoogleUser(profile) {
 
   if (!user) {
     const existingByEmail = await db.query(
-      `SELECT id, email, username, first_name, last_name, two_step_enabled, email_verified, must_change_password
+      `SELECT id, email, username, first_name, last_name, two_step_enabled, email_verified, must_change_password,
+              terms_accepted_at, briefing_enabled
          FROM users
         WHERE email = $1
         LIMIT 1`,
@@ -196,7 +198,8 @@ async function upsertGoogleUser(profile) {
               first_name = COALESCE(NULLIF(first_name, ''), $2),
               last_name = COALESCE(NULLIF(last_name, ''), $3)
         WHERE id = $4
-      RETURNING id, email, username, first_name, last_name, two_step_enabled, email_verified, must_change_password`,
+      RETURNING id, email, username, first_name, last_name, two_step_enabled, email_verified, must_change_password,
+                terms_accepted_at, briefing_enabled`,
       [subject, firstName, lastName, user.id],
     );
     return updated.rows[0];
@@ -208,9 +211,11 @@ async function upsertGoogleUser(profile) {
   const { salt, hash } = hashPassword(secret);
   const inserted = await db.query(
     `INSERT INTO users
-      (first_name, last_name, username, email, password, salt, email_verified, company, oauth_provider, oauth_subject, must_change_password, password_set_at)
-     VALUES ($1, $2, $3, $4, $5, $6, TRUE, NULL, 'google', $7, FALSE, NOW())
-     RETURNING id, email, username, first_name, last_name, two_step_enabled, email_verified, must_change_password`,
+      (first_name, last_name, username, email, password, salt, email_verified, company, oauth_provider, oauth_subject,
+       must_change_password, password_set_at, terms_accepted_at, briefing_enabled)
+     VALUES ($1, $2, $3, $4, $5, $6, TRUE, NULL, 'google', $7, FALSE, NOW(), NULL, FALSE)
+     RETURNING id, email, username, first_name, last_name, two_step_enabled, email_verified, must_change_password,
+               terms_accepted_at, briefing_enabled`,
     [firstName, lastName, username, email, hash, salt, subject],
   );
   return inserted.rows[0];
@@ -231,6 +236,8 @@ function authPayloadFromUser(user) {
       lastName: user.last_name || null,
       twoStepEnabled: !!user.two_step_enabled,
       mustChangePassword: !!user.must_change_password,
+      termsAccepted: !!user.terms_accepted_at,
+      briefingEnabled: user.briefing_enabled != null ? !!user.briefing_enabled : true,
     },
     token: accessToken,
   };
@@ -373,8 +380,22 @@ function trimCompany(value) {
 
 router.post('/register', express.json(), async (req, res) => {
   try {
-    const { firstName, lastName, username, email, password, company } = req.body || {};
-    if (!firstName || !lastName || !username || !email || !password) return res.status(400).json({ error: 'First name, last name, username, email and password are required' });
+    const {
+      firstName,
+      lastName,
+      username,
+      email,
+      password,
+      company,
+      acceptedTerms,
+      briefingEnabled,
+    } = req.body || {};
+    if (!firstName || !lastName || !username || !email || !password) {
+      return res.status(400).json({ error: 'First name, last name, username, email and password are required' });
+    }
+    if (!acceptedTerms) {
+      return res.status(400).json({ error: 'You must agree to the terms to create an account' });
+    }
     const first = validateName(firstName, 'First name');
     if (!first.ok) return res.status(400).json({ error: first.error });
     const last = validateName(lastName, 'Last name');
@@ -395,11 +416,14 @@ router.post('/register', express.json(), async (req, res) => {
     if (existingUsername.rows.length > 0) {
       return res.status(409).json({ error: 'Username is already taken' });
     }
+    const wantBriefing = !!briefingEnabled;
     const inserted = await db.query(
-      `INSERT INTO users (first_name, last_name, username, email, password, salt, email_verified, company)
-       VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7)
+      `INSERT INTO users
+         (first_name, last_name, username, email, password, salt, email_verified, company,
+          terms_accepted_at, briefing_enabled)
+       VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, NOW(), $8)
        RETURNING id`,
-      [first.value, last.value, username.trim(), email.toLowerCase(), hash, salt, trimCompany(company)]
+      [first.value, last.value, username.trim(), email.toLowerCase(), hash, salt, trimCompany(company), wantBriefing]
     );
     const userId = inserted.rows[0].id;
 
@@ -684,7 +708,8 @@ router.get('/profile', requireUser, async (req, res) => {
   try {
     const r = await db.query(
       `SELECT id, email, username, first_name, last_name, company, two_step_enabled, email_verified, created_at,
-              must_change_password, briefing_enabled, watchlist_alerts_enabled
+              must_change_password, briefing_enabled, watchlist_alerts_enabled, cookie_consent, cookie_consent_at,
+              terms_accepted_at
          FROM users
         WHERE id = $1`,
       [req.user.id]
@@ -705,6 +730,11 @@ router.get('/profile', requireUser, async (req, res) => {
         mustChangePassword: !!user.must_change_password,
         briefingEnabled: user.briefing_enabled != null ? !!user.briefing_enabled : true,
         watchlistAlertsEnabled: user.watchlist_alerts_enabled != null ? !!user.watchlist_alerts_enabled : true,
+        cookieConsent: user.cookie_consent === 'accepted' || user.cookie_consent === 'necessary'
+          ? user.cookie_consent
+          : null,
+        cookieConsentAt: user.cookie_consent_at || null,
+        termsAccepted: !!user.terms_accepted_at,
       },
     });
   } catch (err) {
@@ -853,6 +883,68 @@ router.patch('/profile/notifications', requireUser, express.json(), async (req, 
   }
 });
 
+// PATCH /api/auth/profile/cookie-consent — store Accept all / Necessary only for logged-in users
+router.patch('/profile/cookie-consent', requireUser, express.json(), async (req, res) => {
+  try {
+    const consent = String(req.body?.consent || req.body?.cookieConsent || '').trim();
+    if (consent !== 'accepted' && consent !== 'necessary') {
+      return res.status(400).json({ error: 'consent must be "accepted" or "necessary"' });
+    }
+    const updated = await db.query(
+      `UPDATE users
+          SET cookie_consent = $1, cookie_consent_at = NOW()
+        WHERE id = $2
+      RETURNING cookie_consent, cookie_consent_at`,
+      [consent, req.user.id]
+    );
+    const user = updated.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({
+      cookieConsent: user.cookie_consent,
+      cookieConsentAt: user.cookie_consent_at,
+    });
+  } catch (err) {
+    console.error('Cookie consent update error:', err);
+    res.status(500).json({ error: 'Failed to update cookie consent' });
+  }
+});
+
+// PATCH /api/auth/profile/signup-agreements — required after Google OAuth signup
+router.patch('/profile/signup-agreements', requireUser, express.json(), async (req, res) => {
+  try {
+    const acceptedTerms = !!req.body?.acceptedTerms;
+    if (!acceptedTerms) {
+      return res.status(400).json({ error: 'You must agree to the terms to continue' });
+    }
+    const briefingEnabled = !!req.body?.briefingEnabled;
+    const updated = await db.query(
+      `UPDATE users
+          SET terms_accepted_at = COALESCE(terms_accepted_at, NOW()),
+              briefing_enabled = $1
+        WHERE id = $2
+      RETURNING id, email, username, first_name, last_name, terms_accepted_at, briefing_enabled, must_change_password`,
+      [briefingEnabled, req.user.id]
+    );
+    const user = updated.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username || null,
+        firstName: user.first_name || null,
+        lastName: user.last_name || null,
+        termsAccepted: !!user.terms_accepted_at,
+        briefingEnabled: !!user.briefing_enabled,
+        mustChangePassword: !!user.must_change_password,
+      },
+    });
+  } catch (err) {
+    console.error('Signup agreements update error:', err);
+    res.status(500).json({ error: 'Failed to save agreements' });
+  }
+});
+
 // POST /api/auth/refresh — exchange refresh token for a new access token
 router.post('/refresh', express.json(), (req, res) => {
   const { refreshToken } = req.body || {};
@@ -873,13 +965,31 @@ router.get('/me', async (req, res) => {
   const payload = verifyAccessToken(token);
   if (!payload) return res.status(401).json({ authenticated: false });
   let mustChangePassword = false;
+  let cookieConsent = null;
+  let termsAccepted = true;
+  let briefingEnabled = true;
   try {
-    const r = await db.query('SELECT must_change_password FROM users WHERE id = $1', [payload.sub]);
+    const r = await db.query(
+      'SELECT must_change_password, cookie_consent, terms_accepted_at, briefing_enabled FROM users WHERE id = $1',
+      [payload.sub],
+    );
     mustChangePassword = !!r.rows[0]?.must_change_password;
+    const c = r.rows[0]?.cookie_consent;
+    cookieConsent = c === 'accepted' || c === 'necessary' ? c : null;
+    termsAccepted = !!r.rows[0]?.terms_accepted_at;
+    briefingEnabled = r.rows[0]?.briefing_enabled != null ? !!r.rows[0].briefing_enabled : true;
   } catch { /* best-effort; fall back to false */ }
   res.json({
     authenticated: true,
-    user: { id: payload.sub, email: payload.email, username: payload.username || null, mustChangePassword },
+    user: {
+      id: payload.sub,
+      email: payload.email,
+      username: payload.username || null,
+      mustChangePassword,
+      cookieConsent,
+      termsAccepted,
+      briefingEnabled,
+    },
   });
 });
 

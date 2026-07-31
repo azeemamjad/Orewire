@@ -18,6 +18,9 @@ export interface AuthUser {
   mustChangePassword?: boolean;
   briefingEnabled?: boolean;
   watchlistAlertsEnabled?: boolean;
+  cookieConsent?: "accepted" | "necessary" | null;
+  cookieConsentAt?: string | null;
+  termsAccepted?: boolean;
 }
 
 export interface AuthResponse {
@@ -178,6 +181,7 @@ export async function register(
   email?: string,
   password?: string,
   company?: string,
+  options?: { acceptedTerms?: boolean; briefingEnabled?: boolean },
 ): Promise<AuthResponse> {
   const isLegacy = firstNameOrEmail.includes('@') && !username;
   const body = isLegacy
@@ -188,6 +192,8 @@ export async function register(
           firstNameOrEmail.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '').slice(0, 24) || 'user',
         email: firstNameOrEmail,
         password: lastNameOrPassword,
+        acceptedTerms: true,
+        briefingEnabled: !!options?.briefingEnabled,
       }
     : {
         firstName: firstNameOrEmail,
@@ -196,7 +202,12 @@ export async function register(
         email: email!,
         password: password!,
         company: company?.trim() || undefined,
+        acceptedTerms: !!options?.acceptedTerms,
+        briefingEnabled: !!options?.briefingEnabled,
       };
+  if (!body.acceptedTerms) {
+    throw new Error('You must agree to the terms to create an account');
+  }
   const resp = await authRequest('/register', body);
   if (resp.accessToken || resp.token) setAuth(resp);
   return resp;
@@ -314,4 +325,41 @@ export async function updateNotifications(input: {
   const current = getAuthUser();
   if (current) setAuth({ user: { ...current, briefingEnabled: data.briefingEnabled, watchlistAlertsEnabled: data.watchlistAlertsEnabled } });
   return data;
+}
+
+export async function updateCookieConsent(
+  consent: "accepted" | "necessary",
+): Promise<{ cookieConsent: "accepted" | "necessary"; cookieConsentAt?: string | null }> {
+  const res = await authFetch(`${API_BASE}/auth/profile/cookie-consent`, {
+    method: "PATCH",
+    body: JSON.stringify({ consent }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Failed to save cookie consent: ${res.status}`);
+  const current = getAuthUser();
+  if (current) {
+    setAuth({
+      user: {
+        ...current,
+        cookieConsent: data.cookieConsent,
+        cookieConsentAt: data.cookieConsentAt ?? null,
+      },
+    });
+  }
+  return data;
+}
+
+export async function completeSignupAgreements(input: {
+  acceptedTerms: boolean;
+  briefingEnabled?: boolean;
+}): Promise<ProfileResponse> {
+  const res = await authFetch(`${API_BASE}/auth/profile/signup-agreements`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Failed to save agreements: ${res.status}`);
+  const current = getAuthUser();
+  if (data?.user) setAuth({ user: { ...current, ...data.user } });
+  return data as ProfileResponse;
 }
