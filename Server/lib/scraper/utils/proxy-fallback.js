@@ -20,6 +20,11 @@ async function getProxyTiers() {
 
   const tiers = [];
   const enabled = getCachedProxies().filter((p) => p.enabled);
+  // Optional: PROXY_ONLY_TIER=direct|residential|datacenter (comma-separated)
+  const only = (process.env.PROXY_ONLY_TIER || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
 
   for (const row of enabled.filter((p) => p.tier === 'datacenter')) {
     const proxy = rowToPlaywrightProxy(row);
@@ -52,7 +57,9 @@ async function getProxyTiers() {
     password: direct.password,
   });
 
-  return tiers;
+  if (!only.length) return tiers;
+  const filtered = tiers.filter((t) => only.includes(t.label));
+  return filtered.length ? filtered : tiers;
 }
 
 function buildLaunchOptions(tier) {
@@ -69,7 +76,8 @@ function buildLaunchOptions(tier) {
 }
 
 function isNetworkError(err) {
-  const msg = (err.message || '').toLowerCase();
+  const msg = (err.message || String(err) || '').toLowerCase();
+  const name = String(err?.name || '').toLowerCase();
   return msg.includes('err_timed_out')
       || msg.includes('err_connection')
       || msg.includes('err_proxy')
@@ -78,7 +86,10 @@ function isNetworkError(err) {
       || msg.includes('econnreset')
       || msg.includes('err_name_not_resolved')
       || msg.includes('err_sock')
-      || msg.includes('err_tunnel_connection_failed');
+      || msg.includes('err_tunnel_connection_failed')
+      || msg.includes('timeout')
+      || msg.includes('timed out')
+      || name.includes('timeout');
 }
 
 async function withProxyFallback(fn) {

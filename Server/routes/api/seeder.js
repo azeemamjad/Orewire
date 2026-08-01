@@ -270,7 +270,8 @@ router.get('/tsx/preview', async (req, res) => {
 // Seed-state helpers (24 h throttle per source)
 // ---------------------------------------------------------------------------
 
-const SEED_STATE_FILE = path.join(__dirname, '../data/seed-state.json');
+// Server/data/seed-state.json (routes/api → ../../data)
+const SEED_STATE_FILE = path.join(__dirname, '../../data/seed-state.json');
 
 function loadSeedState() {
   try {
@@ -354,10 +355,6 @@ router.post('/cse', async (req, res) => {
     });
   }
 
-  const state = loadSeedState();
-  state.cse = new Date().toISOString();
-  saveSeedState(state);
-
   const logs = [];
   let xlsxPath = null;
   const saved = applyScraperEnv({ relay: false });
@@ -413,6 +410,10 @@ router.post('/cse', async (req, res) => {
     } finally {
       client.release();
     }
+
+    const state = loadSeedState();
+    state.cse = new Date().toISOString();
+    saveSeedState(state);
 
     res.json(stats);
   } catch (err) {
@@ -476,10 +477,15 @@ router.get('/cse/preview', async (req, res) => {
 // ---------------------------------------------------------------------------
 
 function parseAsxDate(raw) {
-  if (!raw) return null;
+  if (raw === null || raw === undefined || raw === '') return null;
+  // Prefer string DD/MM/YYYY (ASX). Avoid Excel serials — xlsx may misread AU dates as US.
   const s = String(raw).trim();
   const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.round(raw) * 86400000);
+    return d.toISOString().split('T')[0];
+  }
   return s || null;
 }
 
@@ -520,9 +526,10 @@ async function fetchAsxSeed() {
 }
 
 function parseAsxCsv(csvPath) {
-  const wb      = XLSX.readFile(csvPath, { raw: false });
+  // raw + no cellDates keeps Listing date as DD/MM/YYYY strings from the CSV
+  const wb      = XLSX.readFile(csvPath, { raw: true, cellDates: false });
   const sheet   = wb.Sheets[wb.SheetNames[0]];
-  const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+  const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
   const hRow    = detectHeaderRow(rawRows);
   return parseSheet(sheet, hRow);
 }
@@ -539,11 +546,6 @@ router.post('/asx', async (req, res) => {
       retryAfter: throttle.minutesLeft * 60,
     });
   }
-
-  // Record start time so we don't re-run even if the scraper crashes
-  const state = loadSeedState();
-  state.asx = new Date().toISOString();
-  saveSeedState(state);
 
   let csvPath = null;
   try {
@@ -597,6 +599,10 @@ router.post('/asx', async (req, res) => {
     } finally {
       client.release();
     }
+
+    const state = loadSeedState();
+    state.asx = new Date().toISOString();
+    saveSeedState(state);
 
     res.json(stats);
   } catch (err) {

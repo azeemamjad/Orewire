@@ -127,11 +127,17 @@ async function scrapeAsxFilingsOnPage(page, context, ticker, { downloadDir, days
     await page.waitForTimeout(1000);
   } catch { /* no banner */ }
 
-  await page.waitForTimeout(5000);
-
   const tableXPath = '//*[@id="markets_announcements"]/div[1]/div[3]/table[1]';
+  const pdfLinkSel =
+    'a[href*="markitdigital"], a[href*=".pdf"], a[href*="displayAnnouncement"], a[href*="/asxpdf/"]';
   try {
     await page.waitForSelector(`xpath=${tableXPath}`, { timeout: 30000, state: 'visible' });
+    // Rows hydrate asynchronously; wait until at least one PDF link is present.
+    await page.waitForSelector(`#markets_announcements table tbody tr ${pdfLinkSel}`, {
+      timeout: 30000,
+      state: 'attached',
+    });
+    await page.waitForTimeout(1500);
   } catch {
     const hasSection = await page.locator('#markets_announcements').count();
     console.error(`[ASX] ${ticker}: table not found (markets_announcements present: ${hasSection > 0})`);
@@ -154,7 +160,10 @@ async function scrapeAsxFilingsOnPage(page, context, ticker, { downloadDir, days
     const row = rows.nth(i);
     const tds = row.locator('td');
     const cellCount = await tds.count();
-    if (cellCount < 6) continue;
+    if (cellCount < 5) {
+      console.error(`[ASX] ${ticker}: row ${i} has ${cellCount} cells, skipping`);
+      continue;
+    }
 
     const rawDate = (await tds.nth(0).textContent() || '').trim();
     const annDate = parseAsxDate(rawDate);
@@ -163,17 +172,22 @@ async function scrapeAsxFilingsOnPage(page, context, ticker, { downloadDir, days
       continue;
     }
 
-    let link = tds.nth(5).locator('a').first();
+    // Prefer real PDF/CDN links; avoid javascript:void "and N more" expanders.
+    let link = row.locator(pdfLinkSel).first();
     if ((await link.count()) === 0) {
-      link = row.locator('a[href*=".pdf"], a[href*="markitdigital"], a[href*="displayAnnouncement"]').first();
+      console.error(`[ASX] ${ticker}: row ${i} has no PDF link (${rawDate.split('\n')[0].trim() || 'no date'})`);
+      continue;
     }
-    if ((await link.count()) === 0) continue;
 
     const href = await link.getAttribute('href');
-    if (!href) continue;
+    if (!href || href.startsWith('javascript:')) {
+      console.error(`[ASX] ${ticker}: row ${i} bad href`);
+      continue;
+    }
 
     const rawText = (await link.textContent()) || '';
     const headline = cleanHeadline(rawText);
+    // Price-sensitive flag lives in the "yes"/"no" column (index 4 on current ASX markup).
     const priceSens = (await tds.nth(4).textContent() || '').trim();
 
     const cleanHref = href.replace(/&v=undefined$/i, '');
