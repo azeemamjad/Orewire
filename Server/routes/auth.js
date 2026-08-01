@@ -815,32 +815,63 @@ router.patch('/profile/two-step', requireUser, express.json(), async (req, res) 
   }
 });
 
-// POST /api/auth/change-password — change own password (clears the
-// admin-issued temporary-password flag). Requires the current password.
+// POST /api/auth/change-password/request-otp — email a code to the signed-in user
+router.post('/change-password/request-otp', requireUser, express.json(), async (req, res) => {
+  try {
+    const r = await db.query('SELECT id, email, email_verified FROM users WHERE id = $1', [req.user.id]);
+    const user = r.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user.email) return res.status(400).json({ error: 'No email on this account' });
+
+    const canResend = await canResendOtp(user.email, 'change_password');
+    if (!canResend.ok) {
+      return res.status(429).json({
+        error: `Please wait ${Math.ceil(canResend.remainingMs / 1000)} seconds before requesting another code`,
+        retryAfterMs: canResend.remainingMs,
+      });
+    }
+    await issueAndSendOtp({ userId: user.id, email: user.email, purpose: 'change_password' });
+    res.json({
+      ok: true,
+      email: user.email,
+      retryAfterMs: OTP_RESEND_COOLDOWN_MS,
+    });
+  } catch (err) {
+    console.error('Change password request OTP error:', err);
+    res.status(500).json({ error: 'Could not send verification code' });
+  }
+});
+
+// POST /api/auth/change-password — OTP + new password (no current password)
 router.post('/change-password', requireUser, express.json(), async (req, res) => {
   try {
-    const { currentPassword, newPassword } = req.body || {};
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({ error: 'Current and new password are required' });
+    const { otp, newPassword } = req.body || {};
+    if (!otp || !newPassword) {
+      return res.status(400).json({ error: 'Verification code and new password are required' });
     }
     if (String(newPassword).length < 6) {
       return res.status(400).json({ error: 'New password must be at least 6 characters' });
     }
-    const r = await db.query('SELECT password, salt FROM users WHERE id = $1', [req.user.id]);
+
+    const r = await db.query('SELECT id, email, password, salt FROM users WHERE id = $1', [req.user.id]);
     const user = r.rows[0];
     if (!user) return res.status(404).json({ error: 'User not found' });
-    if (!verifyPassword(currentPassword, user.salt, user.password)) {
-      return res.status(401).json({ error: 'Current password is incorrect' });
+
+    const verify = await consumeOtp(user.email, 'change_password', otp);
+    if (!verify.ok) return res.status(400).json({ error: verify.error });
+    if (verify.userId && verify.userId !== user.id) {
+      return res.status(400).json({ error: 'Invalid or expired code' });
     }
     if (verifyPassword(newPassword, user.salt, user.password)) {
       return res.status(400).json({ error: 'New password must be different from the current password' });
     }
+
     const { salt, hash } = hashPassword(newPassword);
     await db.query(
       `UPDATE users
           SET password = $1, salt = $2, must_change_password = FALSE, password_set_at = NOW()
         WHERE id = $3`,
-      [hash, salt, req.user.id]
+      [hash, salt, user.id]
     );
     res.json({ ok: true });
   } catch (err) {

@@ -301,10 +301,20 @@ export async function updateTwoStep(enabled: boolean): Promise<ProfileResponse> 
   return data as ProfileResponse;
 }
 
-export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+export async function requestChangePasswordOtp(): Promise<{ ok: boolean; email?: string; retryAfterMs?: number }> {
+  const res = await authFetch(`${API_BASE}/auth/change-password/request-otp`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Failed to send verification code: ${res.status}`);
+  return data;
+}
+
+export async function changePassword(otp: string, newPassword: string): Promise<void> {
   const res = await authFetch(`${API_BASE}/auth/change-password`, {
     method: "POST",
-    body: JSON.stringify({ currentPassword, newPassword }),
+    body: JSON.stringify({ otp, newPassword }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error || `Failed to change password: ${res.status}`);

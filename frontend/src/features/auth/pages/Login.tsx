@@ -346,8 +346,8 @@ const Login = () => {
                           className="mt-0.5 h-4 w-4 shrink-0 accent-[hsl(var(--accent))]"
                         />
                         <span>
-                          Send me the optional{" "}
-                          <span className="text-foreground font-medium">morning summary</span> email.
+                          Send me the{" "}
+                          <span className="text-foreground font-medium">morning summary</span> email with the filings and names that matter.
                         </span>
                       </label>
                     </div>

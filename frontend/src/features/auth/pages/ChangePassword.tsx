@@ -5,7 +5,7 @@ import SiteLayout from "@/layouts/SiteLayout";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { changePassword } from "@/lib/api";
+import { changePassword, requestChangePasswordOtp } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 
 const fieldClass = "h-11 rounded-none border-foreground/15 bg-muted/40 focus-visible:ring-accent focus-visible:border-foreground/40";
@@ -15,18 +15,56 @@ const ChangePassword = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, isAuthenticated, loading } = useAuth();
-  const redirectTo = new URLSearchParams(location.search).get("redirect") || "/watchlist";
+  const redirectTo = new URLSearchParams(location.search).get("redirect") || "/profile";
   const forced = !!user?.mustChangePassword;
 
-  const [currentPassword, setCurrentPassword] = useState("");
+  const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [sendingCode, setSendingCode] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
+  const [resendLeft, setResendLeft] = useState(0);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) navigate("/login?redirect=/change-password");
   }, [isAuthenticated, loading, navigate]);
+
+  const startCountdown = (seconds = 60) => {
+    setResendLeft(seconds);
+    const timer = window.setInterval(() => {
+      setResendLeft((s) => {
+        if (s <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+  };
+
+  const sendCode = async () => {
+    setError(null);
+    setSendingCode(true);
+    try {
+      const resp = await requestChangePasswordOtp();
+      setCodeSent(true);
+      startCountdown(Math.max(1, Math.ceil((resp.retryAfterMs ?? 60000) / 1000)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send verification code");
+    } finally {
+      setSendingCode(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!loading && isAuthenticated && !codeSent && !sendingCode) {
+      sendCode();
+    }
+    // Auto-send once when the authenticated page loads
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, isAuthenticated]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,8 +75,8 @@ const ChangePassword = () => {
     }
     setSubmitting(true);
     try {
-      await changePassword(currentPassword, newPassword);
-      navigate(redirectTo);
+      await changePassword(otp.trim(), newPassword);
+      navigate(forced ? redirectTo : "/profile");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not change password");
     } finally {
@@ -57,28 +95,42 @@ const ChangePassword = () => {
             {forced ? "Set a new password" : "Change password"}
           </h1>
           <p className="text-sm text-muted-foreground mb-6">
-            {forced
-              ? "Your account was created with a temporary password. Choose a new password to continue."
-              : "Enter your current password and choose a new one."}
+            {codeSent
+              ? <>We sent a verification code to <span className="text-accent">{user?.email}</span>. Enter it below with your new password.</>
+              : "We'll email you a verification code so you can set a new password."}
           </p>
 
           <div className="border border-border bg-card p-6 md:p-8">
             <form onSubmit={onSubmit} className="space-y-4">
               <div>
-                <Label className={labelClass} htmlFor="currentPassword">
-                  {forced ? "Temporary password" : "Current password"}
-                </Label>
+                <Label className={labelClass} htmlFor="otp">Verification code</Label>
                 <Input
-                  id="currentPassword"
-                  type="password"
-                  className={fieldClass}
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  placeholder="••••••••"
+                  id="otp"
+                  className={cn(fieldClass, "tracking-[0.3em] font-mono")}
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                  placeholder="123456"
+                  inputMode="numeric"
+                  maxLength={6}
                   required
-                  autoComplete="current-password"
                 />
+                <div className="mt-2 text-xs text-muted-foreground">
+                  {sendingCode
+                    ? "Sending code…"
+                    : resendLeft > 0
+                      ? `Resend available in ${resendLeft}s`
+                      : (
+                        <button
+                          type="button"
+                          onClick={sendCode}
+                          className="text-accent hover:underline font-medium"
+                        >
+                          {codeSent ? "Resend code" : "Send code"}
+                        </button>
+                      )}
+                </div>
               </div>
+
               <div>
                 <Label className={labelClass} htmlFor="newPassword">New password</Label>
                 <Input
@@ -116,7 +168,7 @@ const ChangePassword = () => {
 
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || !codeSent}
                 className="w-full h-12 bg-accent text-accent-foreground hover:bg-accent/90 disabled:opacity-60 font-mono text-[12px] uppercase tracking-[0.22em] font-bold inline-flex items-center justify-center gap-2 transition-colors"
               >
                 <Lock className="w-3.5 h-3.5" />

@@ -69,7 +69,7 @@ const SignupAgreements = () => {
                   className="mt-1 h-4 w-4 shrink-0 accent-[hsl(var(--accent))]"
                 />
                 <span>
-                  Send me the optional{" "}
+                  Send me the{" "}
                   <span className="font-medium text-foreground">morning summary</span> email with the filings and names that matter.
                 </span>
               </label>

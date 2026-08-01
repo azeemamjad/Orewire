@@ -35,6 +35,14 @@ const OTP_COPY = {
     subject: 'Your OreWire password reset code',
     ctaLabel: 'Reset password →',
   },
+  change_password: {
+    kicker: '/// Account security',
+    kickerColor: C.gold,
+    headline: 'Confirm password change',
+    intro: 'We received a request to change the password for your OreWire account. Enter the code below, then choose your new password.',
+    subject: 'Your OreWire password change code',
+    ctaLabel: 'Change password →',
+  },
 };
 
 function renderOtpEmail({ code, purpose, ttlMinutes }) {
