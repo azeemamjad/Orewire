@@ -143,12 +143,15 @@ router.post('/run', express.json(), (req, res) => {
   activeScrapes.set(id, entry);
 
   const slot = isASX ? (proxyRotor++ % 5) + 1 : (proxyRotor++ % 3) + 1;
-  if (relayWiringEnabled()) {
-    entry.logs.push({ t: 'out', msg: `[Relay] ${isASX ? 'DC' : 'RES'}-${slot} → ${label}\n` });
+  const useRelay = !isASX && relayWiringEnabled();
+  if (isASX) {
+    entry.logs.push({ t: 'out', msg: `[ASX] Markit HTTP → ${label}\n` });
+  } else if (useRelay) {
+    entry.logs.push({ t: 'out', msg: `[Relay] RES-${slot} → ${label}\n` });
   }
 
   (async () => {
-    const saved = applyScraperEnv({ relay: relayWiringEnabled() });
+    const saved = applyScraperEnv({ relay: useRelay });
     try {
       const scrapeOnly = mode === 'scrape-only';
       const analyzeOnly = mode === 'analyze-only';

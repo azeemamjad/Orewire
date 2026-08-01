@@ -33,11 +33,16 @@ async function spawnWorker(company, workerId, cfg) {
     ? ((workerId - 1) % 5) + 1
     : ((workerId - 1) % 3) + 1;
 
-  if (relayWiringEnabled()) {
-    addLog('out', `${tag} → Relay ${isASX ? 'DC' : 'RES'}-${relaySlot}`);
+  // ASX filings use Markit HTTP by default (Relay DC cannot reach asx.com.au).
+  // SEDAR+ still goes through residential Relay workers.
+  const useRelay = !isASX && relayWiringEnabled();
+  if (isASX) {
+    addLog('out', `${tag} → Markit HTTP`);
+  } else if (useRelay) {
+    addLog('out', `${tag} → Relay RES-${relaySlot}`);
   }
 
-  const saved = applyScraperEnv({ relay: relayWiringEnabled() });
+  const saved = applyScraperEnv({ relay: useRelay });
   try {
     if (isASX) {
       await runAsxDownload(arg, {
