@@ -1,50 +1,22 @@
 require('dotenv').config();
-const fs       = require('fs');
-const path     = require('path');
-const pdfParse = require('pdf-parse');
+const fs   = require('fs');
+const path = require('path');
 
 const { SYSTEM_PROMPT, buildSystemPrompt, buildUserPrompt } = require('./prompt');
 const { chatWithSystem } = require('../../ai/client');
 const { classifyFilingType, modelForFilingType } = require('./classify');
 const { effectiveSystemPrompt } = require('./prompt-store');
-const { ocrPdfText } = require('./ocr');
 const { validateAnalysis } = require('./validate');
+const { extractText, extractTextWithFallback } = require('./extract');
 const {
   MIN_EXTRACT_CHARS,
   extractionFailedAnalysis,
   isExtractionFailed,
 } = require('./constants');
 
-async function extractText(pdfPath) {
-  const buffer = fs.readFileSync(pdfPath);
-  const data   = await pdfParse(buffer);
-  return data.text || '';
-}
-
 function parseJson(raw) {
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   return JSON.parse(cleaned);
-}
-
-/**
- * Extract text; OCR if the text layer is empty/near-empty.
- * @returns {{ text: string, usedOcr: boolean }}
- */
-async function extractTextWithFallback(pdfPath) {
-  let text = await extractText(pdfPath);
-  let usedOcr = false;
-
-  if (text.trim().length < MIN_EXTRACT_CHARS) {
-    console.warn('  [AI] Warning: no text layer — attempting OCR…');
-    const ocrText = await ocrPdfText(pdfPath);
-    if (ocrText.trim().length >= MIN_EXTRACT_CHARS) {
-      text = ocrText;
-      usedOcr = true;
-      console.log(`  [AI] OCR recovered ${text.trim().length} characters`);
-    }
-  }
-
-  return { text, usedOcr };
 }
 
 /**

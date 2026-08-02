@@ -18,8 +18,13 @@ const { retentionDays } = require('../../lib/usage-log-retention');
 const router = express.Router();
 
 const TIERS = new Set(['datacenter', 'residential']);
+// IP check proves traffic actually egresses via the proxy (example.com alone is a false positive).
+const IP_CHECK_URL = process.env.RELAY_PROXY_IP_URL || 'https://api.ipify.org?format=json';
 const TEST_URL = process.env.RELAY_PROXY_TEST_URL || 'https://example.com/';
+// Optional second probe — ASX is often blocked on datacenter IPs even when the proxy itself works.
+const PROBE_URL = process.env.RELAY_PROXY_PROBE_URL || 'https://www.asx.com.au/';
 const TEST_TIMEOUT_MS = parseInt(process.env.RELAY_PROXY_TEST_TIMEOUT_MS || '25000', 10);
+const PROBE_TIMEOUT_MS = parseInt(process.env.RELAY_PROXY_PROBE_TIMEOUT_MS || '20000', 10);
 
 function validateProxyBody(body, { isCreate = false } = {}) {
   const data = {};
@@ -67,37 +72,131 @@ function validateProxyBody(body, { isCreate = false } = {}) {
   return { data };
 }
 
+async function fetchDirectExitIp() {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 8000);
+    const resp = await fetch(IP_CHECK_URL, {
+      signal: ctrl.signal,
+      headers: { Accept: 'application/json' },
+    });
+    clearTimeout(t);
+    if (!resp.ok) return null;
+    const body = await resp.json().catch(() => null);
+    return body?.ip || null;
+  } catch {
+    return null;
+  }
+}
+
+function buildProxyLaunchOptions(proxyConfig) {
+  const opts = {
+    headless: true,
+    args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'],
+  };
+  // Proxy must be on launch (same as scraper proxy-fallback). Context-only proxy
+  // can silently fall through to direct and report a false OK.
+  if (proxyConfig?.server) {
+    opts.proxy = { server: proxyConfig.server };
+    if (proxyConfig.username) opts.proxy.username = proxyConfig.username;
+    if (proxyConfig.password) opts.proxy.password = proxyConfig.password;
+  }
+  return opts;
+}
+
+async function readExitIp(page) {
+  const res = await page.goto(IP_CHECK_URL, {
+    waitUntil: 'domcontentloaded',
+    timeout: TEST_TIMEOUT_MS,
+  });
+  const text = (await page.locator('body').innerText().catch(() => '')).trim();
+  let ip = null;
+  try {
+    ip = JSON.parse(text)?.ip || null;
+  } catch {
+    if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(text)) ip = text;
+  }
+  return { status: res?.status() || null, ip, raw: text.slice(0, 120) };
+}
+
+async function probeUrl(page, url, timeoutMs) {
+  const started = Date.now();
+  try {
+    const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+    return { ok: true, status: res?.status() || null, ms: Date.now() - started, url };
+  } catch (err) {
+    return { ok: false, error: err.message, ms: Date.now() - started, url };
+  }
+}
+
 async function testPlaywrightProxy(proxyConfig) {
   const chromium = getChromium();
   const started = Date.now();
   let browser;
+  const directIp = await fetchDirectExitIp();
+
   try {
-    browser = await chromium.launch({
-      headless: true,
-      args: ['--no-sandbox'],
+    browser = await chromium.launch(buildProxyLaunchOptions(proxyConfig));
+    const context = await browser.newContext({
+      userAgent:
+        process.env.USER_AGENT ||
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     });
-    const contextOpts = {};
-    if (proxyConfig.server) {
-      contextOpts.proxy = { server: proxyConfig.server };
-      if (proxyConfig.username) contextOpts.proxy.username = proxyConfig.username;
-      if (proxyConfig.password) contextOpts.proxy.password = proxyConfig.password;
-    }
-    const context = await browser.newContext(contextOpts);
     const page = await context.newPage();
-    const res = await page.goto(TEST_URL, { waitUntil: 'domcontentloaded', timeout: TEST_TIMEOUT_MS });
+
+    const ipCheck = await readExitIp(page);
+    if (!ipCheck.ip) {
+      await context.close();
+      return {
+        ok: false,
+        error: `Proxy reached ${IP_CHECK_URL} but no IP was returned (${ipCheck.raw || 'empty'})`,
+        ms: Date.now() - started,
+        url: IP_CHECK_URL,
+        status: ipCheck.status,
+        directIp,
+      };
+    }
+
+    // Same exit IP as the server ⇒ proxy was not applied (common false positive).
+    if (directIp && ipCheck.ip === directIp && proxyConfig?.server) {
+      await context.close();
+      return {
+        ok: false,
+        error: `Exit IP ${ipCheck.ip} matches server IP — traffic is not going through the proxy`,
+        ms: Date.now() - started,
+        url: IP_CHECK_URL,
+        status: ipCheck.status,
+        exitIp: ipCheck.ip,
+        directIp,
+        viaProxy: false,
+      };
+    }
+
+    const site = await probeUrl(page, TEST_URL, TEST_TIMEOUT_MS);
+    const probe = PROBE_URL && PROBE_URL !== TEST_URL
+      ? await probeUrl(page, PROBE_URL, PROBE_TIMEOUT_MS)
+      : null;
+
     await context.close();
+
     return {
       ok: true,
-      status: res?.status() || null,
+      status: site.status,
       ms: Date.now() - started,
       url: TEST_URL,
+      exitIp: ipCheck.ip,
+      directIp,
+      viaProxy: !directIp || ipCheck.ip !== directIp,
+      site,
+      probe,
     };
   } catch (err) {
     return {
       ok: false,
       error: err.message,
       ms: Date.now() - started,
-      url: TEST_URL,
+      url: IP_CHECK_URL,
+      directIp,
     };
   } finally {
     if (browser) {

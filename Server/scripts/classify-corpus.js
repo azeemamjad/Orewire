@@ -17,8 +17,8 @@ require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const pdfParse = require('pdf-parse');
 const db = require('../db');
+const { extractTextUnpdf } = require('../lib/scraper/analyzer/extract');
 const { classifyHeuristic, classifyFilingType, CANONICAL_SET } = require('../lib/scraper/analyzer/classify');
 const {
   isRemoteStoragePath,
@@ -71,10 +71,9 @@ async function downloadToTemp(filing) {
   return null;
 }
 
-async function extractFirstPages(pdfPath, maxPages = 2) {
-  const buf = fs.readFileSync(pdfPath);
-  const data = await pdfParse(buf, { max: maxPages });
-  return data.text || '';
+async function extractFirstPages(pdfPath) {
+  const extracted = await extractTextUnpdf(pdfPath);
+  return extracted.text || '';
 }
 
 async function classifyOne(filing) {

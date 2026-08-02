@@ -21,6 +21,14 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
       <p>All downloaded and analyzed PDF filings</p>
     </div>
 
+    <div class="stats-grid" id="fi-24h-stats" style="margin-bottom:20px;">
+      <div class="stat-card"><div class="label">Processed (24h)</div><div class="value" id="fi-stat-all">-</div></div>
+      <div class="stat-card"><div class="label">TSX (24h)</div><div class="value" id="fi-stat-tsx">-</div></div>
+      <div class="stat-card"><div class="label">TSX-V (24h)</div><div class="value" id="fi-stat-tsxv">-</div></div>
+      <div class="stat-card"><div class="label">CSE (24h)</div><div class="value" id="fi-stat-cse">-</div></div>
+      <div class="stat-card"><div class="label">ASX (24h)</div><div class="value" id="fi-stat-asx">-</div></div>
+    </div>
+
     <div class="preview-box" id="fi-pending-panel" style="margin-bottom:20px;">
       <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;">
         <div style="flex:1;min-width:200px;">
@@ -44,6 +52,13 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
 
     <div class="toolbar">
       <input type="search" id="fi-search" placeholder="Search company…" oninput="_fiPage=1;loadFilings()" />
+      <select id="fi-exchange" onchange="_fiPage=1;loadFilings()">
+        <option value="">All exchanges</option>
+        <option value="TSX">TSX</option>
+        <option value="TSX-V">TSX-V</option>
+        <option value="CSE">CSE</option>
+        <option value="ASX">ASX</option>
+      </select>
       <select id="fi-verdict" onchange="_fiPage=1;loadFilings()">
         <option value="">All verdicts</option>
         <option value="noteworthy">Noteworthy</option>
@@ -61,7 +76,7 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
           <option value="100">100</option>
         </select>
       </label>
-      <button class="btn btn-ghost btn-sm" onclick="loadFilings()">↻ Refresh</button>
+      <button class="btn btn-ghost btn-sm" onclick="loadFilings();loadFilingsProcessed24h()">↻ Refresh</button>
       <span id="fi-count" class="text-muted" style="margin-left:auto;font-size:12px;"></span>
     </div>
 
@@ -107,6 +122,6 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
 <div id="toast"></div>
 <script src="/admin/js/cron-schedule.js"></script>
 <script src="/admin/js/admin-sidebar.js?v=20260720"></script>
-<script src="/admin/js/legacy-admin.js"></script>
+<script src="/admin/js/legacy-admin.js?v=20260802"></script>
 </body>
 </html>

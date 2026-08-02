@@ -6,6 +6,11 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
+# OCR for image-only / scanned PDFs (pdftoppm + tesseract)
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends poppler-utils tesseract-ocr \
+  && rm -rf /var/lib/apt/lists/*
+
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 

@@ -24,6 +24,7 @@ function initAdminPage() {
     });
   }
   if (page === 'filings') {
+    loadFilingsProcessed24h();
     loadFilings();
     loadPendingOnDisk();
   }
@@ -847,13 +848,37 @@ function fiChangePage(delta) {
   loadFilings();
 }
 
+async function loadFilingsProcessed24h() {
+  const set = (id, v) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = v == null ? '-' : String(v);
+  };
+  try {
+    const s = await fetch(`${API}/api/filings/processed-24h`).then((r) => r.json());
+    if (s.error && s.all == null) throw new Error(s.error);
+    set('fi-stat-all', s.all ?? 0);
+    set('fi-stat-tsx', s.TSX ?? 0);
+    set('fi-stat-tsxv', s['TSX-V'] ?? 0);
+    set('fi-stat-cse', s.CSE ?? 0);
+    set('fi-stat-asx', s.ASX ?? 0);
+  } catch {
+    set('fi-stat-all', '-');
+    set('fi-stat-tsx', '-');
+    set('fi-stat-tsxv', '-');
+    set('fi-stat-cse', '-');
+    set('fi-stat-asx', '-');
+  }
+}
+
 async function loadFilings() {
-  const search  = document.getElementById('fi-search').value;
-  const verdict = document.getElementById('fi-verdict').value;
-  const limit   = adminPageLimit('fi-limit');
-  const params  = new URLSearchParams();
-  if (search)  params.set('search', search);
-  if (verdict) params.set('verdict', verdict);
+  const search   = document.getElementById('fi-search')?.value || '';
+  const exchange = document.getElementById('fi-exchange')?.value || '';
+  const verdict  = document.getElementById('fi-verdict')?.value || '';
+  const limit    = adminPageLimit('fi-limit');
+  const params   = new URLSearchParams();
+  if (search)   params.set('search', search);
+  if (exchange) params.set('exchange', exchange);
+  if (verdict)  params.set('verdict', verdict);
   params.set('page', _fiPage);
   params.set('limit', limit);
 
@@ -2650,7 +2675,7 @@ async function loadProxies() {
         <td>${esc(p.name)}</td>
         <td>${tierTag(p.tier)}</td>
         <td><code>${esc(p.host)}:${p.port}</code></td>
-        <td>${esc(p.username || (p.passwordSet ? '••••' : 'N/A'))}</td>
+        <td>${esc(p.usernameDisplay || p.username || (p.passwordSet ? '••••' : 'N/A'))}</td>
         <td class="${enabledCls}">${enabledTxt}</td>
         <td>${p.sessionCount ?? 0}</td>
         <td>${p.errorCount ?? 0}</td>
@@ -2716,8 +2741,20 @@ async function testProxy(id) {
     const r = await fetch(`${API}/api/admin/proxies/${id}/test`, { method: 'POST' }).then((x) => x.json());
     if (r.error) { toast(r.error, 'err'); return; }
     const t = r.test;
-    if (t?.ok) toast(`OK — HTTP ${t.status} in ${t.ms}ms`);
-    else toast(`Failed: ${t?.error || 'unknown error'}`, 'err');
+    if (t?.ok) {
+      const bits = [`OK — exit IP ${t.exitIp || '?'}`, `${t.ms}ms`];
+      if (t.viaProxy === false) bits.push('NOT via proxy');
+      if (t.probe) {
+        bits.push(t.probe.ok ? `ASX reachable` : `ASX blocked/timeout`);
+      }
+      // Proxy itself works if viaProxy; ASX block is informational (common on DC).
+      toast(bits.join(' · '), t.viaProxy === false ? 'err' : 'ok');
+      if (t.probe && !t.probe.ok) {
+        console.warn('[proxy test] ASX probe failed:', t.probe.error);
+      }
+    } else {
+      toast(`Failed: ${t?.error || 'unknown error'}`, 'err');
+    }
   } catch (err) { toast(err.message, 'err'); }
 }
 

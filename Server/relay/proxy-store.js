@@ -93,7 +93,9 @@ function formatProxyRow(row, { includePassword = false } = {}) {
     relayTier: tierToRelayTier(row.tier),
     host: row.host,
     port: row.port,
-    username: maskUsername(row.username),
+    // Admin edit form reuses this value — do not mask (sessid-*** would corrupt saves).
+    username: row.username || null,
+    usernameDisplay: maskUsername(row.username),
     passwordSet: !!row.password,
     password: includePassword ? row.password : undefined,
     sessid: row.sessid,

@@ -46,6 +46,40 @@ router.get('/stats', async (req, res) => {
   }
 });
 
+/** Last-24h processed filings by exchange (website order: TSX → TSX-V → CSE → ASX). */
+router.get('/processed-24h', async (req, res) => {
+  const empty = { hours: 24, all: 0, TSX: 0, 'TSX-V': 0, CSE: 0, ASX: 0, other: 0 };
+  try {
+    const { rows } = await db.query(`
+      SELECT
+        REPLACE(UPPER(COALESCE(NULLIF(f.exchange, ''), c.exchange, '')), '-', '') AS ex,
+        COUNT(*)::int AS c
+      FROM ai_output a
+      JOIN filings f ON f.id = a.filing_id
+      LEFT JOIN companies c ON c.id = f.company_id
+      WHERE a.created_at >= NOW() - INTERVAL '24 hours'
+        AND (f.company_id IS NULL OR c.archived_at IS NULL)
+      GROUP BY 1
+    `);
+
+    const out = { ...empty };
+    for (const row of rows) {
+      const n = Number(row.c) || 0;
+      out.all += n;
+      const ex = String(row.ex || '');
+      if (ex === 'TSX') out.TSX += n;
+      else if (ex === 'TSXV') out['TSX-V'] += n;
+      else if (ex === 'CSE') out.CSE += n;
+      else if (ex === 'ASX') out.ASX += n;
+      else out.other += n;
+    }
+    res.json(out);
+  } catch (err) {
+    console.error('processed-24h stats failed:', err?.message || err);
+    res.status(503).json({ error: 'Database unavailable', ...empty });
+  }
+});
+
 router.get('/', async (req, res) => {
   try {
     const { company_id, verdict, search, commodity, exchange, limit, page } = req.query;

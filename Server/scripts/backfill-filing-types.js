@@ -23,9 +23,8 @@ require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const pdfParse = require('pdf-parse');
-
 const db = require('../db');
+const { extractTextUnpdf } = require('../lib/scraper/analyzer/extract');
 const { classifyHeuristic, classifyFilingType, CANONICAL_SET } = require('../lib/scraper/analyzer/classify');
 const {
   isRemoteStoragePath,
@@ -88,9 +87,8 @@ async function classifyOne(filing) {
     if (!local) return { filing_type: null, source: 'no_pdf' };
     let text = '';
     try {
-      const buf = fs.readFileSync(local.localPath);
-      const data = await pdfParse(buf, { max: 2 });
-      text = data.text || '';
+      const extracted = await extractTextUnpdf(local.localPath);
+      text = extracted.text || '';
     } catch {
       text = '';
     }

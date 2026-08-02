@@ -154,18 +154,20 @@ class RelayPool {
         ignoreDefaultArgs: ['--enable-automation'],
       };
 
+      // Launch-level proxy (same as scraper fallback / admin Test). Context-only
+      // proxy can fail to apply and look "healthy" while traffic goes direct.
+      if (proxy?.server) {
+        launchOpts.proxy = { server: proxy.server };
+        if (proxy.username) launchOpts.proxy.username = proxy.username;
+        if (proxy.password) launchOpts.proxy.password = proxy.password;
+      }
+
       const contextOpts = {
         acceptDownloads: true,
         viewport,
         locale: process.env.LOCALE || 'en-US',
         timezoneId: process.env.TIMEZONE || 'America/Toronto',
       };
-
-      if (proxy?.server) {
-        contextOpts.proxy = { server: proxy.server };
-        if (proxy.username) contextOpts.proxy.username = proxy.username;
-        if (proxy.password) contextOpts.proxy.password = proxy.password;
-      }
 
       const browser = await chromium.launch(launchOpts);
 
