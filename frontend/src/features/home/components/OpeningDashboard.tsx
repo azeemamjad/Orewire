@@ -8,11 +8,14 @@ const OpeningDashboard = () => (
   <section className="border-b border-border bg-background">
     <div className="max-w-[1440px] mx-auto px-4 lg:px-6 py-6 lg:py-8">
       <SearchHero />
+      {/* Order is deliberate: gainers/losers, then market data (commodities,
+          indexes, currencies), then the two content feeds. On mobile these
+          stack top to bottom in this same order. */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:h-[780px]">
         <Movers />
+        <CommoditySidebar />
         <NewsFeed />
         <Filings />
-        <CommoditySidebar />
       </div>
     </div>
   </section>

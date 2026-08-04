@@ -15,7 +15,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 const fs = require('fs');
 const path = require('path');
 const db = require('../db');
-const { sanitizeProse } = require('../lib/text/sanitize-prose');
+const { sanitizeProse, sanitizeDeep } = require('../lib/text/sanitize-prose');
 
 const DASH_RE = /[—–―‒]/;
 
@@ -34,15 +34,6 @@ const TARGETS = [
     json: [],
   },
 ];
-
-function cleanJsonValue(value) {
-  if (typeof value === 'string') return sanitizeProse(value);
-  if (Array.isArray(value)) return value.map(cleanJsonValue);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, cleanJsonValue(v)]));
-  }
-  return value;
-}
 
 async function collect(target) {
   const cols = [...target.text, ...target.json];
@@ -63,7 +54,7 @@ async function collect(target) {
     }
     for (const c of target.json) {
       if (row[c] == null) continue;
-      const cleaned = cleanJsonValue(row[c]);
+      const cleaned = sanitizeDeep(row[c]);
       if (JSON.stringify(cleaned) !== JSON.stringify(row[c])) {
         before[c] = row[c]; after[c] = cleaned;
       }
@@ -108,11 +99,55 @@ async function restore(file) {
   }
 }
 
+/**
+ * Re-derive every backed-up row from its ORIGINAL value using the current
+ * sanitizer, and write back only where that differs from the stored value.
+ * Use after changing sanitizeProse so an earlier backfill picks up the new rules.
+ */
+async function redo(file) {
+  const backup = JSON.parse(fs.readFileSync(file, 'utf8'));
+  let checked = 0;
+  let fixed = 0;
+  await db.query('BEGIN');
+  try {
+    for (const entry of backup.targets) {
+      const target = TARGETS.find((t) => t.table === entry.table);
+      for (const ch of entry.changes) {
+        for (const [col, before] of Object.entries(ch.before)) {
+          checked++;
+          const isJson = target.json.includes(col);
+          const want = isJson ? sanitizeDeep(before) : sanitizeProse(before);
+          const had = ch.after[col];
+          if (JSON.stringify(want) === JSON.stringify(had)) continue;
+          await db.query(
+            `UPDATE ${target.table} SET ${col} = $2 WHERE ${target.key} = $1`,
+            [ch.key, isJson ? JSON.stringify(want) : want],
+          );
+          fixed++;
+          console.log(`  #${ch.key} ${col}`);
+          console.log(`     was: ${String(JSON.stringify(had)).slice(0, 130)}`);
+          console.log(`     now: ${String(JSON.stringify(want)).slice(0, 130)}`);
+        }
+      }
+    }
+    await db.query('COMMIT');
+  } catch (err) {
+    await db.query('ROLLBACK');
+    throw err;
+  }
+  console.log(`\nRe-derived ${checked} value(s); corrected ${fixed}.`);
+}
+
 (async () => {
   const args = process.argv.slice(2);
   const restoreIdx = args.indexOf('--restore');
   if (restoreIdx !== -1) {
     await restore(args[restoreIdx + 1]);
+    process.exit(0);
+  }
+  const redoIdx = args.indexOf('--redo');
+  if (redoIdx !== -1) {
+    await redo(args[redoIdx + 1]);
     process.exit(0);
   }
 

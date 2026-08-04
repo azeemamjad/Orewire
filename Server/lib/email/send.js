@@ -7,7 +7,7 @@ const {
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const FROM_EMAIL = process.env.AUTH_FROM_EMAIL || 'OreWire <no-reply@orewire.com>';
-const BRIEFING_FROM_EMAIL = process.env.BRIEFING_FROM_EMAIL || 'OreWire Briefing <briefing@orewire.com>';
+const BRIEFING_FROM_EMAIL = process.env.BRIEFING_FROM_EMAIL || 'OreWire <briefing@orewire.com>';
 const ALERTS_FROM_EMAIL = process.env.ALERTS_FROM_EMAIL || 'OreWire Alerts <alerts@orewire.com>';
 
 async function sendEmailViaResend(to, subject, html, from = FROM_EMAIL) {

@@ -4,7 +4,7 @@ const {
   isExtractionFailed,
 } = require('./constants');
 const { issuerMatchesCompany } = require('../../companies/match');
-const { sanitizeProse } = require('../../text/sanitize-prose');
+const { sanitizeProse, sanitizeDeep } = require('../../text/sanitize-prose');
 
 /**
  * Resolve filing status after analysis (extraction_failed / company_mismatch / analyzed).
@@ -36,7 +36,7 @@ function aiOutputParams(filingId, analysis) {
   const ext = analysis.data_extracted || {};
   // Prefer structured insider_ownership (incl. options) in insider_holdings column when present
   const insiderJson = ext.insider_ownership || ext.insider_holdings || null;
-  const keyFacts = (analysis.key_facts ?? []).map((f) => (typeof f === 'string' ? sanitizeProse(f) : f));
+  const keyFacts = sanitizeDeep(analysis.key_facts ?? []);
   return [
     filingId,
     analysis.display_type ?? null,

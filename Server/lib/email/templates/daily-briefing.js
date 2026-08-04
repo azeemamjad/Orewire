@@ -42,17 +42,20 @@ function fmtBriefingHeaderDate(d = new Date()) {
   return `${day} · ${rest} · 7:30 AM ET`;
 }
 
-function fmtPrice(price, unit) {
+// `symbol` is '$' for commodities only. Index levels and FX rates are not
+// dollar amounts, so they render bare.
+function fmtPrice(price, unit, symbol = '') {
   if (price == null) return 'N/A';
   const n = Number(price);
   if (Number.isNaN(n)) return 'N/A';
   const formatted = n >= 100
     ? n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-  return unit ? `${formatted}/${unit}` : formatted;
+  const withSymbol = `${symbol}${formatted}`;
+  return unit ? `${withSymbol}/${unit}` : withSymbol;
 }
 
-function quoteGroupHtml(title, items) {
+function quoteGroupHtml(title, items, symbol = '') {
   if (!items.length) return '';
   const lastIndex = items.length - 1;
   const rowCount = Math.ceil(items.length / 2);
@@ -60,7 +63,7 @@ function quoteGroupHtml(title, items) {
     const cells = row.map((item, ci) => {
       const index = ri * 2 + ci;
       const name = escapeHtml(item.label || item.key);
-      const price = fmtPrice(item.price, item.unit);
+      const price = fmtPrice(item.price, item.unit, symbol);
       const pct = fmtPctChange(item.change_pct);
       const borderBottom = ri < rowCount - 1 ? `border-bottom:1px dotted ${C.border};` : '';
       const gutter = ci === 0 ? 'padding-right:14px;' : 'padding-left:14px;';
@@ -141,7 +144,7 @@ function renderDailyBriefing(data, opts = {}) {
     <td class="stackcol" style="vertical-align:middle;"><div style="font-family:${SERIF};font-size:15px;font-weight:700;color:${C.navy};">Market Snapshot</div></td>
     <td class="stackcol stackcol-tight" style="text-align:right;vertical-align:middle;padding-left:12px;font-family:${MONO};font-size:10px;color:${C.muted};letter-spacing:0.06em;">AS OF 7:30 AM ET · ${escapeHtml(snapshotDate.split(',')[0].toUpperCase())}</td>
   </tr></table>
-  ${quoteGroupHtml('Commodities', data.commodities || [])}
+  ${quoteGroupHtml('Commodities', data.commodities || [], '$')}
   ${quoteGroupHtml('Indexes', data.indexes || [])}
   ${quoteGroupHtml('Currencies', data.currencies || [])}
 </td></tr>`;
@@ -206,8 +209,13 @@ ${ctaSection}`;
 }
 
 function briefingSubject() {
-  const d = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Toronto' });
-  return `Morning Briefing: ${d}`;
+  const d = new Date().toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'America/Toronto',
+  });
+  return `Mining Morning Briefing: ${d}`;
 }
 
 module.exports = {

@@ -138,10 +138,16 @@ ${watchlistContextBlock(data.ticker)}`;
   });
 }
 
+// headlineTypeFromTitle returns SHOUTING CASE for the in-body chip, which is
+// styled uppercase. Subject lines read better in title case.
+function titleCaseType(type) {
+  return String(type || '').toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
+}
+
 function newsAlertSubject(data) {
   const tickerLine = slugLabel(data.exchange, data.ticker);
   const headlineType = headlineTypeFromTitle(data.title);
-  return `${tickerLine} | ${headlineType}`;
+  return `${tickerLine} | ${titleCaseType(headlineType)}`;
 }
 
 module.exports = {
