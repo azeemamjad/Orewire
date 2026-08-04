@@ -153,7 +153,7 @@ const placeholderItems: HeroNewsItem[] = [
 ];
 
 /** Hero column: company-linked news releases only. */
-const NewsFeed = () => {
+const NewsFeed = ({ className = "" }: { className?: string }) => {
   const { data, isLoading } = useQuery({
     queryKey: ["news-feed", 20, "rss", "company-linked"],
     queryFn: () => fetchNewsFeed({ limit: 20, origin: "rss", companyLinked: true }),
@@ -169,7 +169,7 @@ const NewsFeed = () => {
   }, [data?.items, isLoading]);
 
   return (
-    <div className="border border-border bg-surface flex flex-col min-h-0 lg:h-full">
+    <div className={`border border-border bg-surface flex flex-col min-h-0 lg:h-full ${className}`}>
       <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border bg-muted/30">
         <div className="flex items-center gap-2">
           <Newspaper className="w-3.5 h-3.5" />

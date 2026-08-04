@@ -131,7 +131,7 @@ const ChgCell = ({ value }: { value: number | null }) => {
   );
 };
 
-const CommoditySidebar = () => {
+const CommoditySidebar = ({ className = "" }: { className?: string }) => {
   const { data: commodityData } = useQuery({
     queryKey: ["commodities"],
     queryFn: fetchCommodities,
@@ -166,7 +166,7 @@ const CommoditySidebar = () => {
   });
 
   return (
-    <div className="flex flex-col gap-4 min-h-0 lg:h-full">
+    <div className={`flex flex-col gap-4 min-h-0 lg:h-full ${className}`}>
       {/* Commodities */}
       <div className="border border-border bg-surface flex flex-col flex-1 min-h-0">
         <SectionHeader icon={Flame} title="Commodities" meta="· Spot" accent />

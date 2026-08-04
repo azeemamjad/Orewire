@@ -108,7 +108,7 @@ const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up:
   );
 };
 
-const Movers = () => {
+const Movers = ({ className = "" }: { className?: string }) => {
   const { data, isLoading } = useQuery({
     queryKey: ["movers", "ALL"],
     queryFn: () => fetchMovers({ exchange: "ALL", limit: 10 }),
@@ -128,7 +128,7 @@ const Movers = () => {
   }
 
   return (
-    <div className="flex flex-col gap-4 min-h-0 lg:h-full">
+    <div className={`flex flex-col gap-4 min-h-0 lg:h-full ${className}`}>
       <MoverTable title="Top Gainers" rows={gainers} up />
       <MoverTable title="Top Losers" rows={losers} up={false} />
     </div>
