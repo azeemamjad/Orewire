@@ -62,12 +62,12 @@ function logoMarkHtml() {
 
 function emailHeaderRow(rightHtml = '') {
   const right = rightHtml
-    ? `<td style="text-align:right;vertical-align:middle;">${rightHtml}</td>`
+    ? `<td class="stackcol stackcol-right" style="text-align:right;vertical-align:middle;padding-left:16px;">${rightHtml}</td>`
     : '';
   return `<tr>
-  <td style="background-color:${C.white};padding:20px 32px;border-bottom:1px solid ${C.border};">
+  <td class="px" style="background-color:${C.white};padding:24px 32px;border-bottom:1px solid ${C.border};">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
-      <td style="vertical-align:middle;">${logoMarkHtml()}</td>
+      <td class="stackcol" style="vertical-align:middle;">${logoMarkHtml()}</td>
       ${right}
     </tr></table>
   </td>
@@ -95,7 +95,7 @@ function emailFooterRows({ showPreferences = true } = {}) {
     : '';
 
   return `<tr>
-  <td style="background-color:${C.cream};padding:36px 32px 28px 32px;border-top:1px solid ${C.border};">
+  <td class="px" style="background-color:${C.cream};padding:36px 32px 28px 32px;border-top:1px solid ${C.border};">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
       <td style="background-color:${C.navy};width:32px;height:32px;border-radius:4px;text-align:center;vertical-align:middle;font-family:${SERIF};font-weight:700;font-size:20px;color:${C.white};line-height:32px;">O</td>
       <td style="padding-left:12px;vertical-align:middle;">
@@ -116,7 +116,7 @@ function emailFooterRows({ showPreferences = true } = {}) {
   </td>
 </tr>
 <tr>
-  <td style="background-color:${C.navy};padding:18px 32px;">
+  <td class="px" style="background-color:${C.navy};padding:18px 32px;">
     <p style="margin:0 0 10px 0;font-size:11px;line-height:1.65;color:#94A0B5;">
       <span style="font-family:${MONO};color:#7A8699;letter-spacing:0.12em;margin-right:8px;">DISCLAIMER</span>
       This platform provides information for educational purposes only. Nothing constitutes investment advice. Always do your own due diligence.
@@ -144,8 +144,28 @@ function emailDocument({ title, preheader, bodyRows, showMarketingFooter = true 
 <style>
   @media (max-width: 600px) {
     .container { width: 100% !important; }
-    .px { padding-left: 22px !important; padding-right: 22px !important; }
-    .qcol { display: block !important; width: 100% !important; }
+    .px { padding-left: 20px !important; padding-right: 20px !important; }
+    /* Stacked header/section headings: logo above title, title above date */
+    .stackcol {
+      display: block !important;
+      width: 100% !important;
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+      text-align: left !important;
+    }
+    .stackcol-right { padding-top: 14px !important; }
+    .stackcol-tight { padding-top: 6px !important; }
+    /* Quote rows collapse to a single column; drop the desktop gutters so every
+       line item shares the same left and right edge. */
+    .qcol {
+      display: block !important;
+      width: 100% !important;
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+      border-bottom: 1px dotted ${C.border} !important;
+    }
+    .qcol-last { border-bottom: 0 !important; }
+    .qcol-pad { display: none !important; }
   }
   a { color: ${C.teal}; }
 </style>

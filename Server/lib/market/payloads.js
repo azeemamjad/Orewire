@@ -41,20 +41,20 @@ const COMMODITY_SYMBOLS = [
 ];
 
 const INDEX_SYMBOLS = [
-  { key: 'GDXJ', label: 'Junior Gold Miners ETF',   y: ['GDXJ'],            tv: ['AMEX:GDXJ', 'NYSEARCA:GDXJ'],              about: 'Junior gold miners ETF — small and mid-cap gold producers and explorers.' },
-  { key: 'TSXV', label: 'TSX Venture Composite',    y: ['^SPCDNX'],         tv: ['TSX:JX', 'TSX:TSXV', 'INDEX:JX'],          about: 'Composite benchmark of TSX Venture Exchange listings — heavily weighted to junior mining and exploration issuers in Canada.' },
-  { key: 'XMM',  label: 'ASX 300 Metals & Mining',  y: ['^AXMM', 'MVR.AX'], tv: ['ASX:XMM', 'INDEX:XMM', 'ASX:MVR'],         about: 'S&P/ASX 300 Metals & Mining Index — Australian-listed mining and metals producers. Proxied via MVR (VanEck Australian Resources ETF) when the index is unavailable.' },
-  { key: 'GDX',  label: 'Gold Miners ETF',          y: ['GDX'],             tv: ['AMEX:GDX', 'NYSEARCA:GDX'],                about: 'Large-cap gold miners ETF — tracks NYSE Arca Gold Miners Index.' },
-  { key: 'XGD',  label: 'S&P/TSX Gold Index',       y: ['XGD.TO'],          tv: ['TSX:XGD', 'INDEX:XGD'],                    about: 'S&P/TSX Gold Index — Canadian-listed gold producers. Proxied via the iShares S&P/TSX Global Gold ETF (XGD).' },
+  { key: 'GDXJ', label: 'Junior Gold Miners ETF',   y: ['GDXJ'],            tv: ['AMEX:GDXJ', 'NYSEARCA:GDXJ'],              about: 'Junior gold miners ETF: small and mid-cap gold producers and explorers.' },
+  { key: 'TSXV', label: 'TSX Venture Composite',    y: ['^SPCDNX'],         tv: ['TSX:JX', 'TSX:TSXV', 'INDEX:JX'],          about: 'Composite benchmark of TSX Venture Exchange listings: heavily weighted to junior mining and exploration issuers in Canada.' },
+  { key: 'XMM',  label: 'ASX 300 Metals & Mining',  y: ['^AXMM', 'MVR.AX'], tv: ['ASX:XMM', 'INDEX:XMM', 'ASX:MVR'],         about: 'S&P/ASX 300 Metals & Mining Index: Australian-listed mining and metals producers. Proxied via MVR (VanEck Australian Resources ETF) when the index is unavailable.' },
+  { key: 'GDX',  label: 'Gold Miners ETF',          y: ['GDX'],             tv: ['AMEX:GDX', 'NYSEARCA:GDX'],                about: 'Large-cap gold miners ETF: tracks NYSE Arca Gold Miners Index.' },
+  { key: 'XGD',  label: 'S&P/TSX Gold Index',       y: ['XGD.TO'],          tv: ['TSX:XGD', 'INDEX:XGD'],                    about: 'S&P/TSX Gold Index: Canadian-listed gold producers. Proxied via the iShares S&P/TSX Global Gold ETF (XGD).' },
   { key: 'URA',  label: 'Uranium Miners ETF',       y: ['URA'],             tv: ['AMEX:URA', 'NYSEARCA:URA'],                about: 'Uranium miners and nuclear fuel ETF.' },
-  { key: 'COPX', label: 'Copper Miners ETF',        y: ['COPX'],            tv: ['AMEX:COPX', 'NYSEARCA:COPX'],              about: 'Global copper miners ETF — pure-play exposure to copper producers worldwide.' },
-  { key: 'SIL',  label: 'Silver Miners ETF',        y: ['SIL'],             tv: ['AMEX:SIL', 'NYSEARCA:SIL'],                about: 'Global X Silver Miners ETF — primary-silver producers worldwide.' },
+  { key: 'COPX', label: 'Copper Miners ETF',        y: ['COPX'],            tv: ['AMEX:COPX', 'NYSEARCA:COPX'],              about: 'Global copper miners ETF: pure-play exposure to copper producers worldwide.' },
+  { key: 'SIL',  label: 'Silver Miners ETF',        y: ['SIL'],             tv: ['AMEX:SIL', 'NYSEARCA:SIL'],                about: 'Global X Silver Miners ETF: primary-silver producers worldwide.' },
   { key: 'LIT',  label: 'Lithium & Battery ETF',    y: ['LIT'],             tv: ['AMEX:LIT', 'NYSEARCA:LIT'],                about: 'Lithium miners and battery manufacturers ETF.' },
   { key: 'PICK', label: 'Metal & Mining SPDR ETF',  y: ['PICK'],            tv: ['CBOE:PICK', 'AMEX:PICK', 'NYSEARCA:PICK'], about: 'iShares MSCI Global Metals & Mining Producers ETF.' },
-  { key: 'TSX',  label: 'S&P/TSX Composite',        y: ['^GSPTSE'],         tv: ['TSX:TSX', 'INDEX:TSX'],                    about: 'S&P/TSX Composite Index — the benchmark for the Toronto Stock Exchange covering large-cap Canadian equities.' },
-  { key: 'XJO',  label: 'ASX 200',                  y: ['^AXJO'],           tv: ['ASX:XJO', 'INDEX:XJO'],                    about: 'S&P/ASX 200 — Australian large-cap benchmark.' },
-  { key: 'SPX',  label: 'S&P 500',                  y: ['^GSPC'],           tv: ['SP:SPX', 'TVC:SPX', 'INDEX:SPX'],          about: 'S&P 500 — US large-cap benchmark.' },
-  { key: 'VIX',  label: 'Volatility Index',         y: ['^VIX'],            tv: ['TVC:VIX', 'CBOE:VIX', 'INDEX:VIX'],        about: 'CBOE Volatility Index — implied 30-day S&P 500 volatility.' },
+  { key: 'TSX',  label: 'S&P/TSX Composite',        y: ['^GSPTSE'],         tv: ['TSX:TSX', 'INDEX:TSX'],                    about: 'S&P/TSX Composite Index: the benchmark for the Toronto Stock Exchange covering large-cap Canadian equities.' },
+  { key: 'XJO',  label: 'ASX 200',                  y: ['^AXJO'],           tv: ['ASX:XJO', 'INDEX:XJO'],                    about: 'S&P/ASX 200: Australian large-cap benchmark.' },
+  { key: 'SPX',  label: 'S&P 500',                  y: ['^GSPC'],           tv: ['SP:SPX', 'TVC:SPX', 'INDEX:SPX'],          about: 'S&P 500: US large-cap benchmark.' },
+  { key: 'VIX',  label: 'Volatility Index',         y: ['^VIX'],            tv: ['TVC:VIX', 'CBOE:VIX', 'INDEX:VIX'],        about: 'CBOE Volatility Index: implied 30-day S&P 500 volatility.' },
 ];
 
 const CURRENCY_SYMBOLS = [

@@ -30,8 +30,10 @@ export default function MarketDetailLayout({
 }: MarketDetailLayoutProps) {
   return (
     <div className="grid lg:grid-cols-3 gap-6 items-start">
-      <div className="lg:col-span-2 flex flex-col gap-6">
-        <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
+      {/* min-w-0: grid items default to min-width:auto, so the chart's intrinsic
+          width would otherwise stretch the whole column past the viewport. */}
+      <div className="lg:col-span-2 min-w-0 flex flex-col gap-6">
+        <div className="rounded-lg border bg-card text-card-foreground shadow-sm overflow-hidden">
           <div className="space-y-1.5 p-6 pb-3 flex flex-col gap-2 shrink-0">
             <div className="flex flex-row items-center justify-between gap-3 flex-wrap">
               <h3 className="font-semibold tracking-tight font-display text-xl">Price</h3>
@@ -48,7 +50,7 @@ export default function MarketDetailLayout({
         {discussion}
       </div>
 
-      <aside className="flex flex-col gap-4 lg:sticky lg:top-24">
+      <aside className="min-w-0 flex flex-col gap-4 lg:sticky lg:top-24">
         <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
           <div className="flex flex-col space-y-1.5 p-6 pb-2">
             <h3 className="font-semibold font-display text-base uppercase tracking-wider">Key stats</h3>

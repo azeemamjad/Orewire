@@ -4,6 +4,7 @@ const {
   isExtractionFailed,
 } = require('./constants');
 const { issuerMatchesCompany } = require('../../companies/match');
+const { sanitizeProse } = require('../../text/sanitize-prose');
 
 /**
  * Resolve filing status after analysis (extraction_failed / company_mismatch / analyzed).
@@ -24,21 +25,29 @@ function resolveFilingStatus(analysis, companyName) {
   return filingStatusForAnalysis(analysis);
 }
 
+// Prose fields are surfaced verbatim in emails and on the site, so strip the
+// model's em dashes / smart quotes here. raw_response stays untouched so the
+// audit trail still shows exactly what the model returned.
+function clean(value) {
+  return value == null ? null : sanitizeProse(value);
+}
+
 function aiOutputParams(filingId, analysis) {
   const ext = analysis.data_extracted || {};
   // Prefer structured insider_ownership (incl. options) in insider_holdings column when present
   const insiderJson = ext.insider_ownership || ext.insider_holdings || null;
+  const keyFacts = (analysis.key_facts ?? []).map((f) => (typeof f === 'string' ? sanitizeProse(f) : f));
   return [
     filingId,
     analysis.display_type ?? null,
-    analysis.ticker_summary ?? null,
-    analysis.summary ?? null,
+    clean(analysis.ticker_summary),
+    clean(analysis.summary),
     analysis.verdict ?? null,
-    analysis.verdict_reason ?? null,
-    JSON.stringify(analysis.key_facts ?? []),
-    analysis.context ?? null,
-    analysis.grade_commentary ?? null,
-    analysis.what_to_watch ?? null,
+    clean(analysis.verdict_reason),
+    JSON.stringify(keyFacts),
+    clean(analysis.context),
+    clean(analysis.grade_commentary),
+    clean(analysis.what_to_watch),
     ext.cash_position ?? null,
     ext.burn_rate_quarterly ?? null,
     JSON.stringify(ext.resource_estimates ?? null),

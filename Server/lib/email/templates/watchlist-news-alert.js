@@ -59,12 +59,12 @@ function verdictText(sentiment, summary) {
   const tail = (summary || '').trim();
   if (s === 'bullish') {
     return tail
-      ? `Positive signal for watchlist holders — ${tail}`
+      ? `Positive signal for watchlist holders. ${tail}`
       : 'Positive signal for watchlist holders based on this release.';
   }
   if (s === 'bearish') {
     return tail
-      ? `Worth monitoring closely — ${tail}`
+      ? `Worth monitoring closely. ${tail}`
       : 'Worth monitoring closely; review the full release on OreWire.';
   }
   return tail || 'Review the full summary on OreWire for investor context.';
@@ -78,7 +78,7 @@ function renderWatchlistNewsAlertEmail(data) {
   const keyFacts = splitKeyFacts(summary);
   const whyText = verdictText(data.sentiment, summary);
 
-  const preheader = `${tickerLine} — ${headlineType}`;
+  const preheader = `${tickerLine} | ${headlineType}`;
 
   const keyFactsHtml = keyFacts.length
     ? `${tealDivider()}${cardLabel('Key facts')}
@@ -141,7 +141,7 @@ ${watchlistContextBlock(data.ticker)}`;
 function newsAlertSubject(data) {
   const tickerLine = slugLabel(data.exchange, data.ticker);
   const headlineType = headlineTypeFromTitle(data.title);
-  return `${tickerLine} — ${headlineType}`;
+  return `${tickerLine} | ${headlineType}`;
 }
 
 module.exports = {

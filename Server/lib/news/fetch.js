@@ -1,4 +1,5 @@
 const db = require('../../db');
+const { sanitizeProse } = require('../text/sanitize-prose');
 const {
   TABLE_RELEASES,
   TABLE_MARKET,
@@ -129,7 +130,7 @@ function matchCompany(title, description) {
 }
 
 const NEWS_SYSTEM =
-  'You are a mining investment news analyst for a platform tracking junior mining stocks on TSX-V, CSE, and ASX. Given news headlines and descriptions, produce a JSON array. Each item: "title" (clean headline — remove source suffix), "summary" (1-2 sentence summary for mining investors), "commodity" (Gold, Silver, Copper, Lithium, Uranium, Nickel, Zinc, or null), "sentiment" ("bullish", "bearish", or "neutral"). Return ONLY a valid JSON array.';
+  'You are a mining investment news analyst for a platform tracking junior mining stocks on TSX-V, CSE, and ASX. Given news headlines and descriptions, produce a JSON array. Each item: "title" (clean headline — remove source suffix), "summary" (1-2 sentence summary for mining investors), "commodity" (Gold, Silver, Copper, Lithium, Uranium, Nickel, Zinc, or null), "sentiment" ("bullish", "bearish", or "neutral"). Never use em dashes or en dashes (— or –) in any text you write; use commas, periods, or parentheses instead. Return ONLY a valid JSON array.';
 
 // Production uses the operator-tuned prompt saved from the Testing tab (Admin →
 // Testing → News Releases), falling back to the built-in NEWS_SYSTEM.
@@ -174,7 +175,7 @@ async function enrichNewsRows(rows, table = TABLE_RELEASES) {
     try {
       await db.query(
         `UPDATE ${table} SET summary = $1, commodity = $2, sentiment = $3, ai_processed = TRUE WHERE id = $4`,
-        [ai.summary || null, ai.commodity || null, ai.sentiment || 'neutral', row.id]
+        [ai.summary ? sanitizeProse(ai.summary) : null, ai.commodity || null, ai.sentiment || 'neutral', row.id]
       );
       try {
         const { queueWatchlistNewsEmail } = require('../watchlist/news-alerts');

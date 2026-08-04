@@ -66,7 +66,7 @@ function renderWatchlistFilingAlertEmail(data) {
   const keyFacts = parseKeyFacts(data.keyFacts);
   const verdictReason = (data.verdictReason || '').trim();
 
-  const preheader = `${tickerLine} — ${filingType}`;
+  const preheader = `${tickerLine} | ${filingType}`;
 
   const summaryCard = `
 <tr><td style="padding:0 32px 24px 32px;">
@@ -121,7 +121,7 @@ ${watchlistContextBlock(data.ticker)}`;
 function filingAlertSubject(data) {
   const tickerLine = slugLabel(data.exchange, data.ticker);
   const filingType = normalizeFilingType(data.filingType, data.displayType);
-  return `${tickerLine} — ${filingType}`;
+  return `${tickerLine} | ${filingType}`;
 }
 
 module.exports = {

@@ -19,7 +19,7 @@ ${emailHeaderRow()}
   <p style="margin:0 0 16px 0;font-family:${MONO};font-size:11px;color:${C.gold};letter-spacing:0.15em;text-transform:uppercase;">/// Morning brief</p>
   <h1 style="margin:0 0 20px 0;font-family:${SERIF};font-size:34px;line-height:1.15;font-weight:700;color:${C.navy};letter-spacing:-0.02em;">You're on the list.</h1>
   <p style="margin:0 0 24px 0;font-size:16px;line-height:1.6;color:${C.muted};">
-    Thanks for subscribing to the <strong style="color:${C.navy};">Morning Brief</strong> — OreWire's daily summary of the mining market, delivered before the open.
+    Thanks for subscribing to the <strong style="color:${C.navy};">Morning Brief</strong>, OreWire's daily summary of the mining market, delivered before the open.
   </p>
 </td></tr>
 <tr><td style="padding:0 40px 8px 40px;">
@@ -38,8 +38,8 @@ ${emailHeaderRow()}
   return {
     subject: "You're subscribed to the Morning Brief",
     html: emailDocument({
-      title: 'Morning Brief — OreWire',
-      preheader: 'Your first briefing arrives by 7:30am ET — mining filings summarized before the open.',
+      title: 'Morning Brief | OreWire',
+      preheader: 'Your first briefing arrives by 7:30am ET. Mining filings summarized before the open.',
       bodyRows: body,
     }),
   };

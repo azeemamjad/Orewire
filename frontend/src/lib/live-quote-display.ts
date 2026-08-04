@@ -11,7 +11,7 @@ export function formatPrice4(n: number): string {
  */
 export function formatLiveLastLabel(updatedAtMs: number | null | undefined): string {
   if (updatedAtMs == null || !Number.isFinite(updatedAtMs) || updatedAtMs <= 0) {
-    return '· Live · Last: — ET';
+    return '· Live · Last: N/A';
   }
   const time = new Date(updatedAtMs).toLocaleTimeString('en-US', {
     timeZone: ET_TZ,

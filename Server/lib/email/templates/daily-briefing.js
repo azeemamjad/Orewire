@@ -43,9 +43,9 @@ function fmtBriefingHeaderDate(d = new Date()) {
 }
 
 function fmtPrice(price, unit) {
-  if (price == null) return '—';
+  if (price == null) return 'N/A';
   const n = Number(price);
-  if (Number.isNaN(n)) return '—';
+  if (Number.isNaN(n)) return 'N/A';
   const formatted = n >= 100
     ? n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
@@ -54,25 +54,31 @@ function fmtPrice(price, unit) {
 
 function quoteGroupHtml(title, items) {
   if (!items.length) return '';
+  const lastIndex = items.length - 1;
+  const rowCount = Math.ceil(items.length / 2);
   const rows = chunk(items, 2).map((row, ri) => {
     const cells = row.map((item, ci) => {
+      const index = ri * 2 + ci;
       const name = escapeHtml(item.label || item.key);
       const price = fmtPrice(item.price, item.unit);
       const pct = fmtPctChange(item.change_pct);
-      const borderBottom = ri < Math.ceil(items.length / 2) - 1 ? `border-bottom:1px dotted ${C.border};` : '';
-      return `<td class="qcol" width="50%" style="padding:6px 0;padding-right:${ci === 0 ? '10px' : '0'};padding-left:${ci === 1 ? '10px' : '0'};vertical-align:middle;${borderBottom}">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
-          <td style="font-size:12px;font-weight:700;color:${C.navy};">${name}</td>
-          <td style="text-align:right;font-family:${MONO};font-size:11px;color:${C.text};white-space:nowrap;">${price} ${pct}</td>
+      const borderBottom = ri < rowCount - 1 ? `border-bottom:1px dotted ${C.border};` : '';
+      const gutter = ci === 0 ? 'padding-right:14px;' : 'padding-left:14px;';
+      const lastClass = index === lastIndex ? ' qcol-last' : '';
+      return `<td class="qcol${lastClass}" width="50%" style="padding-top:4px;padding-bottom:4px;${gutter}vertical-align:middle;${borderBottom}">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;"><tr>
+          <td align="left" style="font-size:12px;font-weight:700;color:${C.navy};padding-right:8px;">${name}</td>
+          <td align="right" style="text-align:right;font-family:${MONO};font-size:11px;color:${C.text};white-space:nowrap;">${price}</td>
+          <td align="right" width="70" style="width:70px;text-align:right;font-family:${MONO};font-size:11px;white-space:nowrap;padding-left:10px;">${pct}</td>
         </tr></table>
       </td>`;
     }).join('');
-    const pad = row.length === 1 ? '<td class="qcol" width="50%"></td>' : '';
+    const pad = row.length === 1 ? '<td class="qcol qcol-pad" width="50%"></td>' : '';
     return `<tr>${cells}${pad}</tr>`;
   }).join('');
 
-  return `<div style="margin-top:14px;padding-top:12px;border-top:1px solid ${C.border};">
-    <div style="font-family:${MONO};font-size:9px;color:${C.muted};letter-spacing:0.16em;margin-bottom:8px;text-transform:uppercase;">${escapeHtml(title)}</div>
+  return `<div style="margin-top:10px;padding-top:10px;border-top:1px solid ${C.border};">
+    <div style="font-family:${MONO};font-size:9px;color:${C.muted};letter-spacing:0.16em;margin-bottom:5px;text-transform:uppercase;">${escapeHtml(title)}</div>
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;"><tbody>${rows}</tbody></table>
   </div>`;
 }
@@ -123,17 +129,17 @@ function renderDailyBriefing(data, opts = {}) {
   const snapshotDate = fmtDateLong().toUpperCase();
 
   const preheader = data.watchlistCount > 0
-    ? `Your daily briefing — ${data.watchlistCount} watchlist filing${data.watchlistCount === 1 ? '' : 's'}, ${data.counts.noteworthy} noteworthy today`
-    : `Your daily briefing — ${data.counts.noteworthy} noteworthy filings today`;
+    ? `Your daily briefing: ${data.watchlistCount} watchlist filing${data.watchlistCount === 1 ? '' : 's'}, ${data.counts.noteworthy} noteworthy today`
+    : `Your daily briefing: ${data.counts.noteworthy} noteworthy filings today`;
 
-  const headerRight = `<div style="font-family:${SERIF};font-size:15px;color:${C.navy};font-weight:600;">Morning Briefing</div>
-    <div style="font-family:${MONO};font-size:10px;color:${C.muted};letter-spacing:0.1em;margin-top:2px;">${escapeHtml(headerDate)}</div>`;
+  const headerRight = `<div style="font-family:${SERIF};font-size:16px;line-height:1.3;color:${C.navy};font-weight:600;">Morning Briefing</div>
+    <div style="font-family:${MONO};font-size:10px;line-height:1.5;color:${C.muted};letter-spacing:0.06em;padding-top:5px;">${escapeHtml(headerDate)}</div>`;
 
   const marketSnapshot = `
-<tr><td style="background-color:${C.panel};padding:18px 24px 20px 24px;border-top:1px solid ${C.border};border-bottom:1px solid ${C.border};">
+<tr><td class="px" style="background-color:${C.panel};padding:18px 32px 18px 32px;border-top:1px solid ${C.border};border-bottom:1px solid ${C.border};">
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
-    <td><div style="font-family:${SERIF};font-size:14px;font-weight:700;color:${C.navy};">Market Snapshot</div></td>
-    <td style="text-align:right;font-family:${MONO};font-size:10px;color:${C.muted};letter-spacing:0.08em;">AS OF 7:30 AM ET · ${escapeHtml(snapshotDate.split(',')[0].toUpperCase())}</td>
+    <td class="stackcol" style="vertical-align:middle;"><div style="font-family:${SERIF};font-size:15px;font-weight:700;color:${C.navy};">Market Snapshot</div></td>
+    <td class="stackcol stackcol-tight" style="text-align:right;vertical-align:middle;padding-left:12px;font-family:${MONO};font-size:10px;color:${C.muted};letter-spacing:0.06em;">AS OF 7:30 AM ET · ${escapeHtml(snapshotDate.split(',')[0].toUpperCase())}</td>
   </tr></table>
   ${quoteGroupHtml('Commodities', data.commodities || [])}
   ${quoteGroupHtml('Indexes', data.indexes || [])}
@@ -147,7 +153,7 @@ function renderDailyBriefing(data, opts = {}) {
       ? `<p style="margin:0;font-size:13px;color:${C.muted};">No watchlist filings in the last 24 hours. <a href="${escapeHtml(cfg.watchlistUrl)}" style="color:${C.teal};font-weight:600;text-decoration:none;">Manage watchlist →</a></p>`
       : cards;
     watchlistSection = `
-<tr><td style="padding:32px 32px 8px 32px;background-color:${C.white};">
+<tr><td class="px" style="padding:32px 32px 8px 32px;background-color:${C.white};">
   <p style="margin:0 0 4px 0;font-family:${SERIF};font-size:20px;font-weight:700;color:${C.navy};letter-spacing:-0.01em;">From your watchlist</p>
   <p style="margin:0 0 16px 0;font-size:12px;color:${C.muted};">Noteworthy news releases and filings from companies you follow</p>
   ${empty}
@@ -163,9 +169,9 @@ function renderDailyBriefing(data, opts = {}) {
     : `<tr><td style="padding:16px 14px;font-size:13px;color:${C.muted};">No noteworthy market filings in the last 24 hours.</td></tr>`;
 
   const marketSection = `
-<tr><td style="padding:24px 32px 8px 32px;background-color:${C.white};">
+<tr><td class="px" style="padding:24px 32px 8px 32px;background-color:${C.white};">
   <p style="margin:0 0 4px 0;font-family:${SERIF};font-size:20px;font-weight:700;color:${C.navy};letter-spacing:-0.01em;">From the market</p>
-  <p style="margin:0 0 14px 0;font-size:12px;color:${C.muted};">Noteworthy news releases and filings across TSX, TSX-V, CSE, and ASX — last 24 hours</p>
+  <p style="margin:0 0 14px 0;font-size:12px;color:${C.muted};">Noteworthy news releases and filings across TSX, TSX-V, CSE, and ASX in the last 24 hours</p>
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border:1px solid ${C.border};border-radius:6px;border-collapse:separate;">
     <tbody>${marketRows}</tbody>
   </table>
@@ -175,7 +181,7 @@ function renderDailyBriefing(data, opts = {}) {
 </td></tr>`;
 
   const ctaSection = `
-<tr><td style="padding:24px 32px 32px 32px;">
+<tr><td class="px" style="padding:24px 32px 32px 32px;">
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:${C.goldSoft};border-radius:8px;"><tr>
   <td style="padding:28px 24px;text-align:center;">
     <p style="margin:0 0 6px 0;font-family:${SERIF};font-size:18px;font-weight:700;color:${C.navy};">Looking for a specific company?</p>
@@ -201,7 +207,7 @@ ${ctaSection}`;
 
 function briefingSubject() {
   const d = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Toronto' });
-  return `Morning Briefing — ${d}`;
+  return `Morning Briefing: ${d}`;
 }
 
 module.exports = {

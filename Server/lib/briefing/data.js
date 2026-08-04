@@ -1,4 +1,5 @@
 const db = require('../../db');
+const { sanitizeProse } = require('../text/sanitize-prose');
 const {
   getCommoditiesPayload,
   getIndexesPayload,
@@ -30,7 +31,7 @@ function enrichFiling(row) {
   const verdict = row.verdict
     ? row.verdict.charAt(0).toUpperCase() + row.verdict.slice(1).toLowerCase()
     : null;
-  const summary = (row.summary || row.verdict_reason || '').trim();
+  const summary = sanitizeProse(row.summary || row.verdict_reason || '');
   return {
     id: row.id,
     companyName: row.company_name,
@@ -40,9 +41,9 @@ function enrichFiling(row) {
     filingType: row.filing_type || 'Filing',
     verdict,
     summary,
-    summaryShort: summary.length > 160 ? `${summary.slice(0, 157)}…` : summary,
+    summaryShort: summary.length > 160 ? `${summary.slice(0, 157)}...` : summary,
     href: filingHref(row.id),
-    slugLabel: `${fmtExchange(row.exchange)}: ${row.ticker || '—'}`,
+    slugLabel: `${fmtExchange(row.exchange)}: ${row.ticker || 'N/A'}`,
   };
 }
 
@@ -102,8 +103,8 @@ async function fetchNewsSince(since, limit = 30) {
     const ticker = row.company_ticker || row.ticker;
     const exchange = row.exchange;
     const slug = ticker && exchange ? `${fmtExchange(exchange)}: ${ticker.toUpperCase()}` : (ticker || 'News');
-    const headline = (row.summary || row.title || '').trim();
-    const short = headline.length > 120 ? `${headline.slice(0, 117)}…` : headline;
+    const headline = sanitizeProse(row.summary || row.title || '');
+    const short = headline.length > 120 ? `${headline.slice(0, 117)}...` : headline;
     return {
       slugLabel: slug,
       companyName: row.company_name,

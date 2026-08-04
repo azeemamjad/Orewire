@@ -40,7 +40,7 @@ async function sendWelcomeEmail({ email, firstName }) {
   const html = renderWelcomeEmail({ firstName });
   await sendEmailViaResend(
     email.toLowerCase(),
-    "You're in — welcome to OreWire",
+    "You're in. Welcome to OreWire",
     html,
   );
 }

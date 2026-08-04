@@ -269,6 +269,8 @@ what_to_watch must be grounded only in catalysts supported by the filing.
 RULES
 ═══════════════════════════════════════════════════════════════════
 
+- Never use em dashes or en dashes (— or –). Use commas, periods, or parentheses
+  instead. Use plain straight quotes, never curly quotes
 - Never use the words 'buy', 'sell', 'strong buy', 'target price', or any investment
   recommendation language
 - Never invent data — if something is unclear from the filing, say so explicitly
