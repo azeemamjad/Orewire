@@ -24,6 +24,7 @@ async function runPipelineScrape(company, workerSlot, cfg = {}) {
     } else {
       await runSedarDownload(company.name, {
         noAnalyze: true,
+        daysBack: cfg.daysBack || 30,
         relaySlot: workerSlot,
         taskSlug: 'pipeline_sedar_batch',
       });
@@ -37,10 +38,11 @@ async function runPipelineScrape(company, workerSlot, cfg = {}) {
   }
 }
 
-async function runSedarManual(companyName, slot = 1) {
+async function runSedarManual(companyName, slot = 1, opts = {}) {
   const saved = applyScraperEnv({ relay: relayWiringEnabled() });
   try {
     return await runSedarDownload(companyName, {
+      daysBack: opts.daysBack,
       relaySlot: slot,
       taskSlug: 'sedar_manual',
     });

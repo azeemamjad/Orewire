@@ -60,16 +60,27 @@ function logoMarkHtml() {
 </tr></table>`;
 }
 
-function emailHeaderRow(rightHtml = '') {
+/**
+ * @param rightHtml  sits beside the logo (stacks under it on mobile)
+ * @param belowHtml  full-width block under the logo — use for a masthead title
+ *                   that needs the whole row rather than the logo's leftovers
+ */
+function emailHeaderRow(rightHtml = '', belowHtml = '') {
   const right = rightHtml
     ? `<td class="stackcol stackcol-right" style="text-align:right;vertical-align:middle;padding-left:16px;">${rightHtml}</td>`
     : '';
+  const below = belowHtml
+    ? `<tr><td colspan="2" style="padding-top:18px;">${belowHtml}</td></tr>`
+    : '';
   return `<tr>
   <td class="px" style="background-color:${C.white};padding:24px 32px;border-bottom:1px solid ${C.border};">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+    <tr>
       <td class="stackcol" style="vertical-align:middle;">${logoMarkHtml()}</td>
       ${right}
-    </tr></table>
+    </tr>
+    ${below}
+    </table>
   </td>
 </tr>`;
 }
@@ -155,6 +166,10 @@ function emailDocument({ title, preheader, bodyRows, showMarketingFooter = true 
     }
     .stackcol-right { padding-top: 14px !important; }
     .stackcol-tight { padding-top: 6px !important; }
+    /* Masthead title shares its row with the dateline — trim it on phones so the
+       two stay side by side instead of colliding. */
+    .mast-title { font-size: 22px !important; }
+    .mast-date { font-size: 10px !important; letter-spacing: 0.03em !important; }
     /* Quote rows collapse to a single column; drop the desktop gutters so every
        line item shares the same left and right edge. */
     .qcol {

@@ -7,6 +7,7 @@ const { withBrowserSession } = require('../utils/browser-session');
 const { DOWNLOADS_DIR, COOKIE_FILE } = require('../paths');
 
 const BASE_URL = 'https://www.sedarplus.ca/home/';
+const DEFAULT_DAYS_BACK = 30;
 // Browser / context setup
 // ---------------------------------------------------------------------------
 
@@ -111,7 +112,7 @@ async function fillDateInput(page, selector, dateStr) {
 
 // ---------------------------------------------------------------------------
 
-async function searchCompany(page, companyName) {
+async function searchCompany(page, companyName, daysBack = DEFAULT_DAYS_BACK) {
   await humanType(page, page.locator('input[placeholder="Profile name or number"]'), companyName);
 
   await page.waitForSelector('ul.ui-autocomplete li.ui-menu-item', { state: 'visible', timeout: 15000 });
@@ -138,10 +139,10 @@ async function searchCompany(page, companyName) {
   ]);
   await humanDelay(600, 1000);
 
-  // Fill date range: past month → today (format DD/MM/YYYY)
+  // Fill date range: daysBack days ago → today (format DD/MM/YYYY)
   const today    = new Date();
-  const fromDate = new Date(today);
-  fromDate.setMonth(fromDate.getMonth() - 1);
+  const days     = Math.max(1, parseInt(daysBack, 10) || DEFAULT_DAYS_BACK);
+  const fromDate = new Date(today.getTime() - days * 24 * 60 * 60 * 1000);
   const fromStr = formatDDMMYYYY(fromDate);
   const toStr   = formatDDMMYYYY(today);
 
@@ -253,7 +254,7 @@ async function downloadPage(page, companyDir, pageNum, saved) {
 // Main
 // ---------------------------------------------------------------------------
 
-async function scrapeSedarOnPage(page, context, companyName) {
+async function scrapeSedarOnPage(page, context, companyName, options = {}) {
   const downloadBase = DOWNLOADS_DIR;
   const companyDir   = path.join(downloadBase, companyName.replace(/[^\w\s-]/g, '_').trim());
   fs.mkdirSync(companyDir, { recursive: true });
@@ -262,7 +263,7 @@ async function scrapeSedarOnPage(page, context, companyName) {
   await navigateToDocumentsSearch(page, context);
 
   console.log(`[SEDAR] Searching for "${companyName}"…`);
-  await searchCompany(page, companyName);
+  await searchCompany(page, companyName, options.daysBack);
 
   await saveCookies(context);
 
@@ -311,7 +312,7 @@ async function scrapeSedar(companyName, options = {}) {
     }
 
     try {
-      return await scrapeSedarOnPage(page, context, companyName);
+      return await scrapeSedarOnPage(page, context, companyName, { daysBack: options.daysBack });
     } finally {
       await saveCookies(context);
     }

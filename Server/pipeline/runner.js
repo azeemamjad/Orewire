@@ -23,15 +23,54 @@ const { applyScraperEnv, restoreScraperEnv, relayWiringEnabled } = require('../l
 const { runSedarDownload } = require('../lib/scraper/runners/sedar');
 const { runAsxDownload } = require('../lib/scraper/runners/asx');
 const { runAnalyzeOne } = require('../lib/scraper/runners/analyze-one');
+const { refreshProxyCache, getProxyWorkersForTier } = require('../relay/proxy-store');
+
+/**
+ * Relay worker slots actually available in a tier right now. Hard-coding this
+ * dispatched to RES-2 / RES-3 long after those proxies were removed, so every
+ * surplus worker sat in the acquire queue and timed out.
+ */
+async function relaySlotCount(tier) {
+  try {
+    await refreshProxyCache();
+    return getProxyWorkersForTier(tier).length;
+  } catch (err) {
+    addLog('warn', `[Pipeline] Could not read ${tier} relay pool: ${err.message}`);
+    return 0;
+  }
+}
+
+/**
+ * Hand out at most `limit` concurrent permits. A SEDAR+ download holds its
+ * relay worker for the whole scrape, so without this the extra download workers
+ * queue on a busy worker and die with "No available 'res' relay worker".
+ */
+function createSemaphore(limit) {
+  let active = 0;
+  const waiters = [];
+  const release = () => {
+    const next = waiters.shift();
+    // Hand the permit straight to the next waiter — never dip below the limit.
+    if (next) next();
+    else active -= 1;
+  };
+  return async () => {
+    if (active >= limit) {
+      await new Promise((resolve) => waiters.push(resolve));
+      return release;
+    }
+    active += 1;
+    return release;
+  };
+}
 
 // company = { name, ticker, exchange }
-async function spawnWorker(company, workerId, cfg) {
+async function spawnWorker(company, workerId, cfg, relay = {}) {
   const isASX = company.exchange === 'ASX';
   const arg = isASX ? (company.ticker || company.name) : company.name;
   const tag = `[W${workerId}|${arg.substring(0, 22)}]`;
-  const relaySlot = isASX
-    ? ((workerId - 1) % 5) + 1
-    : ((workerId - 1) % 3) + 1;
+  const slots = Math.max(1, relay.slots || 1);
+  const relaySlot = ((workerId - 1) % slots) + 1;
 
   // ASX filings use Markit HTTP by default (Relay DC cannot reach asx.com.au).
   // SEDAR+ still goes through residential Relay workers.
@@ -39,9 +78,10 @@ async function spawnWorker(company, workerId, cfg) {
   if (isASX) {
     addLog('out', `${tag} → Markit HTTP`);
   } else if (useRelay) {
-    addLog('out', `${tag} → Relay RES-${relaySlot}`);
+    addLog('out', `${tag} → Relay res slot ${relaySlot}/${slots}`);
   }
 
+  const releaseRelay = useRelay && relay.acquire ? await relay.acquire() : null;
   const saved = applyScraperEnv({ relay: useRelay });
   try {
     if (isASX) {
@@ -54,6 +94,7 @@ async function spawnWorker(company, workerId, cfg) {
     } else {
       await runSedarDownload(arg, {
         noAnalyze: true,
+        daysBack: cfg.daysBack,
         relaySlot,
         taskSlug: 'pipeline_sedar_batch',
       });
@@ -67,12 +108,29 @@ async function spawnWorker(company, workerId, cfg) {
     return 1;
   } finally {
     restoreScraperEnv(saved);
+    if (releaseRelay) releaseRelay();
   }
 }
 
 async function runDownloadQueue(companies, cfg) {
   const queue = [...companies];
   let workerIdx = 0;
+
+  // Relay-backed (SEDAR+) work is limited by the residential pool, not by the
+  // configured download-worker count. ASX runs over plain HTTP and is unaffected.
+  const needsRelay = relayWiringEnabled() && companies.some((c) => c.exchange !== 'ASX');
+  const slots = needsRelay ? await relaySlotCount('res') : 0;
+  if (needsRelay) {
+    if (slots === 0) {
+      addLog('warn', '[Pipeline] No enabled residential proxies — SEDAR+ workers will fall back to direct');
+    } else if (slots < cfg.concurrency) {
+      addLog('out', `[Pipeline] Residential relay workers: ${slots} — SEDAR+ downloads capped at ${slots} concurrent (ASX unaffected)`);
+    }
+  }
+  const relay = {
+    slots,
+    acquire: slots > 0 ? createSemaphore(slots) : null,
+  };
 
   async function drain(id) {
     while (queue.length > 0) {
@@ -82,7 +140,7 @@ async function runDownloadQueue(companies, cfg) {
       }
       const company = queue.shift();
       if (!company) break;
-      await spawnWorker(company, id, cfg);
+      await spawnWorker(company, id, cfg, relay);
       // After each download completes, queue its PDFs for analysis
       if (cfg.analyze) {
         queueAnalysesForCompany(company);

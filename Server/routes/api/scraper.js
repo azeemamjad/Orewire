@@ -16,6 +16,7 @@ const { DOWNLOADS_DIR } = require('../../lib/scraper/paths');
 const { applyScraperEnv, restoreScraperEnv, relayWiringEnabled } = require('../../lib/scraper/env');
 const { runSedarDownload } = require('../../lib/scraper/runners/sedar');
 const { runAsxDownload } = require('../../lib/scraper/runners/asx');
+const { getProxyWorkersForTier } = require('../../relay/proxy-store');
 
 const downloadsDir = DOWNLOADS_DIR;
 const activeScrapes = new Map();
@@ -142,12 +143,20 @@ router.post('/run', express.json(), (req, res) => {
   };
   activeScrapes.set(id, entry);
 
-  const slot = isASX ? (proxyRotor++ % 5) + 1 : (proxyRotor++ % 3) + 1;
+  // Rotate over the residential proxies that exist right now — a fixed 1..3
+  // rotor kept dispatching to slots whose proxies had already been removed.
   const useRelay = !isASX && relayWiringEnabled();
+  let resSlots = 0;
+  if (useRelay) {
+    try {
+      resSlots = getProxyWorkersForTier('res').length;
+    } catch { /* cache not loaded — fall back to slot 1 */ }
+  }
+  const slot = isASX ? (proxyRotor++ % 5) + 1 : (proxyRotor++ % Math.max(1, resSlots)) + 1;
   if (isASX) {
     entry.logs.push({ t: 'out', msg: `[ASX] Markit HTTP → ${label}\n` });
   } else if (useRelay) {
-    entry.logs.push({ t: 'out', msg: `[Relay] RES-${slot} → ${label}\n` });
+    entry.logs.push({ t: 'out', msg: `[Relay] res slot ${slot}/${Math.max(1, resSlots)} → ${label}\n` });
   }
 
   (async () => {
@@ -168,6 +177,7 @@ router.post('/run', express.json(), (req, res) => {
         await runSedarDownload(company, {
           noAnalyze: scrapeOnly,
           analyzeOnly,
+          daysBack: daysBack || 30,
           relaySlot: slot,
           taskSlug: 'sedar_manual',
         });

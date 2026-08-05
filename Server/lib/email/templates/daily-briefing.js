@@ -39,7 +39,15 @@ function fmtDateLong(d = new Date()) {
 function fmtBriefingHeaderDate(d = new Date()) {
   const day = d.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'America/Toronto' }).toUpperCase();
   const rest = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Toronto' }).toUpperCase();
-  return `${day} · ${rest} · 7:30 AM ET`;
+  return `${day} · ${rest}`;
+}
+
+// "TUESDAY, AUG 4" — the snapshot line names the weekday, so carry the date
+// with it rather than making the reader scroll back to the masthead.
+function fmtSnapshotDay(d = new Date()) {
+  const weekday = d.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'America/Toronto' }).toUpperCase();
+  const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Toronto' }).toUpperCase();
+  return `${weekday}, ${date}`;
 }
 
 // `symbol` is '$' for commodities only. Index levels and FX rates are not
@@ -129,20 +137,30 @@ function marketRowHtml(item, isFirst) {
 function renderDailyBriefing(data, opts = {}) {
   const cfg = emailConfig();
   const headerDate = fmtBriefingHeaderDate();
-  const snapshotDate = fmtDateLong().toUpperCase();
+  const snapshotDay = fmtSnapshotDay();
 
   const preheader = data.watchlistCount > 0
     ? `Your daily briefing: ${data.watchlistCount} watchlist filing${data.watchlistCount === 1 ? '' : 's'}, ${data.counts.noteworthy} noteworthy today`
     : `Your daily briefing: ${data.counts.noteworthy} noteworthy filings today`;
 
-  const headerRight = `<div style="font-family:${SERIF};font-size:16px;line-height:1.3;color:${C.navy};font-weight:600;">Morning Briefing</div>
-    <div style="font-family:${MONO};font-size:10px;line-height:1.5;color:${C.muted};letter-spacing:0.06em;padding-top:5px;">${escapeHtml(headerDate)}</div>`;
+  // Masthead gets its own full-width row: title left, dateline right. The date
+  // is nowrap and the title is not, so on a very narrow phone the title wraps
+  // rather than the two overrunning the container.
+  const headerBelow = `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+      <td style="vertical-align:bottom;">
+        <div class="mast-title" style="font-family:${SERIF};font-size:26px;line-height:1.15;color:${C.navy};font-weight:700;letter-spacing:-0.015em;">Morning Briefing</div>
+      </td>
+      <td style="vertical-align:bottom;text-align:right;padding-left:10px;white-space:nowrap;">
+        <div class="mast-date" style="font-family:${MONO};font-size:11px;line-height:1.4;color:${C.muted};letter-spacing:0.06em;">${escapeHtml(headerDate)}</div>
+        <div class="mast-date" style="font-family:${MONO};font-size:10px;line-height:1.4;color:${C.faint};letter-spacing:0.06em;">7:30 AM ET</div>
+      </td>
+    </tr></table>`;
 
   const marketSnapshot = `
 <tr><td class="px" style="background-color:${C.panel};padding:18px 32px 18px 32px;border-top:1px solid ${C.border};border-bottom:1px solid ${C.border};">
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
     <td class="stackcol" style="vertical-align:middle;"><div style="font-family:${SERIF};font-size:15px;font-weight:700;color:${C.navy};">Market Snapshot</div></td>
-    <td class="stackcol stackcol-tight" style="text-align:right;vertical-align:middle;padding-left:12px;font-family:${MONO};font-size:10px;color:${C.muted};letter-spacing:0.06em;">AS OF 7:30 AM ET · ${escapeHtml(snapshotDate.split(',')[0].toUpperCase())}</td>
+    <td class="stackcol stackcol-tight" style="text-align:right;vertical-align:middle;padding-left:12px;font-family:${MONO};font-size:10px;color:${C.muted};letter-spacing:0.06em;">AS OF 7:30 AM ET · ${escapeHtml(snapshotDay)}</td>
   </tr></table>
   ${quoteGroupHtml('Commodities', data.commodities || [], '$')}
   ${quoteGroupHtml('Indexes', data.indexes || [])}
@@ -195,7 +213,7 @@ function renderDailyBriefing(data, opts = {}) {
 </td></tr>`;
 
   const body = `
-${emailHeaderRow(headerRight)}
+${emailHeaderRow('', headerBelow)}
 ${marketSnapshot}
 ${watchlistSection}
 ${marketSection}

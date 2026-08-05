@@ -10,7 +10,7 @@ function companyDirName(company) {
 
 /**
  * @param {string} companyName
- * @param {{ noAnalyze?: boolean, analyzeOnly?: boolean, relaySlot?: number, taskSlug?: string, onLog?: (line: string) => void }} opts
+ * @param {{ noAnalyze?: boolean, analyzeOnly?: boolean, daysBack?: number, relaySlot?: number, taskSlug?: string, onLog?: (line: string) => void }} opts
  */
 async function runSedarDownload(companyName, opts = {}) {
   const dir = path.join(DOWNLOADS_DIR, companyDirName(companyName));
@@ -25,6 +25,7 @@ async function runSedarDownload(companyName, opts = {}) {
   }
 
   await scrapeSedar(companyName, {
+    daysBack: opts.daysBack,
     relaySlot: opts.relaySlot,
     taskSlug: opts.taskSlug || 'sedar_filings',
   });

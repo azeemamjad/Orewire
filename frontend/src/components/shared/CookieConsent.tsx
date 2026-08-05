@@ -109,7 +109,7 @@ const CookieConsent = () => {
               Cookies
             </div>
             <p className="text-sm text-foreground/85 leading-relaxed">
-              We use essential cookies to run OreWire, and optional analytics cookies (Google Analytics) to understand how the site is used.
+              We use essential cookies to run OreWire and optional cookies to analyze site usage.
               See our{" "}
               <Link to="/privacy" className="underline underline-offset-2 hover:text-accent font-medium">
                 Privacy Policy
