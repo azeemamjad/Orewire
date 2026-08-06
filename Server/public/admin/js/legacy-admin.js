@@ -3548,11 +3548,20 @@ function fmtStorageBytes(n) {
 
 function storageInit() {
   loadStorageSummary();
+  // Reattach to a job that is still running from an earlier page load.
+  fetch(`${API}/api/admin/storage/migration/status`)
+    .then((r) => r.json())
+    .then((status) => {
+      renderMigrationStatus(status);
+      if (status.running) pollStorageMigration();
+    })
+    .catch(() => { /* panel just stays hidden */ });
 }
 
-async function loadStorageSummary() {
+async function loadStorageSummary(force = false) {
   try {
-    const data = await fetch(`${API}/api/admin/storage/summary`).then((r) => r.json());
+    const url = `${API}/api/admin/storage/summary${force ? '?refresh=1' : ''}`;
+    const data = await fetch(url).then((r) => r.json());
     if (data.error) throw new Error(data.error);
 
     const s3Conn = data.connections?.s3;
@@ -3576,15 +3585,143 @@ async function loadStorageSummary() {
     if (data.s3 && !data.s3.error) {
       document.getElementById('s3-objects').textContent = data.s3.objects ?? 0;
       document.getElementById('s3-bytes').textContent = fmtStorageBytes(data.s3.bytes);
+
+      const prefix = data.s3.prefix || data.config?.filingPrefix || '';
+      setStorageText('s3-in-prefix', data.s3.inPrefix?.objects ?? 0);
+      setStorageText('s3-in-prefix-sub', `${prefix}/ — ${fmtStorageBytes(data.s3.inPrefix?.bytes)}`);
+      setStorageText('s3-out-prefix', data.s3.outsidePrefix?.objects ?? 0);
+      setStorageText('s3-out-prefix-sub', `bucket root — ${fmtStorageBytes(data.s3.outsidePrefix?.bytes)}`);
     } else {
       document.getElementById('s3-objects').textContent = '—';
       document.getElementById('s3-bytes').textContent = data.s3?.error || '';
     }
 
+    renderStorageLocal(data.local);
+    renderMigrationStatus(data.migration);
+
     document.getElementById('storage-updated').textContent = `Updated ${new Date().toLocaleTimeString()}`;
   } catch (err) {
     toast(err.message, 'err');
   }
+}
+
+function setStorageText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function renderStorageLocal(local) {
+  if (!local || local.error) {
+    setStorageText('local-dir', local?.error || 'unavailable');
+    return;
+  }
+  setStorageText('local-dir', local.downloadsDir + (local.exists ? '' : ' (missing)'));
+  setStorageText('local-pdfs', local.pdfCount ?? 0);
+  setStorageText('local-pdf-bytes', fmtStorageBytes(local.pdfBytes));
+  setStorageText('local-reclaimable', local.reclaimableCount ?? 0);
+  setStorageText('local-reclaimable-bytes', `${fmtStorageBytes(local.reclaimableBytes)} can be freed`);
+  setStorageText('local-pending', local.pendingUploadCount ?? 0);
+  setStorageText('local-pending-bytes', fmtStorageBytes(local.pendingUploadBytes));
+  setStorageText('local-orphans', local.orphanCount ?? 0);
+  setStorageText('local-orphan-bytes', fmtStorageBytes(local.orphanBytes));
+  setStorageText('local-jsons', local.jsonCount ?? 0);
+  setStorageText('local-json-bytes', fmtStorageBytes(local.jsonBytes));
+}
+
+// ── Storage migration (upload to S3 / reclaim local disk) ──
+let _storageMigrationTimer = null;
+
+async function startStorageMigration(mode, dryRun) {
+  const includeOrphans = !!document.getElementById('opt-include-orphans')?.checked;
+
+  if (!dryRun) {
+    const what = mode === 'upload'
+      ? 'Upload every local-path filing to S3 and rewrite its pdf_path?'
+      : 'Delete local PDF copies that are verified present in S3?';
+    const extra = mode === 'prune' && includeOrphans
+      ? '\n\nWARNING: orphan PDFs (not in the DB, not on S3) will also be deleted. This cannot be undone.'
+      : '';
+    if (!confirm(`${what}${extra}`)) return;
+  }
+
+  try {
+    const res = await fetch(`${API}/api/admin/storage/migration/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode, dryRun, includeOrphans }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not start job');
+
+    toast(`${mode === 'upload' ? 'Upload' : 'Reclaim'} started${dryRun ? ' (dry run)' : ''}`);
+    renderMigrationStatus(data.status);
+    pollStorageMigration();
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+async function stopStorageMigration() {
+  try {
+    const data = await fetch(`${API}/api/admin/storage/migration/stop`, { method: 'POST' }).then((r) => r.json());
+    renderMigrationStatus(data.status);
+    toast(data.stopping ? 'Stopping after the current file…' : 'No job running');
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+function pollStorageMigration() {
+  clearTimeout(_storageMigrationTimer);
+  _storageMigrationTimer = setTimeout(async () => {
+    if (document.body?.dataset?.page !== 'storage') return;
+    try {
+      const status = await fetch(`${API}/api/admin/storage/migration/status`).then((r) => r.json());
+      renderMigrationStatus(status);
+      if (status.running) pollStorageMigration();
+      // Once it settles, refresh the cards. An upload changed the bucket, so
+      // bypass the server-side listing cache in that case.
+      else loadStorageSummary(status.mode === 'upload' && !status.dryRun);
+    } catch {
+      /* transient — stop polling silently */
+    }
+  }, 1500);
+}
+
+function renderMigrationStatus(status) {
+  const panel = document.getElementById('migrate-progress');
+  if (!panel || !status || status.status === 'idle') return;
+
+  panel.style.display = '';
+
+  const pct = status.total > 0 ? Math.round((status.processed / status.total) * 100) : 0;
+  document.getElementById('migrate-bar').style.width = `${pct}%`;
+
+  const label = status.mode === 'upload' ? 'Upload' : 'Reclaim';
+  setStorageText(
+    'migrate-state',
+    `${label}${status.dryRun ? ' (dry run)' : ''} — ${status.status} ${status.total ? `${status.processed}/${status.total} (${pct}%)` : ''}`,
+  );
+
+  const counts = status.mode === 'upload'
+    ? `${status.uploaded} uploaded · ${fmtStorageBytes(status.uploadedBytes)} · ${status.skipped} skipped · ${status.errors} errors`
+    : `${status.pruned} removed · ${fmtStorageBytes(status.freedBytes)} freed · ${status.skipped} not on disk · ${status.mismatched} kept (size mismatch) · ${status.errors} errors`;
+  setStorageText('migrate-counts', counts);
+
+  setStorageText('migrate-eta', status.etaSec != null ? `ETA ~${Math.round(status.etaSec / 60)}m` : '');
+
+  const logEl = document.getElementById('migrate-log');
+  if (logEl) {
+    logEl.innerHTML = (status.log || [])
+      .map((l) => `<div class="lvl-${esc(l.level)}">${new Date(l.at).toLocaleTimeString()} ${esc(l.message)}</div>`)
+      .join('');
+  }
+
+  const running = !!status.running;
+  ['btn-upload', 'btn-upload-dry', 'btn-prune', 'btn-prune-dry'].forEach((id) => {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = running;
+  });
 }
 
 // ── Market news sources (admin) ──

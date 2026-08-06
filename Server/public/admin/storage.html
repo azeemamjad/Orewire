@@ -14,6 +14,18 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
 .storage-card .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .conn-ok { color: #16a34a; }
 .conn-fail { color: #dc2626; }
+.storage-card.accent { border-color: #16a34a; }
+.migrate-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin-bottom: 24px; }
+.migrate-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
+.migrate-row .hint { font-size: 12px; color: var(--muted); flex: 1 1 240px; }
+.migrate-opts { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-bottom: 14px; font-size: 13px; }
+.migrate-opts label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.progress-track { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin: 10px 0 8px; }
+.progress-fill { height: 100%; width: 0%; background: #16a34a; transition: width .3s ease; }
+.migrate-log { max-height: 180px; overflow-y: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; line-height: 1.6; background: var(--bg, #0b0f14); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-top: 12px; }
+.migrate-log .lvl-err { color: #f87171; }
+.migrate-log .lvl-warn { color: #fbbf24; }
+.migrate-log .lvl-info { color: var(--muted); }
 </style>
 </head>
 <body data-page="storage">
@@ -25,7 +37,7 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
   </div>
 
   <div class="toolbar" style="margin-bottom:16px;">
-    <button class="btn btn-ghost btn-sm" onclick="loadStorageSummary()">↻ Refresh</button>
+    <button class="btn btn-ghost btn-sm" onclick="loadStorageSummary(true)">↻ Refresh</button>
     <span id="storage-updated" style="margin-left:auto;font-size:12px;color:var(--muted);"></span>
   </div>
 
@@ -45,7 +57,58 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
 
   <div class="section-title">Bucket volume</div>
   <div class="storage-grid">
-    <div class="storage-card"><div class="label">S3 objects</div><div class="value" id="s3-objects">—</div><div class="sub" id="s3-bytes"></div></div>
+    <div class="storage-card"><div class="label">S3 objects (all)</div><div class="value" id="s3-objects">—</div><div class="sub" id="s3-bytes"></div></div>
+    <div class="storage-card"><div class="label">Under prefix</div><div class="value" id="s3-in-prefix">—</div><div class="sub" id="s3-in-prefix-sub"></div></div>
+    <div class="storage-card"><div class="label">Outside prefix</div><div class="value" id="s3-out-prefix">—</div><div class="sub" id="s3-out-prefix-sub"></div></div>
+  </div>
+
+  <div class="section-title">Local disk (server)</div>
+  <div class="storage-grid">
+    <div class="storage-card"><div class="label">Local PDFs</div><div class="value" id="local-pdfs">—</div><div class="sub" id="local-pdf-bytes"></div></div>
+    <div class="storage-card accent"><div class="label">Already on S3 — reclaimable</div><div class="value" id="local-reclaimable">—</div><div class="sub" id="local-reclaimable-bytes"></div></div>
+    <div class="storage-card"><div class="label">Not yet uploaded</div><div class="value" id="local-pending">—</div><div class="sub" id="local-pending-bytes"></div></div>
+    <div class="storage-card"><div class="label">Orphans (no DB row)</div><div class="value" id="local-orphans">—</div><div class="sub" id="local-orphan-bytes"></div></div>
+    <div class="storage-card"><div class="label">Analysis JSON</div><div class="value" id="local-jsons">—</div><div class="sub" id="local-json-bytes"></div></div>
+  </div>
+  <p style="font-size:12px;color:var(--muted);margin:-10px 0 24px;">
+    Downloads dir: <span id="local-dir" style="font-family:ui-monospace,monospace;"></span>
+  </p>
+
+  <div class="section-title">Migrate &amp; reclaim</div>
+  <div class="migrate-panel">
+    <div class="migrate-row">
+      <span class="hint">
+        <strong>Upload to S3</strong> — pushes filings whose <code>pdf_path</code> is still a local path
+        into the bucket and rewrites the row to an <code>s3:</code> key.
+      </span>
+      <button class="btn btn-sm" id="btn-upload-dry" onclick="startStorageMigration('upload', true)">Dry run</button>
+      <button class="btn btn-primary btn-sm" id="btn-upload" onclick="startStorageMigration('upload', false)">Upload to S3</button>
+    </div>
+    <div class="migrate-row">
+      <span class="hint">
+        <strong>Reclaim disk</strong> — deletes local PDF copies that are verified present in S3
+        (HEAD + exact byte-size match). This is what frees server space after a scrape.
+      </span>
+      <button class="btn btn-sm" id="btn-prune-dry" onclick="startStorageMigration('prune', true)">Dry run</button>
+      <button class="btn btn-primary btn-sm" id="btn-prune" onclick="startStorageMigration('prune', false)">Reclaim disk</button>
+    </div>
+    <div class="migrate-opts">
+      <label>
+        <input type="checkbox" id="opt-include-orphans" />
+        Also delete orphan PDFs (on disk, not in the DB) — irreversible, not backed up to S3
+      </label>
+    </div>
+
+    <div id="migrate-progress" style="display:none;">
+      <div class="progress-track"><div class="progress-fill" id="migrate-bar"></div></div>
+      <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:12px;color:var(--muted);">
+        <span id="migrate-state">—</span>
+        <span id="migrate-counts"></span>
+        <span id="migrate-eta"></span>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto;" onclick="stopStorageMigration()">Stop</button>
+      </div>
+      <div class="migrate-log" id="migrate-log"></div>
+    </div>
   </div>
 </main>
 <div id="toast"></div>
