@@ -25,6 +25,21 @@ function resolveFilingStatus(analysis, companyName) {
   return filingStatusForAnalysis(analysis);
 }
 
+/**
+ * Best-effort commodity tag from the model's prose. Callers that predate this
+ * export still keep their own copy; new code should use this one.
+ */
+function inferCommodity(summary, tickerSummary) {
+  const text = `${summary || ''} ${tickerSummary || ''}`.toLowerCase();
+  if (/\b(gold|au\b|g\/t|oz.*gold)\b/i.test(text)) return 'Gold';
+  if (/\b(silver|ag\b)\b/i.test(text)) return 'Silver';
+  if (/\b(copper|cu\b|cu.*eq|copper equivalent)\b/i.test(text)) return 'Copper';
+  if (/\b(lithium|li\b|spodumene|lithium.*carbonate)\b/i.test(text)) return 'Lithium';
+  if (/\b(uranium|u3o8|u₃o₈)\b/i.test(text)) return 'Uranium';
+  if (/\b(nickel|ni\b)\b/i.test(text)) return 'Nickel';
+  return null;
+}
+
 // Prose fields are surfaced verbatim in emails and on the site, so strip the
 // model's em dashes / smart quotes here. raw_response stays untouched so the
 // audit trail still shows exactly what the model returned.
@@ -88,6 +103,7 @@ const AI_OUTPUT_SQL = `
 module.exports = {
   resolveFilingStatus,
   analyzedFlagForAnalysis,
+  inferCommodity,
   aiOutputParams,
   AI_OUTPUT_SQL,
 };

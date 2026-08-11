@@ -26,6 +26,31 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
 .migrate-log .lvl-err { color: #f87171; }
 .migrate-log .lvl-warn { color: #fbbf24; }
 .migrate-log .lvl-info { color: var(--muted); }
+
+/* Orphans */
+.orphan-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin-bottom: 24px; }
+.orphan-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+.orphan-toolbar select, .orphan-toolbar input[type=search] {
+  background: var(--bg, #0b0f14); color: inherit; border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 10px; font-size: 13px;
+}
+.orphan-toolbar input[type=search] { min-width: 220px; flex: 1 1 220px; }
+.orphan-bulk { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; margin-bottom: 12px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg, #0b0f14); font-size: 13px; }
+.orphan-bulk.hidden { display: none; }
+.orphan-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+table.orphan-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.orphan-table th, table.orphan-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+table.orphan-table th { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); background: var(--bg, #0b0f14); position: sticky; top: 0; }
+table.orphan-table td.key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+table.orphan-table tr:last-child td { border-bottom: 0; }
+.tag { display: inline-block; font-size: 10.5px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+.tag.s3 { border-color: #2563eb; color: #60a5fa; }
+.tag.disk { border-color: #d97706; color: #fbbf24; }
+.tag.ok { border-color: #16a34a; color: #4ade80; }
+.tag.none { border-color: #dc2626; color: #f87171; }
+.orphan-pager { display: flex; align-items: center; gap: 12px; margin-top: 12px; font-size: 12px; color: var(--muted); }
+.orphan-empty { padding: 28px; text-align: center; color: var(--muted); font-size: 13px; }
 </style>
 </head>
 <body data-page="storage">
@@ -51,8 +76,11 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
   <div class="storage-grid">
     <div class="storage-card"><div class="label">s3:</div><div class="value" id="db-s3">—</div></div>
     <div class="storage-card"><div class="label">https: (public)</div><div class="value" id="db-https">—</div></div>
-    <div class="storage-card"><div class="label">Local paths</div><div class="value" id="db-local">—</div></div>
-    <div class="storage-card"><div class="label">Legacy minio:</div><div class="value" id="db-legacy-minio">—</div></div>
+    <div class="storage-card"><div class="label">Local paths</div><div class="value" id="db-local">—</div><div class="sub">not in object storage</div></div>
+    <div class="storage-card" id="db-legacy-card" style="display:none;border-color:#f59e0b;">
+      <div class="label">Legacy minio:</div><div class="value" id="db-legacy">—</div>
+      <div class="sub">pre-S3 scheme — keys still valid</div>
+    </div>
   </div>
 
   <div class="section-title">Bucket volume</div>
@@ -73,6 +101,110 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
   <p style="font-size:12px;color:var(--muted);margin:-10px 0 24px;">
     Downloads dir: <span id="local-dir" style="font-family:ui-monospace,monospace;"></span>
   </p>
+
+  <div class="section-title">Orphans — files with no filing record</div>
+  <div class="storage-grid">
+    <div class="storage-card"><div class="label">Total orphans</div><div class="value" id="orph-total">—</div><div class="sub" id="orph-total-bytes"></div></div>
+    <div class="storage-card accent"><div class="label">Matched to a company</div><div class="value" id="orph-matched">—</div><div class="sub" id="orph-matched-sub">adoptable</div></div>
+    <div class="storage-card"><div class="label">Unmatched</div><div class="value" id="orph-unmatched">—</div><div class="sub" id="orph-unmatched-bytes"></div></div>
+    <div class="storage-card"><div class="label">In S3 only</div><div class="value" id="orph-s3only">—</div><div class="sub" id="orph-s3only-bytes"></div></div>
+    <div class="storage-card"><div class="label">On disk only</div><div class="value" id="orph-diskonly">—</div><div class="sub" id="orph-diskonly-bytes"></div></div>
+    <div class="storage-card"><div class="label">Legacy hash keys</div><div class="value" id="orph-prefix">—</div><div class="sub" id="orph-prefix-sub"></div></div>
+  </div>
+
+  <div class="orphan-panel">
+    <div class="orphan-toolbar">
+      <select id="orph-source" onchange="orphanReload(0)">
+        <option value="all">Everywhere</option>
+        <option value="s3">In S3</option>
+        <option value="disk">On server disk</option>
+        <option value="s3-only">In S3 but not on disk</option>
+      </select>
+      <select id="orph-match" onchange="orphanReload(0)">
+        <option value="all">Matched or not</option>
+        <option value="matched">Matched to a company</option>
+        <option value="unmatched">No company match</option>
+      </select>
+      <input type="search" id="orph-q" placeholder="Filter by key or company…" onkeydown="if(event.key==='Enter')orphanReload(0)" />
+      <button class="btn btn-ghost btn-sm" onclick="orphanReload(0)">Apply</button>
+      <button class="btn btn-ghost btn-sm" onclick="orphanReload(0, true)">↻ Rescan</button>
+    </div>
+
+    <div class="orphan-bulk hidden" id="orph-bulk">
+      <strong id="orph-selected-count">0 selected</strong>
+      <button class="btn btn-primary btn-sm" onclick="orphanAdoptSelected()">Adopt into DB</button>
+      <select id="orph-del-scope">
+        <option value="both">Delete from S3 + disk</option>
+        <option value="s3">Delete from S3 only</option>
+        <option value="disk">Delete from disk only</option>
+      </select>
+      <button class="btn btn-sm" style="border-color:#dc2626;color:#f87171;" onclick="orphanDeleteSelected()">Delete</button>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto;" onclick="orphanClearSelection()">Clear</button>
+    </div>
+
+    <div class="orphan-table-wrap">
+      <table class="orphan-table">
+        <thead>
+          <tr>
+            <th style="width:28px;"><input type="checkbox" id="orph-check-all" onchange="orphanToggleAll(this.checked)" /></th>
+            <th>Object key</th>
+            <th>Where</th>
+            <th>Size</th>
+            <th>Uploaded</th>
+            <th>Ticker</th>
+            <th>Company match</th>
+            <th>Analysis</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="orph-rows">
+          <tr><td colspan="9" class="orphan-empty">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="orphan-pager">
+      <button class="btn btn-ghost btn-sm" id="orph-prev" onclick="orphanPage(-1)">← Prev</button>
+      <button class="btn btn-ghost btn-sm" id="orph-next" onclick="orphanPage(1)">Next →</button>
+      <span id="orph-range"></span>
+      <span id="orph-scanned" style="margin-left:auto;"></span>
+    </div>
+  </div>
+
+  <div class="section-title">Bulk orphan cleanup</div>
+  <div class="migrate-panel">
+    <div class="migrate-row">
+      <span class="hint">
+        <strong>Adopt all matched</strong> — every orphan whose company resolves from its key gets a
+        <code>filings</code> row, with its AI analysis when the <code>_analysis.json</code> sidecar is on disk.
+        Orphans without a sidecar are skipped unless you allow shell rows below.
+      </span>
+      <button class="btn btn-sm" onclick="startStorageMigration('adopt', true)">Dry run</button>
+      <button class="btn btn-primary btn-sm" onclick="startStorageMigration('adopt', false)">Adopt all matched</button>
+    </div>
+    <div class="migrate-row">
+      <span class="hint">
+        <strong>Delete unmatched orphans</strong> — removes orphans that cannot be tied to a company
+        (legacy content-hash keys). Irreversible.
+      </span>
+      <button class="btn btn-sm" onclick="startStorageMigration('purge', true)">Dry run</button>
+      <button class="btn btn-sm" style="border-color:#dc2626;color:#f87171;" onclick="startStorageMigration('purge', false)">Delete unmatched</button>
+    </div>
+    <div class="migrate-opts">
+      <label>
+        <input type="checkbox" id="opt-allow-unanalyzed" />
+        Adopt orphans with no analysis too (creates rows with no AI output)
+      </label>
+      <label>
+        Purge scope
+        <select id="opt-purge-scope" style="background:var(--bg,#0b0f14);color:inherit;border:1px solid var(--border);border-radius:6px;padding:4px 8px;">
+          <option value="both">S3 + disk</option>
+          <option value="s3">S3 only</option>
+          <option value="disk">Disk only</option>
+        </select>
+      </label>
+    </div>
+  </div>
 
   <div class="section-title">Migrate &amp; reclaim</div>
   <div class="migrate-panel">

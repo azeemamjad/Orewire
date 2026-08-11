@@ -3548,6 +3548,7 @@ function fmtStorageBytes(n) {
 
 function storageInit() {
   loadStorageSummary();
+  orphanReload(0);
   // Reattach to a job that is still running from an earlier page load.
   fetch(`${API}/api/admin/storage/migration/status`)
     .then((r) => r.json())
@@ -3580,7 +3581,15 @@ async function loadStorageSummary(force = false) {
     document.getElementById('db-s3').textContent = data.db?.s3_rows ?? 0;
     document.getElementById('db-https').textContent = data.db?.https_rows ?? 0;
     document.getElementById('db-local').textContent = data.db?.local_rows ?? 0;
-    document.getElementById('db-legacy-minio').textContent = data.db?.legacy_minio_rows ?? 0;
+
+    // The pre-S3 minio: scheme is retired. Surface the card only if rows still
+    // use it, so a stale migration cannot hide behind a clean-looking panel.
+    const legacyRows = Number(data.db?.legacy_rows ?? 0);
+    const legacyCard = document.getElementById('db-legacy-card');
+    if (legacyCard) {
+      legacyCard.style.display = legacyRows > 0 ? '' : 'none';
+      setStorageText('db-legacy', legacyRows);
+    }
 
     if (data.s3 && !data.s3.error) {
       document.getElementById('s3-objects').textContent = data.s3.objects ?? 0;
@@ -3628,32 +3637,262 @@ function renderStorageLocal(local) {
   setStorageText('local-json-bytes', fmtStorageBytes(local.jsonBytes));
 }
 
+// ── Orphans (files in S3 / on disk with no filings row) ──
+const _orph = { offset: 0, limit: 50, filtered: 0, rows: [], selected: new Set() };
+
+function orphanQuery(offset, force) {
+  const params = new URLSearchParams({
+    source: document.getElementById('orph-source')?.value || 'all',
+    match: document.getElementById('orph-match')?.value || 'all',
+    q: document.getElementById('orph-q')?.value || '',
+    limit: String(_orph.limit),
+    offset: String(Math.max(0, offset)),
+  });
+  if (force) params.set('refresh', '1');
+  return params.toString();
+}
+
+async function orphanReload(offset = 0, force = false) {
+  if (document.body?.dataset?.page !== 'storage') return;
+  const body = document.getElementById('orph-rows');
+  if (body) body.innerHTML = '<tr><td colspan="9" class="orphan-empty">Scanning bucket and disk…</td></tr>';
+
+  try {
+    const data = await fetch(`${API}/api/admin/storage/orphans?${orphanQuery(offset, force)}`)
+      .then((r) => r.json());
+    if (data.error) throw new Error(data.error);
+
+    _orph.offset = data.offset ?? 0;
+    _orph.limit = data.limit ?? 50;
+    _orph.filtered = data.filteredCount ?? 0;
+    _orph.rows = data.rows || [];
+    renderOrphanSummary(data);
+    renderOrphanRows(data);
+  } catch (err) {
+    if (body) body.innerHTML = `<tr><td colspan="9" class="orphan-empty">${esc(err.message)}</td></tr>`;
+  }
+}
+
+function renderOrphanSummary(data) {
+  const s = data.summary || {};
+  setStorageText('orph-total', s.total ?? 0);
+  setStorageText('orph-total-bytes', fmtStorageBytes(s.bytes));
+  setStorageText('orph-matched', s.matched ?? 0);
+  setStorageText('orph-matched-sub', `${s.withAnalysis ?? 0} with analysis on disk`);
+  setStorageText('orph-unmatched', s.unmatched ?? 0);
+  setStorageText('orph-unmatched-bytes', fmtStorageBytes(s.unmatchedBytes));
+  setStorageText('orph-s3only', s.inS3Only ?? 0);
+  setStorageText('orph-s3only-bytes', fmtStorageBytes(s.inS3OnlyBytes));
+  setStorageText('orph-diskonly', s.onDiskOnly ?? 0);
+  setStorageText('orph-diskonly-bytes', fmtStorageBytes(s.onDiskOnlyBytes));
+  setStorageText('orph-prefix', s.underPrefix ?? 0);
+  setStorageText('orph-prefix-sub', `${data.filingPrefix || 'filings'}/ — ${fmtStorageBytes(s.underPrefixBytes)}`);
+
+  const scanned = data.bucketCachedAt
+    ? `Bucket scanned ${new Date(data.bucketCachedAt).toLocaleTimeString()}`
+    : '';
+  setStorageText('orph-scanned', scanned);
+}
+
+function orphanWhereTags(o) {
+  const tags = [];
+  if (o.inS3) tags.push('<span class="tag s3">S3</span>');
+  if (o.onDisk) tags.push('<span class="tag disk">disk</span>');
+  return tags.join(' ') || '<span class="tag none">gone</span>';
+}
+
+function renderOrphanRows(data) {
+  const body = document.getElementById('orph-rows');
+  if (!body) return;
+
+  if (!_orph.rows.length) {
+    body.innerHTML = '<tr><td colspan="9" class="orphan-empty">No orphans match this filter.</td></tr>';
+  } else {
+    body.innerHTML = _orph.rows.map((o) => {
+      const checked = _orph.selected.has(o.key) ? ' checked' : '';
+      // Why a row did NOT match is the actionable part: "ambiguous ticker"
+      // means the symbol exists on two exchanges and needs a manual pick,
+      // which is very different from a legacy hash key that can never match.
+      const company = o.company
+        ? `<span class="tag ok" title="matched by ${esc(o.matchedBy || '')}">${esc(o.company.name)}</span>`
+        : `<span class="tag none" title="${esc(o.matchedBy || 'no company for this key')}">${esc(o.matchedBy || 'no match')}</span>`;
+      const analysis = o.hasAnalysis
+        ? '<span class="tag ok">yes</span>'
+        : '<span class="tag">none</span>';
+      const uploaded = o.mtime ? new Date(o.mtime).toLocaleDateString() : '—';
+      // Offered whenever a company resolved; the server still refuses when there
+      // is no analysis unless the "allow unanalyzed" box is ticked, and reports
+      // that as the skip reason rather than failing silently.
+      const canAdopt = !!o.company;
+      return `<tr>
+        <td><input type="checkbox" data-orph-key="${esc(o.key)}"${checked} onchange="orphanToggleRow(this.dataset.orphKey, this.checked)" /></td>
+        <td class="key" title="${esc(o.key)}">${esc(o.key)}</td>
+        <td>${orphanWhereTags(o)}</td>
+        <td>${fmtStorageBytes(o.size)}</td>
+        <td>${esc(uploaded)}</td>
+        <td>${esc(o.ticker || '—')}</td>
+        <td>${company}</td>
+        <td>${analysis}</td>
+        <td>
+          ${canAdopt ? `<button class="btn btn-ghost btn-sm" onclick="orphanAdoptOne('${esc(o.key)}')">Adopt</button>` : ''}
+          <button class="btn btn-ghost btn-sm" style="color:#f87171;" onclick="orphanDeleteOne('${esc(o.key)}')">Delete</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  const from = _orph.filtered === 0 ? 0 : _orph.offset + 1;
+  const to = Math.min(_orph.offset + _orph.limit, _orph.filtered);
+  setStorageText('orph-range', `${from}–${to} of ${_orph.filtered}`);
+
+  const prev = document.getElementById('orph-prev');
+  const next = document.getElementById('orph-next');
+  if (prev) prev.disabled = _orph.offset <= 0;
+  if (next) next.disabled = to >= _orph.filtered;
+
+  const all = document.getElementById('orph-check-all');
+  if (all) all.checked = _orph.rows.length > 0 && _orph.rows.every((o) => _orph.selected.has(o.key));
+
+  renderOrphanSelection();
+}
+
+function orphanPage(delta) {
+  orphanReload(_orph.offset + delta * _orph.limit);
+}
+
+function renderOrphanSelection() {
+  const bar = document.getElementById('orph-bulk');
+  const count = _orph.selected.size;
+  if (bar) bar.classList.toggle('hidden', count === 0);
+  setStorageText('orph-selected-count', `${count} selected`);
+}
+
+function orphanToggleRow(key, checked) {
+  if (checked) _orph.selected.add(key);
+  else _orph.selected.delete(key);
+  renderOrphanSelection();
+}
+
+function orphanToggleAll(checked) {
+  for (const o of _orph.rows) {
+    if (checked) _orph.selected.add(o.key);
+    else _orph.selected.delete(o.key);
+  }
+  document.querySelectorAll('[data-orph-key]').forEach((el) => { el.checked = checked; });
+  renderOrphanSelection();
+}
+
+function orphanClearSelection() {
+  _orph.selected.clear();
+  document.querySelectorAll('[data-orph-key]').forEach((el) => { el.checked = false; });
+  const all = document.getElementById('orph-check-all');
+  if (all) all.checked = false;
+  renderOrphanSelection();
+}
+
+async function orphanAdopt(keys) {
+  if (!keys.length) return;
+  const allowUnanalyzed = !!document.getElementById('opt-allow-unanalyzed')?.checked;
+  try {
+    const res = await fetch(`${API}/api/admin/storage/orphans/adopt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keys, allowUnanalyzed }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Adopt failed');
+
+    const reasons = (data.failures || []).map((f) => f.reason);
+    const why = reasons.length ? ` (${[...new Set(reasons)].join(', ')})` : '';
+    toast(`${data.adopted} adopted, ${data.skipped} skipped${why}`, data.adopted ? 'ok' : 'err');
+    orphanClearSelection();
+    orphanReload(_orph.offset, true);
+    loadStorageSummary(true);
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+async function orphanDelete(keys, scope) {
+  if (!keys.length) return;
+  const where = scope === 's3' ? 'S3' : scope === 'disk' ? 'the server disk' : 'S3 and the server disk';
+  if (!confirm(`Delete ${keys.length} orphan file(s) from ${where}?\n\nThis cannot be undone. Files that gained a filing record since this page loaded are skipped automatically.`)) return;
+
+  try {
+    const res = await fetch(`${API}/api/admin/storage/orphans/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keys, scope }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Delete failed');
+
+    const skipped = data.skippedReferenced ? `, ${data.skippedReferenced} skipped (now referenced)` : '';
+    toast(`Deleted ${data.deletedS3} from S3, ${data.deletedDisk} from disk (${fmtStorageBytes(data.freedBytes)} freed)${skipped}`);
+    orphanClearSelection();
+    orphanReload(_orph.offset, true);
+    loadStorageSummary(true);
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+function orphanAdoptSelected() { orphanAdopt([..._orph.selected]); }
+function orphanAdoptOne(key) { orphanAdopt([key]); }
+function orphanDeleteSelected() {
+  orphanDelete([..._orph.selected], document.getElementById('orph-del-scope')?.value || 'both');
+}
+function orphanDeleteOne(key) { orphanDelete([key], 'both'); }
+
 // ── Storage migration (upload to S3 / reclaim local disk) ──
 let _storageMigrationTimer = null;
 
+const MIGRATION_LABELS = {
+  upload: 'Upload', prune: 'Reclaim', adopt: 'Adopt', purge: 'Purge',
+};
+
+const MIGRATION_CONFIRM = {
+  upload: 'Upload every local-path filing to S3 and rewrite its pdf_path?',
+  prune: 'Delete local PDF copies that are verified present in S3?',
+  adopt: 'Create a filings row for every orphan that matches a company?',
+  purge: 'Permanently delete every orphan that could NOT be matched to a company?',
+};
+
 async function startStorageMigration(mode, dryRun) {
   const includeOrphans = !!document.getElementById('opt-include-orphans')?.checked;
+  const allowUnanalyzed = !!document.getElementById('opt-allow-unanalyzed')?.checked;
+  const scope = document.getElementById('opt-purge-scope')?.value || 'both';
 
   if (!dryRun) {
-    const what = mode === 'upload'
-      ? 'Upload every local-path filing to S3 and rewrite its pdf_path?'
-      : 'Delete local PDF copies that are verified present in S3?';
-    const extra = mode === 'prune' && includeOrphans
-      ? '\n\nWARNING: orphan PDFs (not in the DB, not on S3) will also be deleted. This cannot be undone.'
-      : '';
-    if (!confirm(`${what}${extra}`)) return;
+    let extra = '';
+    if (mode === 'prune' && includeOrphans) {
+      extra = '\n\nWARNING: orphan PDFs (not in the DB, not on S3) will also be deleted. This cannot be undone.';
+    } else if (mode === 'purge') {
+      const where = scope === 's3' ? 'S3' : scope === 'disk' ? 'the server disk' : 'S3 and the server disk';
+      extra = `\n\nDeleting from ${where}. Orphans that DO match a company are left alone. This cannot be undone.`;
+    } else if (mode === 'adopt' && allowUnanalyzed) {
+      extra = '\n\nIncluding orphans with no analysis — those rows will have no AI output.';
+    }
+    if (!confirm(`${MIGRATION_CONFIRM[mode] || MIGRATION_CONFIRM.prune}${extra}`)) return;
   }
 
   try {
     const res = await fetch(`${API}/api/admin/storage/migration/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode, dryRun, includeOrphans }),
+      body: JSON.stringify({
+        mode,
+        dryRun,
+        includeOrphans,
+        allowUnanalyzed,
+        scope,
+        purgeTarget: 'unmatched',
+      }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Could not start job');
 
-    toast(`${mode === 'upload' ? 'Upload' : 'Reclaim'} started${dryRun ? ' (dry run)' : ''}`);
+    toast(`${MIGRATION_LABELS[mode] || mode} started${dryRun ? ' (dry run)' : ''}`);
     renderMigrationStatus(data.status);
     pollStorageMigration();
   } catch (err) {
@@ -3679,9 +3918,13 @@ function pollStorageMigration() {
       const status = await fetch(`${API}/api/admin/storage/migration/status`).then((r) => r.json());
       renderMigrationStatus(status);
       if (status.running) pollStorageMigration();
-      // Once it settles, refresh the cards. An upload changed the bucket, so
-      // bypass the server-side listing cache in that case.
-      else loadStorageSummary(status.mode === 'upload' && !status.dryRun);
+      else {
+        // Once it settles, refresh the cards. Anything that wrote to the bucket
+        // or the DB invalidates both the listing cache and the orphan index.
+        const mutated = !status.dryRun && status.mode !== 'prune';
+        loadStorageSummary(mutated);
+        if (status.mode === 'adopt' || status.mode === 'purge') orphanReload(0, true);
+      }
     } catch {
       /* transient — stop polling silently */
     }
@@ -3697,16 +3940,19 @@ function renderMigrationStatus(status) {
   const pct = status.total > 0 ? Math.round((status.processed / status.total) * 100) : 0;
   document.getElementById('migrate-bar').style.width = `${pct}%`;
 
-  const label = status.mode === 'upload' ? 'Upload' : 'Reclaim';
+  const label = MIGRATION_LABELS[status.mode] || 'Reclaim';
   setStorageText(
     'migrate-state',
     `${label}${status.dryRun ? ' (dry run)' : ''} — ${status.status} ${status.total ? `${status.processed}/${status.total} (${pct}%)` : ''}`,
   );
 
-  const counts = status.mode === 'upload'
-    ? `${status.uploaded} uploaded · ${fmtStorageBytes(status.uploadedBytes)} · ${status.skipped} skipped · ${status.errors} errors`
-    : `${status.pruned} removed · ${fmtStorageBytes(status.freedBytes)} freed · ${status.skipped} not on disk · ${status.mismatched} kept (size mismatch) · ${status.errors} errors`;
-  setStorageText('migrate-counts', counts);
+  const countsByMode = {
+    upload: () => `${status.uploaded} uploaded · ${fmtStorageBytes(status.uploadedBytes)} · ${status.skipped} skipped · ${status.errors} errors`,
+    adopt: () => `${status.adopted} adopted · ${status.skipped} skipped · ${status.errors} errors`,
+    purge: () => `${status.pruned} deleted · ${fmtStorageBytes(status.freedBytes)} freed · ${status.skipped} skipped · ${status.errors} errors`,
+    prune: () => `${status.pruned} removed · ${fmtStorageBytes(status.freedBytes)} freed · ${status.skipped} not on disk · ${status.mismatched} kept (size mismatch) · ${status.errors} errors`,
+  };
+  setStorageText('migrate-counts', (countsByMode[status.mode] || countsByMode.prune)());
 
   setStorageText('migrate-eta', status.etaSec != null ? `ETA ~${Math.round(status.etaSec / 60)}m` : '');
 
@@ -3717,11 +3963,9 @@ function renderMigrationStatus(status) {
       .join('');
   }
 
+  // Only one storage job runs at a time, so lock every launcher while it does.
   const running = !!status.running;
-  ['btn-upload', 'btn-upload-dry', 'btn-prune', 'btn-prune-dry'].forEach((id) => {
-    const btn = document.getElementById(id);
-    if (btn) btn.disabled = running;
-  });
+  document.querySelectorAll('.migrate-row .btn').forEach((btn) => { btn.disabled = running; });
 }
 
 // ── Market news sources (admin) ──

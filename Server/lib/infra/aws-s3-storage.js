@@ -7,6 +7,8 @@ const {
   GetObjectCommand,
   PutObjectCommand,
   ListObjectsV2Command,
+  DeleteObjectCommand,
+  DeleteObjectsCommand,
 } = require('@aws-sdk/client-s3');
 const { Upload } = require('@aws-sdk/lib-storage');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
@@ -201,12 +203,52 @@ async function listObjects(prefix = '') {
       ContinuationToken: continuationToken,
     }));
     for (const obj of res.Contents || []) {
-      objects.push({ name: obj.Key, size: obj.Size, etag: obj.ETag });
+      objects.push({
+        name: obj.Key,
+        size: obj.Size,
+        etag: obj.ETag,
+        mtime: obj.LastModified ? new Date(obj.LastModified).getTime() : null,
+      });
     }
     continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined;
   } while (continuationToken);
 
   return objects;
+}
+
+async function deleteObject(objectKey) {
+  const key = objectKey.replace(/^\/+/, '');
+  await withRetry(
+    () => getClient().send(new DeleteObjectCommand({ Bucket: getBucket(), Key: key })),
+    { label: 's3:delete' },
+  );
+  return true;
+}
+
+/**
+ * Batch delete. S3 caps DeleteObjects at 1000 keys per call, so chunk it.
+ * Never throws on a partial failure — per-key errors come back in `errors`
+ * so the caller can report exactly which objects survived.
+ */
+async function deleteObjects(objectKeys) {
+  const keys = (objectKeys || []).map((k) => String(k).replace(/^\/+/, '')).filter(Boolean);
+  const result = { deleted: 0, errors: [] };
+
+  for (let i = 0; i < keys.length; i += 1000) {
+    const batch = keys.slice(i, i + 1000);
+    const res = await withRetry(
+      () => getClient().send(new DeleteObjectsCommand({
+        Bucket: getBucket(),
+        Delete: { Objects: batch.map((Key) => ({ Key })), Quiet: true },
+      })),
+      { label: 's3:deleteObjects' },
+    );
+    const failed = res.Errors || [];
+    for (const e of failed) result.errors.push({ key: e.Key, message: e.Message });
+    result.deleted += batch.length - failed.length;
+  }
+
+  return result;
 }
 
 async function presignedGetUrl(objectKey, { expiresIn = 3600 } = {}) {
@@ -233,6 +275,8 @@ module.exports = {
   uploadFile,
   uploadStream,
   getObjectStream,
+  deleteObject,
+  deleteObjects,
   listObjects,
   presignedGetUrl,
 };

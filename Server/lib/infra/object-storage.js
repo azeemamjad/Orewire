@@ -133,6 +133,18 @@ async function getObjectStream(objectKey) {
   return aws.getObjectStream(objectKey);
 }
 
+async function listObjects(prefix = '') {
+  return aws.listObjects(prefix);
+}
+
+async function deleteObject(objectKey) {
+  return aws.deleteObject(objectKey);
+}
+
+async function deleteObjects(objectKeys) {
+  return aws.deleteObjects(objectKeys);
+}
+
 async function streamToResponse(objectKey, res, { filename = 'filing.pdf' } = {}) {
   const stat = await statObject(objectKey);
   res.setHeader('Content-Type', stat.metaData?.['content-type'] || 'application/pdf');
@@ -196,6 +208,9 @@ module.exports = {
   statObject,
   uploadFile,
   getObjectStream,
+  deleteObject,
+  deleteObjects,
+  listObjects,
   streamToResponse,
   describeAwsConfig: aws.describeClientConfig,
 };

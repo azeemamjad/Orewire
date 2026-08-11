@@ -30,19 +30,26 @@ const {
   ensureBucket,
 } = require('./object-storage');
 
+const orphanIndex = require('./orphans');
+
 const { DOWNLOADS_DIR } = require('../scraper/paths');
 
 const MAX_LOG = 60;
 
 const state = {
   status: 'idle', // 'idle' | 'running' | 'done' | 'stopped' | 'error'
-  mode: null, // 'upload' | 'prune'
+  mode: null, // 'upload' | 'prune' | 'adopt' | 'purge'
   dryRun: false,
   includeOrphans: false,
+  scope: 'both',
+  onlyMatched: true,
+  purgeTarget: 'unmatched', // 'unmatched' | 'all'
+  allowUnanalyzed: false,
   total: 0,
   processed: 0,
   uploaded: 0,
   pruned: 0,
+  adopted: 0,
   skipped: 0,
   mismatched: 0,
   errors: 0,
@@ -71,10 +78,15 @@ function getStatus() {
     mode: state.mode,
     dryRun: state.dryRun,
     includeOrphans: state.includeOrphans,
+    scope: state.scope,
+    onlyMatched: state.onlyMatched,
+    purgeTarget: state.purgeTarget,
+    allowUnanalyzed: state.allowUnanalyzed,
     total: state.total,
     processed: state.processed,
     uploaded: state.uploaded,
     pruned: state.pruned,
+    adopted: state.adopted,
     skipped: state.skipped,
     mismatched: state.mismatched,
     errors: state.errors,
@@ -369,6 +381,116 @@ async function pruneOrphans() {
 }
 
 // ---------------------------------------------------------------------------
+// Mode: adopt — give matched orphans a filings row
+// ---------------------------------------------------------------------------
+
+/**
+ * Walks the orphan index and adopts everything that has a resolved company.
+ * Orphans without an analysis sidecar are skipped unless allowUnanalyzed, and
+ * content-hash keys never match, so this only ever touches the pipeline-shaped
+ * TICKER/… population.
+ */
+async function runAdopt() {
+  const orphans = await orphanIndex.getIndex({ force: true });
+  const targets = orphans.filter((o) => (state.onlyMatched ? !!o.company : true));
+
+  state.total = targets.length;
+  addLog('info', `${orphans.length} orphan(s); ${targets.length} with a matched company`);
+  if (targets.length === 0) return;
+
+  for (const orphan of targets) {
+    if (state.stopRequested) break;
+    state.processed++;
+
+    if (!orphan.company) {
+      state.skipped++;
+      continue;
+    }
+    if (!orphan.hasAnalysis && !state.allowUnanalyzed) {
+      state.skipped++;
+      continue;
+    }
+
+    if (state.dryRun) {
+      state.adopted++;
+      continue;
+    }
+
+    try {
+      const res = await orphanIndex.adoptOrphan(orphan, {
+        allowUnanalyzed: state.allowUnanalyzed,
+      });
+      if (res.adopted) {
+        state.adopted++;
+        if (state.adopted % 250 === 0) addLog('info', `${state.adopted} adopted`);
+      } else {
+        state.skipped++;
+        if (state.skipped <= 15) addLog('warn', `${orphan.key}: ${res.reason}${res.error ? ` — ${res.error}` : ''}`);
+      }
+    } catch (err) {
+      state.errors++;
+      if (state.errors <= 15) addLog('err', `${orphan.key}: ${err.message}`);
+    }
+  }
+
+  orphanIndex.invalidate();
+}
+
+// ---------------------------------------------------------------------------
+// Mode: purge — delete orphan copies from S3 and/or disk
+// ---------------------------------------------------------------------------
+
+/**
+ * Deletes orphans in chunks so progress is visible and a stop lands promptly.
+ *
+ * purgeTarget 'unmatched' (the default) spares anything that resolved to a
+ * company, so the legacy content-hash corpus can be cleared without risking
+ * files that are still adoptable. 'all' is the explicit everything-goes option.
+ */
+async function runPurge() {
+  const orphans = await orphanIndex.getIndex({ force: true });
+  const targets = orphans.filter((o) => {
+    if (state.purgeTarget !== 'all' && o.company) return false;
+    if (state.scope === 's3' && !o.inS3) return false;
+    if (state.scope === 'disk' && !o.onDisk) return false;
+    return true;
+  });
+
+  state.total = targets.length;
+  addLog('info', `${targets.length} ${state.purgeTarget} orphan(s) to delete from ${state.scope}`);
+  if (targets.length === 0) return;
+
+  if (state.dryRun) {
+    state.processed = targets.length;
+    state.pruned = targets.length;
+    state.freedBytes = targets.reduce((s, o) => s + (o.size || 0), 0);
+    return;
+  }
+
+  const CHUNK = 500;
+  for (let i = 0; i < targets.length; i += CHUNK) {
+    if (state.stopRequested) break;
+    const chunk = targets.slice(i, i + CHUNK);
+    try {
+      const res = await orphanIndex.deleteOrphans(chunk.map((o) => o.key), { scope: state.scope });
+      state.processed += chunk.length;
+      state.pruned += Math.max(res.deletedS3, res.deletedDisk);
+      state.freedBytes += res.freedBytes
+        + chunk.reduce((s, o) => s + (o.inS3 && state.scope !== 'disk' ? (o.size || 0) : 0), 0);
+      state.skipped += res.skippedReferenced;
+      state.errors += res.errors.length;
+      for (const e of res.errors.slice(0, 5)) addLog('err', `${e.key}: ${e.message}`);
+      addLog('info', `${state.pruned} deleted (${fmtBytes(state.freedBytes)})`);
+    } catch (err) {
+      state.errors += chunk.length;
+      addLog('err', `chunk at ${i}: ${err.message}`);
+    }
+  }
+
+  orphanIndex.invalidate();
+}
+
+// ---------------------------------------------------------------------------
 
 function fmtBytes(n) {
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)} GB`;
@@ -377,15 +499,22 @@ function fmtBytes(n) {
   return `${n} B`;
 }
 
+const SUMMARY = {
+  upload: () => `${state.uploaded} uploaded (${fmtBytes(state.uploadedBytes)})`,
+  prune: () => `${state.pruned} local copies removed (${fmtBytes(state.freedBytes)} freed)`,
+  adopt: () => `${state.adopted} orphan(s) adopted, ${state.skipped} skipped`,
+  purge: () => `${state.pruned} orphan(s) deleted (${fmtBytes(state.freedBytes)} freed)`,
+};
+
 async function runLoop() {
   try {
     if (state.mode === 'upload') await runUpload();
+    else if (state.mode === 'adopt') await runAdopt();
+    else if (state.mode === 'purge') await runPurge();
     else await runPrune();
 
     state.status = state.stopRequested ? 'stopped' : 'done';
-    const summary = state.mode === 'upload'
-      ? `${state.uploaded} uploaded (${fmtBytes(state.uploadedBytes)})`
-      : `${state.pruned} local copies removed (${fmtBytes(state.freedBytes)} freed)`;
+    const summary = (SUMMARY[state.mode] || SUMMARY.prune)();
     addLog('info', `${state.dryRun ? '[dry run] ' : ''}Finished — ${summary}`);
   } catch (err) {
     state.status = 'error';
@@ -396,11 +525,21 @@ async function runLoop() {
   }
 }
 
-function startMigration({ mode = 'prune', dryRun = false, includeOrphans = false } = {}) {
+const MODES = ['upload', 'prune', 'adopt', 'purge'];
+
+function startMigration({
+  mode = 'prune',
+  dryRun = false,
+  includeOrphans = false,
+  scope = 'both',
+  onlyMatched = true,
+  purgeTarget = 'unmatched',
+  allowUnanalyzed = false,
+} = {}) {
   if (state.status === 'running') {
     return { started: false, reason: 'already_running', status: getStatus() };
   }
-  if (mode !== 'upload' && mode !== 'prune') {
+  if (!MODES.includes(mode)) {
     return { started: false, reason: 'invalid_mode', status: getStatus() };
   }
   if (!isStorageEnabled()) {
@@ -412,10 +551,15 @@ function startMigration({ mode = 'prune', dryRun = false, includeOrphans = false
     mode,
     dryRun: !!dryRun,
     includeOrphans: mode === 'prune' && !!includeOrphans,
+    scope: ['s3', 'disk', 'both'].includes(scope) ? scope : 'both',
+    onlyMatched: !!onlyMatched,
+    purgeTarget: purgeTarget === 'all' ? 'all' : 'unmatched',
+    allowUnanalyzed: !!allowUnanalyzed,
     total: 0,
     processed: 0,
     uploaded: 0,
     pruned: 0,
+    adopted: 0,
     skipped: 0,
     mismatched: 0,
     errors: 0,
@@ -428,7 +572,10 @@ function startMigration({ mode = 'prune', dryRun = false, includeOrphans = false
     log: [],
   });
 
-  addLog('info', `Started ${mode}${state.dryRun ? ' (dry run)' : ''}${state.includeOrphans ? ' + orphans' : ''}`);
+  const detail = mode === 'purge'
+    ? ` (${state.purgeTarget} orphans, ${state.scope})`
+    : (state.includeOrphans ? ' + orphans' : '');
+  addLog('info', `Started ${mode}${state.dryRun ? ' (dry run)' : ''}${detail}`);
   // Fire and forget — progress lives in `state`, polled via getStatus().
   runLoop();
   return { started: true, status: getStatus() };
