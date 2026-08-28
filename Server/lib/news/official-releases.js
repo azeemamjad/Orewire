@@ -148,7 +148,13 @@ async function syncOfficialCompanyReleases({ name, ticker, exchange, companyId }
   if (enrich && newIds.length) {
     try {
       const { enrichNewsByIds } = require('./fetch');
-      await enrichNewsByIds(newIds, TABLE_RELEASES);
+      const { canEnrichMore, logBudgetSkip } = require('./enrichment-policy');
+      const budget = await canEnrichMore({ callsNeeded: 1 });
+      if (!budget.ok) {
+        logBudgetSkip(budget.reason, budget.used != null ? `${budget.used}/${budget.limit} calls today` : '');
+      } else {
+        await enrichNewsByIds(newIds, TABLE_RELEASES);
+      }
     } catch {
       /* optional */
     }

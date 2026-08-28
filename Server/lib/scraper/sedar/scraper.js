@@ -13,11 +13,9 @@ const DEFAULT_DAYS_BACK = 30;
 
 function buildContextOptions() {
   const viewport = randomViewport();
-  return {
+  const options = {
     acceptDownloads: true,
     viewport,
-    userAgent: process.env.USER_AGENT ||
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     locale:     process.env.LOCALE     || 'en-US',
     timezoneId: process.env.TIMEZONE   || 'America/Toronto',
     extraHTTPHeaders: {
@@ -25,6 +23,13 @@ function buildContextOptions() {
       'Accept':          'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
     },
   };
+  // Do NOT pin a UA string by default. Overriding it leaves navigator.userAgent
+  // claiming one Chrome version while sec-ch-ua still reports the browser's real
+  // one, and that mismatch is precisely what SEDAR+'s wall fingerprints — the
+  // block page echoes the pinned UA back in its `sst=` parameter. Letting the
+  // browser speak for itself keeps the two consistent.
+  if (process.env.USER_AGENT) options.userAgent = process.env.USER_AGENT;
+  return options;
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +117,32 @@ async function fillDateInput(page, selector, dateStr) {
 
 // ---------------------------------------------------------------------------
 
+// Compare our company name against a SEDAR+ suggestion without tripping over
+// punctuation, accents, or the bilingual "English name / nom français" format
+// SEDAR+ uses ("Agnico Eagle Mines Limited / Mines Agnico Eagle Limitée").
+// Also drops the two annotations that otherwise defeat a substring compare:
+// SEDAR's trailing profile number "(000000834)", and the "(formerly was \u2026)"
+// history our own company names carry.
+function normalizeProfileName(name) {
+  return String(name)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\(\s*(?:\d{4,}|formerly[^)]*)\)/gi, ' ')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+// Guards against a degenerately short name ("BMO") matching by accident.
+const MIN_NAME_OVERLAP = 5;
+
+function profileNamesMatch(needle, text) {
+  if (!needle || !text) return false;
+  if (needle.length >= MIN_NAME_OVERLAP && text.includes(needle)) return true;
+  if (text.length >= MIN_NAME_OVERLAP && needle.includes(text)) return true;
+  return false;
+}
+
 async function searchCompany(page, companyName, daysBack = DEFAULT_DAYS_BACK) {
   await humanType(page, page.locator('input[placeholder="Profile name or number"]'), companyName);
 
@@ -121,22 +152,77 @@ async function searchCompany(page, companyName, daysBack = DEFAULT_DAYS_BACK) {
   const allItems = page.locator('ul.ui-autocomplete li.ui-menu-item');
   const itemCount = await allItems.count();
 
-  // Pick best match: first item whose text includes the search string, else item [0]
-  const needle = companyName.toLowerCase();
-  let bestIdx = 0;
+  // Pick the first suggestion that actually names the company we asked for.
+  // There is deliberately NO index-0 fallback: SEDAR+ answers a non-matching
+  // query with other issuers' profiles, so defaulting to the first row files
+  // someone else's documents under this company's name.
+  const needle = normalizeProfileName(companyName);
+  let bestIdx = -1;
+  const seen = [];
   for (let i = 0; i < itemCount; i++) {
-    const text = (await allItems.nth(i).textContent()).trim().toLowerCase();
-    if (text.includes(needle)) { bestIdx = i; break; }
+    const raw = (await allItems.nth(i).textContent()).trim();
+    seen.push(raw);
+    if (profileNamesMatch(needle, normalizeProfileName(raw))) { bestIdx = i; break; }
+  }
+  if (bestIdx === -1) {
+    throw new Error(
+      `No SEDAR+ profile matches "${companyName}" — got [${seen.slice(0, 5).map((s) => `"${s}"`).join(', ')}]. `
+      + 'Refusing to download another issuer\'s filings.',
+    );
   }
   const chosen = (await allItems.nth(bestIdx).textContent()).trim();
   console.log(`[SEDAR] Selecting: "${chosen}"`);
 
   // Click autocomplete item — fires serviceLookupSelected AJAX which sets the company
   // filter server-side but does NOT run the search yet.  Wait for that response.
-  await Promise.all([
-    page.waitForResponse(r => r.url().includes('update.html'), { timeout: 15000 }).catch(() => {}),
+  // If it never arrives the profile filter was never applied, and searching anyway
+  // returns EVERY issuer's documents for the date range. Fail instead: a missed
+  // company is recoverable on the next run, a corpus of misattributed filings is not.
+  const [filterApplied] = await Promise.all([
+    page.waitForResponse(r => r.url().includes('update.html'), { timeout: 15000 })
+      .then(() => true)
+      .catch(() => false),
     allItems.nth(bestIdx).click(),
   ]);
+  if (!filterApplied) {
+    throw new Error(
+      `SEDAR+ never applied the profile filter for "${chosen}" (no update.html after selection) — `
+      + 'refusing to run an unfiltered search.',
+    );
+  }
+
+  // Selecting a profile triggers a FULL page re-render, not a partial update:
+  // the "Profile name or number" input is replaced by a read-only .appAttrValue
+  // holding "<name> (<profile number>)". Waiting a flat ~1s here raced that
+  // re-render, so the date fields were filled and Search was clicked on the
+  // PRE-render DOM — a search with no profile filter, which returns every
+  // issuer's documents for the date range. That is how unrelated filings ended
+  // up under the wrong company. Wait for the re-render and confirm it stuck.
+  await page.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
+  try {
+    await page.waitForFunction(
+      () => !document.querySelector('input[placeholder="Profile name or number"]')
+        && Array.from(document.querySelectorAll('.appAttrValue'))
+          .some((el) => /\(\d{6,}\)/.test(el.textContent || '')),
+      { timeout: 30000 },
+    );
+  } catch {
+    throw new Error(
+      `SEDAR+ did not finish applying the profile "${chosen}" — refusing to run an unfiltered search.`,
+    );
+  }
+
+  const heldProfile = await page.$$eval('.appAttrValue', (els) => {
+    const hit = els.map((e) => e.textContent.replace(/\s+/g, ' ').trim())
+      .find((t) => /\(\d{6,}\)/.test(t));
+    return hit || '';
+  });
+  if (!profileNamesMatch(needle, normalizeProfileName(heldProfile))) {
+    throw new Error(
+      `SEDAR+ applied profile "${heldProfile}" but we asked for "${companyName}" — aborting.`,
+    );
+  }
+  console.log(`[SEDAR] Profile filter applied: "${heldProfile}"`);
   await humanDelay(600, 1000);
 
   // Fill date range: daysBack days ago → today (format DD/MM/YYYY)
@@ -164,7 +250,17 @@ async function searchCompany(page, companyName, daysBack = DEFAULT_DAYS_BACK) {
     r => r.url().includes('update.html') || (r.url().includes('view.html') && r.url().includes('sedarplus')),
     { timeout: 30000 }
   ).catch(() => {});
-  await page.waitForSelector('table.appTable', { state: 'visible', timeout: 30000 });
+  // A profile with nothing filed in the window renders no results table at all.
+  // Waiting unconditionally turned that legitimate empty result into a thrown
+  // error, so quiet companies were counted as pipeline failures. Tolerate it and
+  // let the zero-document path below report it.
+  const resultsAppeared = await page
+    .waitForSelector('table.appTable', { state: 'visible', timeout: 30000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!resultsAppeared) {
+    console.log('[SEDAR] No results table — nothing filed for this profile in the date range.');
+  }
   await humanDelay(800, 1400);
 
   console.log(`[SEDAR] Results URL: ${page.url()}`);
@@ -227,10 +323,13 @@ async function getNextButton(page) {
   return null;
 }
 
-async function downloadPage(page, companyDir, pageNum, saved) {
+async function downloadPage(page, companyDir, pageNum, saved, companyName) {
   const docLinks = page.locator('td.appTblCell2 a.appDocumentLink');
   const count    = await docLinks.count();
   console.log(`[SEDAR] Page ${pageNum} — ${count} document(s)`);
+
+  const needle = companyName ? normalizeProfileName(companyName) : null;
+  let skipped = 0;
 
   for (let i = 0; i < count; i++) {
     const link     = docLinks.nth(i);
@@ -238,6 +337,22 @@ async function downloadPage(page, companyDir, pageNum, saved) {
     const href     = await link.getAttribute('href');
     let   fallback = safeFilename(text);
     if (!fallback.toLowerCase().endsWith('.pdf')) fallback += '.pdf';
+
+    // Every results row carries the filing issuer in its "Profile(s)" column
+    // (td.appTblCell1). Check it per row so a stray result can never be written
+    // into another company's folder, whatever the search state was.
+    if (needle) {
+      const rowProfile = await link.evaluate((el) => {
+        const tr = el.closest('tr');
+        const cell = tr && tr.querySelector('td.appTblCell1');
+        return cell ? cell.textContent.replace(/\s+/g, ' ').trim() : '';
+      });
+      if (rowProfile && !profileNamesMatch(needle, normalizeProfileName(rowProfile))) {
+        skipped++;
+        console.warn(`  ⚠ skipping "${fallback}" — filed by "${rowProfile}", not "${companyName}"`);
+        continue;
+      }
+    }
 
     try {
       await humanDelay(500, 1200);
@@ -247,6 +362,10 @@ async function downloadPage(page, companyDir, pageNum, saved) {
     } catch (err) {
       console.error(`  ✗ Failed (${fallback}): ${err.message}`);
     }
+  }
+
+  if (skipped) {
+    console.warn(`[SEDAR] Page ${pageNum} — skipped ${skipped}/${count} document(s) filed by another issuer`);
   }
 }
 
@@ -278,7 +397,7 @@ async function scrapeSedarOnPage(page, context, companyName, options = {}) {
   const saved = [];
 
   for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
-    await downloadPage(page, companyDir, pageNum, saved);
+    await downloadPage(page, companyDir, pageNum, saved, companyName);
 
     const nextBtn = await getNextButton(page);
     if (!nextBtn) {

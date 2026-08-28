@@ -67,6 +67,11 @@ function buildLaunchOptions(tier) {
     headless: process.env.HEADLESS !== 'false',
     args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'],
   };
+  // Bundled Chromium reports "HeadlessChrome" in its sec-ch-ua client hints even
+  // when run headed, and SEDAR+'s Radware wall 403s on that alone. Only the real
+  // Chrome build gets served a page. BROWSER_CHANNEL=chrome opts into it; leave
+  // unset to keep the bundled browser (fine for targets with no bot wall).
+  if (process.env.BROWSER_CHANNEL) opts.channel = process.env.BROWSER_CHANNEL;
   if (tier.server) {
     opts.proxy = { server: tier.server };
     if (tier.username) opts.proxy.username = tier.username;

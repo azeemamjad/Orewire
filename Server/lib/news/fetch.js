@@ -6,6 +6,15 @@ const {
   sourceForTable,
 } = require('./db');
 const { chatWithSystem } = require('../ai/client');
+const {
+  getPolicy,
+  maxAgeCutoff,
+  isWithinEnrichmentWindow,
+  canEnrichMore,
+  filterRowsForEnrichment,
+  logBudgetSkip,
+  invalidateEnrichmentBudgetCache,
+} = require('./enrichment-policy');
 
 const RSS_FEEDS = [
   // TMX Newsfile — verbatim issuer press releases (TSX / TSX-V / CSE), by industry.
@@ -144,11 +153,20 @@ async function getActiveNewsSystem() {
 }
 
 async function callOllama(prompt) {
+  const budget = await canEnrichMore({ callsNeeded: 1 });
+  if (!budget.ok) {
+    logBudgetSkip(budget.reason, budget.used != null ? `${budget.used}/${budget.limit} calls today` : '');
+    const err = new Error('News enrichment daily budget exceeded');
+    err.code = 'NEWS_ENRICH_BUDGET';
+    throw err;
+  }
+
   const { content } = await chatWithSystem({
     feature: 'news_enrichment',
     system: await getActiveNewsSystem(),
     user: prompt,
   });
+  invalidateEnrichmentBudgetCache();
   return content;
 }
 
@@ -157,8 +175,14 @@ function parseJson(raw) {
   return JSON.parse(cleaned);
 }
 
-async function enrichNewsRows(rows, table = TABLE_RELEASES) {
+async function enrichNewsRows(rows, table = TABLE_RELEASES, options = {}) {
+  rows = filterRowsForEnrichment(rows, options);
   if (!rows.length) return 0;
+
+  const policy = getPolicy();
+  if (rows.length > policy.batchSize) {
+    rows = rows.slice(0, policy.batchSize);
+  }
 
   const prompt = rows
     .map((r, i) => `${i + 1}. "${r.title}" — ${r.description || 'No description'}`)
@@ -191,34 +215,88 @@ async function enrichNewsRows(rows, table = TABLE_RELEASES) {
   return enriched;
 }
 
-async function enrichNewsByIds(ids, table = TABLE_RELEASES) {
+async function enrichNewsByIds(ids, table = TABLE_RELEASES, options = {}) {
   if (!ids?.length) return 0;
+
+  const budget = await canEnrichMore({ callsNeeded: 1 });
+  if (!budget.ok) {
+    logBudgetSkip(budget.reason, budget.used != null ? `${budget.used}/${budget.limit} calls today` : '');
+    return 0;
+  }
+
+  const policy = getPolicy();
+  const cutoff = maxAgeCutoff(policy.maxAgeHours);
+  const params = [ids, cutoff];
+  let companyClause = '';
+  if (options.requireCompany ?? policy.requireCompany) {
+    companyClause = ' AND company_id IS NOT NULL';
+  }
+
   const result = await db.query(
-    `SELECT id, title, description FROM ${table} WHERE id = ANY($1::int[]) AND ai_processed = FALSE`,
-    [ids]
+    `SELECT id, title, description, pub_date, company_id
+     FROM ${table}
+     WHERE id = ANY($1::int[])
+       AND ai_processed = FALSE
+       AND pub_date >= $2${companyClause}
+     ORDER BY pub_date DESC
+     LIMIT ${policy.batchSize}`,
+    params,
   );
   if (result.rows.length === 0) return 0;
-  return enrichNewsRows(result.rows, table);
+  return enrichNewsRows(result.rows, table, options);
 }
 
-async function enrichUnprocessedNews(limit = 25, table = TABLE_RELEASES) {
+async function enrichUnprocessedNews(limit, table = TABLE_RELEASES, options = {}) {
+  const policy = getPolicy();
+  const batchLimit = limit ?? policy.batchSize;
+
+  const budget = await canEnrichMore({ callsNeeded: 1 });
+  if (!budget.ok) {
+    logBudgetSkip(budget.reason, budget.used != null ? `${budget.used}/${budget.limit} calls today` : '');
+    return 0;
+  }
+
+  const cutoff = maxAgeCutoff(policy.maxAgeHours);
+  const params = [cutoff, batchLimit];
+  let companyClause = '';
+  if (options.requireCompany ?? policy.requireCompany) {
+    companyClause = ' AND company_id IS NOT NULL';
+  }
+
   const unprocessed = await db.query(
-    `SELECT id, title, description FROM ${table} WHERE ai_processed = FALSE ORDER BY pub_date DESC LIMIT $1`,
-    [limit]
+    `SELECT id, title, description, pub_date, company_id
+     FROM ${table}
+     WHERE ai_processed = FALSE
+       AND pub_date >= $1${companyClause}
+     ORDER BY pub_date DESC
+     LIMIT $2`,
+    params,
   );
   if (unprocessed.rows.length === 0) return 0;
-  return enrichNewsRows(unprocessed.rows, table);
+  return enrichNewsRows(unprocessed.rows, table, options);
 }
 
-/** Process all pending AI enrichment in batches (non-blocking callers should fire-and-forget). */
-async function drainUnprocessedNews(batchSize = 25) {
+/** Process a capped slice of pending enrichment (non-blocking callers fire-and-forget). */
+async function drainUnprocessedNews(batchSize) {
+  const policy = getPolicy();
+  if (!policy.enabled) return 0;
+
+  const perBatch = batchSize ?? policy.batchSize;
   let total = 0;
+  let batches = 0;
+
   for (const table of [TABLE_RELEASES, TABLE_MARKET]) {
-    for (;;) {
-      const n = await enrichUnprocessedNews(batchSize, table);
+    while (batches < policy.maxDrainBatches) {
+      const n = await enrichUnprocessedNews(perBatch, table);
       total += n;
-      if (n < batchSize) break;
+      batches++;
+      if (n === 0) break;
     }
+    if (batches >= policy.maxDrainBatches) break;
+  }
+
+  if (total > 0) {
+    console.log(`[News] Drained ${total} recent company-matched headline(s) for AI enrichment`);
   }
   return total;
 }
@@ -274,7 +352,8 @@ async function fetchCompanyNews(companyName, ticker, companyId = null, { skipCoo
     .filter((item) => {
       if (seen.has(item.link)) return false;
       seen.add(item.link);
-      return true;
+      const pub = item.pubDate ? new Date(item.pubDate) : null;
+      return isWithinEnrichmentWindow(pub || new Date());
     })
     .slice(0, 10);
 
@@ -325,9 +404,15 @@ async function fetchCompanyNews(companyName, ticker, companyId = null, { skipCoo
         console.log(
           `[News] Company ${category}: ${inserted} new articles, AI enriched ${enriched} (saved to DB)`
         );
+      } else if (inserted > 0) {
+        console.log(`[News] Company ${category}: ${inserted} new articles (enrichment skipped — age/budget gates)`);
       }
     } catch (err) {
-      console.error('[News] AI enrichment failed:', err?.message || err);
+      if (err?.code === 'NEWS_ENRICH_BUDGET') {
+        logBudgetSkip('daily_budget');
+      } else {
+        console.error('[News] AI enrichment failed:', err?.message || err);
+      }
     }
     if (companyId && (inserted > 0 || enriched > 0)) {
       try {
@@ -367,6 +452,9 @@ async function fetchAndStoreRssFeeds() {
   const insertedIds = [];
 
   for (const item of allItems) {
+    const pub = item.pubDate ? new Date(item.pubDate) : new Date();
+    if (!isWithinEnrichmentWindow(pub)) continue;
+
     const company = matchCompany(item.title, item.description);
     try {
       const result = await db.query(
@@ -401,10 +489,16 @@ async function fetchAndStoreRssFeeds() {
     try {
       enriched = await enrichNewsByIds(insertedIds, TABLE_RELEASES);
       if (enriched > 0) {
-        console.log(`[News] AI enriched ${enriched} items (saved to DB)`);
+        console.log(`[News] AI enriched ${enriched} recent company-matched RSS item(s)`);
+      } else {
+        console.log(`[News] Inserted ${insertedIds.length} RSS item(s); enrichment skipped (unmatched, stale, or budget)`);
       }
     } catch (err) {
-      console.error('[News] AI enrichment failed:', err?.message || err);
+      if (err?.code === 'NEWS_ENRICH_BUDGET') {
+        logBudgetSkip('daily_budget');
+      } else {
+        console.error('[News] AI enrichment failed:', err?.message || err);
+      }
     }
     // Re-query company_ids for inserted rows to refresh snapshots after enrichment
     try {

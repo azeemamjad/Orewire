@@ -12,7 +12,7 @@ async function fetchAndStoreNews() {
     const stats = await fetchAndStoreRssFeeds();
     if (stats.inserted > 0) {
       console.log(
-        `[News] Fetched ${stats.total} items, inserted ${stats.inserted} new (${stats.matched} matched to companies), running AI enrichment`
+        `[News] Fetched ${stats.total} items, inserted ${stats.inserted} new (${stats.matched} matched to companies); draining recent enrichment backlog`
       );
     }
     drainUnprocessedNews().catch((err) => {

@@ -23,11 +23,15 @@ async function downloadCseExcel(options = {}) {
     async ({ page }) => {
 
     console.error('[CSE] Navigating to', CSE_URL);
-    // Retry navigation up to 3 times
+    // Retry navigation up to 3 times. Keep the per-attempt timeout modest: this
+    // runs once per proxy tier, so a generous timeout on an unreachable tier is
+    // paid three times over before the fallback chain moves on. thecse.com
+    // answers in ~1.5s when the path works at all.
+    const gotoTimeout = parseInt(process.env.CSE_GOTO_TIMEOUT_MS || '45000', 10);
     let lastErr;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        await page.goto(CSE_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
+        await page.goto(CSE_URL, { waitUntil: 'domcontentloaded', timeout: gotoTimeout });
         lastErr = null;
         break;
       } catch (err) {
