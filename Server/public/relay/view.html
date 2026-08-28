@@ -86,6 +86,12 @@
       color: #6b7c93;
       padding: 8px 16px 12px;
       text-align: center;
+      line-height: 1.5;
+    }
+    .hint.captcha {
+      color: #fbbf24;
+      background: #1a1508;
+      border-top: 1px solid #3d3010;
     }
   </style>
 </head>
@@ -106,7 +112,12 @@
       <img id="frame" alt="Live browser" draggable="false" />
     </div>
   </div>
-  <p class="hint">Click, type, and scroll in the frame - input is sent to the server browser in real time.</p>
+  <p class="hint" id="hint">Click, type, and scroll in the frame — input is sent to the server browser in real time.</p>
+  <p class="hint captcha" id="captcha-hint" hidden>
+    Captcha mode: click inside the frame first, then solve the challenge.
+    Press-and-hold widgets need you to hold the mouse button down until the bar completes.
+    When finished, return to Admin → Relay and click <strong>Mark active (resume)</strong>.
+  </p>
 
   <script>
     const TOKEN = __TOKEN__;
@@ -118,6 +129,7 @@
 
     let viewport = { width: 1280, height: 900 };
     let ws;
+    let pointerDown = null;
 
     function setStatus(text, ok) {
       statusEl.textContent = text;
@@ -154,10 +166,20 @@
       e.preventDefault();
       wrap.setPointerCapture(e.pointerId);
       wrap.focus();
+      pointerDown = { x: e.clientX, y: e.clientY, button: e.button };
       send(pointerPayload(e, 'down'));
     });
     wrap.addEventListener('pointerup', (e) => {
-      send(pointerPayload(e, 'up'));
+      const payload = pointerPayload(e, 'up');
+      send(payload);
+      if (pointerDown) {
+        const dx = Math.abs(e.clientX - pointerDown.x);
+        const dy = Math.abs(e.clientY - pointerDown.y);
+        if (dx < 8 && dy < 8) {
+          send({ ...payload, type: 'mouse', event: 'click', clickCount: e.detail || 1 });
+        }
+      }
+      pointerDown = null;
       try { wrap.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     });
     wrap.addEventListener('pointermove', (e) => {
@@ -234,6 +256,12 @@
           if (msg.url) urlBar.value = msg.url;
           if (msg.viewport) viewport = msg.viewport;
           setStatus('Live', true);
+          wrap.focus();
+          const captchaHint = document.getElementById('captcha-hint');
+          const isCaptchaUrl = /validate\.perfdrive|captcha-delivery|cdn-cgi\/challenge|incapsula|px-captcha/i.test(msg.url || '');
+          if (msg.needsHuman || isCaptchaUrl) {
+            captchaHint.hidden = false;
+          }
         } else if (msg.type === 'frame') {
           frame.src = 'data:image/jpeg;base64,' + msg.data;
           if (msg.w) viewport.width = msg.w;

@@ -103,6 +103,17 @@
 .tag-yes { color: #16a34a; font-weight: 600; }
 .tag-captcha { color: var(--gold); font-weight: 600; }
 .tag-no { color: var(--muted); }
+.relay-captcha-banner {
+  margin: 10px 0 4px;
+  padding: 10px 12px;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #92400e;
+}
+.relay-captcha-banner strong { color: #78350f; }
 </style>
 </head>
 <body data-page="relay">
@@ -218,6 +229,7 @@ function renderWorkers(workers) {
       <h3>${escapeHtml(w.label)}</h3>
       ${proxyLine}
       <span class="${statusClass(w.status)}">${escapeHtml(w.status)}</span>
+      ${w.status === 'needs_human' ? `<div class="relay-captcha-banner"><strong>Captcha waiting.</strong> Click <em>View (temp link)</em>, click inside the live frame, solve the challenge (press-and-hold if the widget asks), then click <em>Mark active (resume)</em>.</div>` : ''}
       ${w.busy && w.currentTask ? `<div class="relay-task-line">Running: ${escapeHtml(w.currentTask)}</div>` : ''}
       ${w.lastError ? `<div class="relay-error-line" data-error-for="${escapeHtml(w.id)}" title="Last error on this worker">${escapeHtml(w.lastError)}</div>` : ''}
       <div class="relay-live-url-wrap">

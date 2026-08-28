@@ -165,25 +165,19 @@ async function withRelaySession(taskSlug, slotIndex, fn, opts = {}) {
 
   registerSession(cancelKey, { workerId, taskSlug });
 
-  // Mid-task captcha guard: scrapers call this after each navigation. Parks the
-  // worker as needs_human, yields the queue for Relay View, then waits until the
-  // human marks the worker active again (or the wall clears on its own).
-  const guardCaptcha = async () => {
-    if (shouldStop()) throw new TaskStoppedError();
-    if (!(await detectCaptchaOnPage(w.page))) return;
-
+  async function pauseForHumanCaptcha(page, message) {
     pool.setStatus(workerId, STATUS.NEEDS_HUMAN);
     await logTaskEvent({
       taskSlug,
       workerId,
       status: 'captcha_detected',
-      message: `Bot wall on ${w.page.url()} — open Relay View, solve, then Mark active`,
+      message: message || `Bot wall on ${page.url()} — open Relay View, solve, then Mark active`,
     }).catch(() => {});
 
     yieldQueue(workerId);
 
     const outcome = await waitForHumanResume(workerId, {
-      page: w.page,
+      page,
       shouldStop,
     });
 
@@ -201,6 +195,15 @@ async function withRelaySession(taskSlug, slotIndex, fn, opts = {}) {
       status: 'captcha_cleared',
       message: 'Human cleared bot wall — resuming run',
     }).catch(() => {});
+  }
+
+  // Mid-task captcha guard: scrapers call this after each navigation. Parks the
+  // worker as needs_human, yields the queue for Relay View, then waits until the
+  // human marks the worker active again (or the wall clears on its own).
+  const guardCaptcha = async () => {
+    if (shouldStop()) throw new TaskStoppedError();
+    if (!(await detectCaptchaOnPage(w.page))) return;
+    await pauseForHumanCaptcha(w.page);
   };
 
   /** Serialize a single Playwright step when scrapers need explicit ordering. */
@@ -222,14 +225,7 @@ async function withRelaySession(taskSlug, slotIndex, fn, opts = {}) {
     if (shouldStop()) throw new TaskStoppedError();
 
     if (await detectCaptchaOnPage(w.page)) {
-      pool.setStatus(workerId, STATUS.NEEDS_HUMAN);
-      await logTaskEvent({
-        taskSlug,
-        workerId,
-        status: 'captcha_detected',
-        message: `Captcha suspected on ${w.page.url()}`,
-      });
-      throw new CaptchaRequiredError('Captcha detected — open Relay View to solve', workerId);
+      await pauseForHumanCaptcha(w.page, `Captcha suspected on ${w.page.url()}`);
     }
     return result;
   } catch (err) {
@@ -254,9 +250,10 @@ async function withRelaySession(taskSlug, slotIndex, fn, opts = {}) {
         status: 'captcha',
         message: err.message,
       }).catch(() => {});
+    } else {
+      usageStatus = 'error';
+      usageError = err?.message || String(err);
     }
-    usageStatus = 'error';
-    usageError = err?.message || String(err);
     throw err;
   } finally {
     unregisterSession(cancelKey);

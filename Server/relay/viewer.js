@@ -118,7 +118,7 @@ async function handleInput(page, msg, viewport) {
         await page.mouse.move(x, y);
         await page.mouse.up({ button });
       } else if (msg.event === 'click') {
-        await page.mouse.click(x, y, { button });
+        await page.mouse.click(x, y, { button, clickCount: msg.clickCount || 1 });
       } else if (msg.event === 'wheel') {
         await page.mouse.move(x, y);
         await page.mouse.wheel(0, msg.deltaY || 0);
@@ -214,7 +214,7 @@ function attachRelayViewer(app, httpServer) {
       pool.incrementViewers(workerId);
       viewerCounted = true;
 
-      ws.send(JSON.stringify({ type: 'ready', label, url: page.url(), viewport }));
+      ws.send(JSON.stringify({ type: 'ready', label, url: page.url(), viewport, needsHuman: worker.status === STATUS.NEEDS_HUMAN }));
 
       onFrame = (params) => {
         if (ws.readyState !== ws.OPEN) return;

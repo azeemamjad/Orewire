@@ -54,39 +54,44 @@ async function saveCookies(context) {
 // Navigation
 // ---------------------------------------------------------------------------
 
-async function goToDocumentsPage(page) {
+async function goToDocumentsPage(page, guardCaptcha) {
   await page.goto(BASE_URL, { waitUntil: 'load', timeout: 60000 });
+  if (guardCaptcha) await guardCaptcha();
   await humanDelay(800, 1500);
 
   const navTrigger = page.getByRole('link', { name: /search sedar/i }).first();
   await navTrigger.waitFor({ state: 'visible', timeout: 15000 });
   await humanClick(page, navTrigger);
+  if (guardCaptcha) await guardCaptcha();
 
   await humanDelay(600, 1000);
   const docsLink = page.getByRole('link', { name: /^documents$/i }).first();
   await docsLink.waitFor({ state: 'visible', timeout: 10000 });
   await humanClick(page, docsLink);
+  if (guardCaptcha) await guardCaptcha();
 }
 
-async function navigateToDocumentsSearch(page, context) {
-  await goToDocumentsPage(page);
+async function navigateToDocumentsSearch(page, context, guardCaptcha) {
+  await goToDocumentsPage(page, guardCaptcha);
 
   try {
     await page.waitForSelector('input[placeholder="Profile name or number"]', { state: 'visible', timeout: 30000 });
   } catch {
+    if (guardCaptcha) await guardCaptcha();
     // Session cookies expired — SEDAR+ redirected back to /home/.
     // Clear stale cookies and retry once with a fresh session.
     if (page.url().includes('/home/')) {
       console.log('[SEDAR] Session expired — clearing cookies and retrying…');
       await context.clearCookies();
       if (fs.existsSync(COOKIE_FILE)) fs.unlinkSync(COOKIE_FILE);
-      await goToDocumentsPage(page);
+      await goToDocumentsPage(page, guardCaptcha);
       await page.waitForSelector('input[placeholder="Profile name or number"]', { state: 'visible', timeout: 30000 });
     } else {
       throw new Error(`Documents search page did not load (URL: ${page.url()})`);
     }
   }
 
+  if (guardCaptcha) await guardCaptcha();
   await humanDelay(400, 700);
 }
 
@@ -143,10 +148,16 @@ function profileNamesMatch(needle, text) {
   return false;
 }
 
-async function searchCompany(page, companyName, daysBack = DEFAULT_DAYS_BACK) {
+async function searchCompany(page, companyName, daysBack = DEFAULT_DAYS_BACK, guardCaptcha) {
+  if (guardCaptcha) await guardCaptcha();
   await humanType(page, page.locator('input[placeholder="Profile name or number"]'), companyName);
 
-  await page.waitForSelector('ul.ui-autocomplete li.ui-menu-item', { state: 'visible', timeout: 15000 });
+  try {
+    await page.waitForSelector('ul.ui-autocomplete li.ui-menu-item', { state: 'visible', timeout: 15000 });
+  } catch {
+    if (guardCaptcha) await guardCaptcha();
+    await page.waitForSelector('ul.ui-autocomplete li.ui-menu-item', { state: 'visible', timeout: 15000 });
+  }
   await humanDelay(400, 800);
 
   const allItems = page.locator('ul.ui-autocomplete li.ui-menu-item');
@@ -261,6 +272,7 @@ async function searchCompany(page, companyName, daysBack = DEFAULT_DAYS_BACK) {
   if (!resultsAppeared) {
     console.log('[SEDAR] No results table — nothing filed for this profile in the date range.');
   }
+  if (guardCaptcha) await guardCaptcha();
   await humanDelay(800, 1400);
 
   console.log(`[SEDAR] Results URL: ${page.url()}`);
@@ -374,18 +386,20 @@ async function downloadPage(page, companyDir, pageNum, saved, companyName) {
 // ---------------------------------------------------------------------------
 
 async function scrapeSedarOnPage(page, context, companyName, options = {}) {
+  const { guardCaptcha } = options;
   const downloadBase = DOWNLOADS_DIR;
   const companyDir   = path.join(downloadBase, companyName.replace(/[^\w\s-]/g, '_').trim());
   fs.mkdirSync(companyDir, { recursive: true });
 
   console.log('[SEDAR] Navigating to Documents search…');
-  await navigateToDocumentsSearch(page, context);
+  await navigateToDocumentsSearch(page, context, guardCaptcha);
 
   console.log(`[SEDAR] Searching for "${companyName}"…`);
-  await searchCompany(page, companyName, options.daysBack);
+  await searchCompany(page, companyName, options.daysBack, guardCaptcha);
 
   await saveCookies(context);
 
+  if (guardCaptcha) await guardCaptcha();
   const firstCount = await page.locator('td.appTblCell2 a.appDocumentLink').count();
   if (firstCount === 0) {
     console.log('[SEDAR] No documents found. Saving page snapshot.');
@@ -397,6 +411,7 @@ async function scrapeSedarOnPage(page, context, companyName, options = {}) {
   const saved = [];
 
   for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
+    if (guardCaptcha) await guardCaptcha();
     await downloadPage(page, companyDir, pageNum, saved, companyName);
 
     const nextBtn = await getNextButton(page);
@@ -422,7 +437,7 @@ async function scrapeSedar(companyName, options = {}) {
   return withBrowserSession(
     taskSlug,
     { relaySlot: options.relaySlot || 1, contextOptions: buildContextOptions() },
-    async ({ page, context }) => {
+    async ({ page, context, guardCaptcha }) => {
     if (process.env.OREWIRE_RELAY !== 'in-process') {
       await context.addInitScript(STEALTH_INIT);
       await loadCookies(context);
@@ -431,7 +446,10 @@ async function scrapeSedar(companyName, options = {}) {
     }
 
     try {
-      return await scrapeSedarOnPage(page, context, companyName, { daysBack: options.daysBack });
+      return await scrapeSedarOnPage(page, context, companyName, {
+        daysBack: options.daysBack,
+        guardCaptcha,
+      });
     } finally {
       await saveCookies(context);
     }

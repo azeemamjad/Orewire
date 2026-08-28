@@ -153,6 +153,8 @@ class RelayPool {
         // which sets navigator.webdriver and other automation tells.
         ignoreDefaultArgs: ['--enable-automation'],
       };
+      // Real Chrome avoids HeadlessChrome client-hint blocks on SEDAR+ / Radware walls.
+      if (process.env.BROWSER_CHANNEL) launchOpts.channel = process.env.BROWSER_CHANNEL;
 
       // Launch-level proxy (same as scraper fallback / admin Test). Context-only
       // proxy can fail to apply and look "healthy" while traffic goes direct.
