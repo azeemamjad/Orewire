@@ -2,6 +2,7 @@ const http       = require('http');
 const path       = require('path');
 const fs         = require('fs');
 const db         = require('../db');
+const { CANADA_COMPANIES_QUERY, ASX_COMPANIES_QUERY } = require('./regions');
 const { state, addLog } = require('./state');
 const { load: loadConfig } = require('./config');
 const { upsertInsiderData } = require('../db/insiders');
@@ -466,17 +467,16 @@ function httpPost(path) {
   });
 }
 
-async function seedCompanies(includeAsx = false) {
+async function seedCanadianCompanies() {
   const seeders = [['TSX/TSXV', '/api/seeder/tsx'], ['CSE', '/api/seeder/cse']];
-  if (includeAsx) seeders.push(['ASX', '/api/seeder/asx']);
 
   for (const [label, endpoint] of seeders) {
-    addLog('out', `[Pipeline] Seeding ${label}…`);
+    addLog('out', `[Canada Pipeline] Seeding ${label}…`);
     const result = await httpPost(endpoint);
     if (result.error) {
-      addLog('err', `[Pipeline] ${label} seeder error: ${result.error}`);
+      addLog('err', `[Canada Pipeline] ${label} seeder error: ${result.error}`);
     } else {
-      addLog('out', `[Pipeline] ${label}: inserted=${result.inserted ?? '?'}, skipped=${result.skipped ?? '?'}`);
+      addLog('out', `[Canada Pipeline] ${label}: inserted=${result.inserted ?? '?'}, skipped=${result.skipped ?? '?'}`);
     }
   }
 }
@@ -496,79 +496,81 @@ function waitForAnalysis() {
 }
 
 // ---------------------------------------------------------------------------
-// Main entry point
+// Canada (SEDAR) entry point — TSX / TSXV / CSE only; ASX has its own pipeline
 // ---------------------------------------------------------------------------
 
 async function runPipeline() {
   if (state.status === 'running') {
-    addLog('warn', '[Pipeline] Already running — ignoring start request');
+    addLog('warn', '[Canada Pipeline] Already running — ignoring start request');
     return;
   }
 
   const cfg = loadConfig();
   state.status        = 'running';
-  state.activePipeline = 'main';
+  state.activePipeline = 'canada';
   state.startedAt     = new Date().toISOString();
   state.stoppedAt     = null;
   state.stopRequested = false;
   state.progress      = { total: 0, done: 0, errors: 0 };
   state.analysisProgress = { total: 0, done: 0, errors: 0 };
 
-  addLog('out', `[Pipeline] ── Run started at ${state.startedAt} ──`);
-  addLog('out', `[Pipeline] concurrency=${cfg.concurrency}  analysisConcurrency=${cfg.analysisConcurrency || 2}  daysBack=${cfg.daysBack}  analyze=${cfg.analyze}`);
+  addLog('out', `[Canada Pipeline] ── Run started at ${state.startedAt} ──`);
+  addLog('out', `[Canada Pipeline] concurrency=${cfg.concurrency}  analysisConcurrency=${cfg.analysisConcurrency || 2}  daysBack=${cfg.daysBack}  analyze=${cfg.analyze}`);
 
   try {
-    // ── Phase 1: Seed ────────────────────────────────────────────────────────
+    // ── Phase 1: Seed Canada ─────────────────────────────────────────────────
     if (cfg.seedOnStart) {
       state.currentPhase = 'seeding';
-      addLog('out', '[Pipeline] Phase 1/3: seeding company lists…');
-      await seedCompanies(cfg.asxSeedOnStart);
-      addLog('out', '[Pipeline] Seeding complete.');
+      addLog('out', '[Canada Pipeline] Phase 1/3: seeding TSX/TSXV & CSE company lists…');
+      await seedCanadianCompanies();
+      addLog('out', '[Canada Pipeline] Seeding complete.');
     }
 
     if (state.stopRequested) {
-      addLog('warn', '[Pipeline] Stopped after seeding phase.');
+      addLog('warn', '[Canada Pipeline] Stopped after seeding phase.');
       return;
     }
 
     // ── Phase 2: Scrape + Analyze (streaming) ────────────────────────────────
     state.currentPhase = 'scraping';
-    const allCompaniesResult = await db.query('SELECT name, ticker, exchange FROM companies ORDER BY name');
+    const allCompaniesResult = await db.query(CANADA_COMPANIES_QUERY);
     const allCompanies = allCompaniesResult.rows;
 
     if (allCompanies.length > 0 && !state.stopRequested) {
-      addLog('out', `[Pipeline] Phase 2: scraping ${allCompanies.length} companies (${cfg.concurrency} download workers, ${cfg.analysisConcurrency || 2} AI workers)…`);
+      addLog('out', `[Canada Pipeline] Phase 2: scraping ${allCompanies.length} Canadian companies (${cfg.concurrency} download workers, ${cfg.analysisConcurrency || 2} AI workers)…`);
       state.progress.total += allCompanies.length;
       await runDownloadQueue(allCompanies, cfg);
+    } else if (allCompanies.length === 0) {
+      addLog('warn', '[Canada Pipeline] No Canadian companies in database — run seeders first.');
     }
 
     if (state.stopRequested) {
-      addLog('warn', '[Pipeline] Stopped during scraping phase.');
+      addLog('warn', '[Canada Pipeline] Stopped during scraping phase.');
     } else {
-      addLog('out', `[Pipeline] Downloads complete. Done: ${state.progress.done}, Errors: ${state.progress.errors}`);
+      addLog('out', `[Canada Pipeline] Downloads complete. Done: ${state.progress.done}, Errors: ${state.progress.errors}`);
     }
 
     // Wait for any remaining analysis workers to finish
     if (cfg.analyze && (analysisQueue.length > 0 || activeAnalysis > 0)) {
       state.currentPhase = 'analyzing';
-      addLog('out', `[Pipeline] Waiting for ${analysisQueue.length + activeAnalysis} remaining analysis job(s)…`);
+      addLog('out', `[Canada Pipeline] Waiting for ${analysisQueue.length + activeAnalysis} remaining analysis job(s)…`);
       await waitForAnalysis();
-      addLog('out', `[Pipeline] Analysis complete. Done: ${state.analysisProgress.done}, Errors: ${state.analysisProgress.errors}`);
+      addLog('out', `[Canada Pipeline] Analysis complete. Done: ${state.analysisProgress.done}, Errors: ${state.analysisProgress.errors}`);
     }
 
     // ── Phase 3: Final sync (catch any stragglers) ────────────────────────────
     if (!state.stopRequested && cfg.analyze) {
       state.currentPhase = 'syncing';
-      addLog('out', '[Pipeline] Phase 3/3: syncing remaining analyses to DB…');
+      addLog('out', '[Canada Pipeline] Phase 3/3: syncing remaining analyses to DB…');
       const s = await syncAnalyses();
-      addLog('out', `[Pipeline] Sync complete: ${s.imported} imported, ${s.skipped} skipped, ${s.errors} errors`);
+      addLog('out', `[Canada Pipeline] Sync complete: ${s.imported} imported, ${s.skipped} skipped, ${s.errors} errors`);
     }
 
     const elapsed = ((Date.now() - new Date(state.startedAt).getTime()) / 60000).toFixed(1);
-    addLog('out', `[Pipeline] ── Finished in ${elapsed} min. Downloads: ${state.progress.done}/${state.progress.total}, AI: ${state.analysisProgress.done}/${state.analysisProgress.total}, Errors: ${state.progress.errors + state.analysisProgress.errors} ──`);
+    addLog('out', `[Canada Pipeline] ── Finished in ${elapsed} min. Downloads: ${state.progress.done}/${state.progress.total}, AI: ${state.analysisProgress.done}/${state.analysisProgress.total}, Errors: ${state.progress.errors + state.analysisProgress.errors} ──`);
 
   } catch (err) {
-    addLog('err', `[Pipeline] Fatal: ${err.message}`);
+    addLog('err', `[Canada Pipeline] Fatal: ${err.message}`);
   } finally {
     state.status       = 'idle';
     state.activePipeline = null;
@@ -628,7 +630,7 @@ async function runAsxPipeline() {
 
     // ── Phase 2: Scrape ASX only ─────────────────────────────────────────────
     state.currentPhase = 'scraping';
-    const asxCompaniesResult = await db.query("SELECT name, ticker, exchange FROM companies WHERE exchange = 'ASX' ORDER BY name");
+    const asxCompaniesResult = await db.query(ASX_COMPANIES_QUERY);
     const asxCompanies = asxCompaniesResult.rows;
 
     if (asxCompanies.length > 0 && !state.stopRequested) {

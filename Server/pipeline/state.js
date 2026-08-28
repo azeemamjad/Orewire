@@ -7,7 +7,7 @@ const LOG_FILE = path.join(__dirname, '../data/pipeline-logs.jsonl');
 
 const state = {
   status: 'idle',          // idle | running | stopping
-  activePipeline: null,    // 'main' | 'asx' | null — which filing pipeline is running
+  activePipeline: null,    // 'canada' | 'asx' | null — which filing pipeline is running
   startedAt: null,
   stoppedAt: null,
   currentPhase: null,      // 'seeding' | 'scraping' | 'analyzing' | 'syncing'

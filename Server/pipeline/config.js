@@ -13,7 +13,6 @@ const DEFAULTS = {
   analysisConcurrency: 2,
   daysBack: 30,
   seedOnStart: true,
-  asxSeedOnStart: true,
   analyze: true,
   enabled: false,
   asxSchedule: '0 7 * * *',

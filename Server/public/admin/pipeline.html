@@ -43,7 +43,7 @@
         <div class="pl-chip">AI <strong id="pl-stat-ai-pct">-</strong></div>
       </div>
       <div class="pl-hero-actions">
-        <button class="btn btn-navy" id="pl-start-btn" onclick="pipelineStart()">▶ Main</button>
+        <button class="btn btn-navy" id="pl-start-btn" onclick="pipelineStart()">▶ Canada</button>
         <button class="btn btn-purple" id="pl-start-asx-btn" onclick="pipelineStartAsx()">▶ ASX</button>
         <button class="btn btn-danger" id="pl-stop-btn" onclick="pipelineStop()" style="display:none;">■ Stop</button>
       </div>
@@ -66,9 +66,9 @@
       <div class="pl-grid-2">
         <div class="pl-card">
           <div class="pl-card-head">
-            <div class="pl-card-title">Main filings <span class="pl-card-tag ca">Canada</span></div>
+            <div class="pl-card-title">Canada filings <span class="pl-card-tag ca">SEDAR</span></div>
           </div>
-          <p class="pl-card-desc">TSX, TSXV &amp; CSE - download SEDAR filings and optional AI analysis.</p>
+          <p class="pl-card-desc">TSX, TSXV &amp; CSE only — downloads SEDAR+ filings. ASX companies are excluded (use the ASX pipeline).</p>
           <div class="config-grid" id="pl-main-cron-mount"></div>
           <div class="config-grid">
             <div class="config-field"><label>Download workers</label><input id="pl-concurrency" type="number" min="1" max="20" placeholder="5" /></div>
@@ -76,7 +76,7 @@
             <div class="config-field"><label>Days back</label><input id="pl-daysback" type="number" min="1" max="365" placeholder="30" /></div>
           </div>
           <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px;">
-            <label class="config-toggle"><input type="checkbox" id="pl-seed-on-start" /> Seed before scrape</label>
+            <label class="config-toggle"><input type="checkbox" id="pl-seed-on-start" /> Seed TSX/TSXV &amp; CSE before scrape</label>
             <label class="config-toggle"><input type="checkbox" id="pl-analyze" /> AI analysis</label>
             <label class="config-toggle"><input type="checkbox" id="pl-enabled" onchange="pipelineCronToggle(this.checked, 'main')" /> Scheduled run</label>
           </div>

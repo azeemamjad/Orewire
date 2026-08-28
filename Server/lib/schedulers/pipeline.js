@@ -87,7 +87,7 @@ function setupCron(getTask, setTask, schedule, enabled, handler, label) {
 function applyConfig(cfg) {
   const { runPipeline, runAsxPipeline } = require('../../pipeline/runner');
 
-  setupCron(() => mainCronTask, (t) => { mainCronTask = t; }, cfg.schedule, cfg.enabled, runPipeline, 'Main pipeline');
+  setupCron(() => mainCronTask, (t) => { mainCronTask = t; }, cfg.schedule, cfg.enabled, runPipeline, 'Canada pipeline');
   setupCron(() => asxCronTask, (t) => { asxCronTask = t; }, cfg.asxSchedule, cfg.asxEnabled, runAsxPipeline, 'ASX pipeline');
   setupCron(() => newsCronTask, (t) => { newsCronTask = t; }, cfg.newsSchedule, cfg.newsEnabled, runNewsPipeline, 'News pipeline');
   setupCron(

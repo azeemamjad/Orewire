@@ -4,7 +4,7 @@
 
 const SOURCE_CATALOG = [
   { id: 'all', label: 'All logs' },
-  { id: 'filing-pipeline', label: 'Main filings (Canada)' },
+  { id: 'filing-pipeline', label: 'Canada filings (SEDAR)' },
   { id: 'asx-pipeline', label: 'ASX filings' },
   { id: 'transfer-agents', label: 'Transfer agents (SEDAR+)' },
   { id: 'profiles', label: 'Company profiles' },
@@ -22,6 +22,7 @@ function inferLogSource(msg) {
   if (m.startsWith('[ASX Pipeline]')) return 'asx-pipeline';
   if (m.startsWith('[Seeder Cron]')) return 'seeders';
   if (m.startsWith('[Scheduler]')) return 'scheduler';
+  if (m.startsWith('[Canada Pipeline]')) return 'filing-pipeline';
   if (m.startsWith('[Pipeline]') || /^\[W\d+\|/.test(m) || m.startsWith('[Sync]')) return 'filing-pipeline';
   return 'system';
 }
@@ -55,7 +56,7 @@ function isSourceRunning(id) {
       }
     }
     case 'filing-pipeline':
-      return state.status === 'running' && state.activePipeline === 'main';
+      return state.status === 'running' && (state.activePipeline === 'canada' || state.activePipeline === 'main');
     case 'asx-pipeline':
       return state.status === 'running' && state.activePipeline === 'asx';
     default:

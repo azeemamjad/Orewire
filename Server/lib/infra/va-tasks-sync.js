@@ -8,7 +8,7 @@ const LOG_WINDOW_MS = 6 * 60 * 60 * 1000;
 const MODULE_LABELS = {
   relay: 'Relay browsers',
   'transfer-agents': 'Transfer agents',
-  'filing-pipeline': 'Main filings pipeline',
+  'filing-pipeline': 'Canada filings pipeline',
   'asx-pipeline': 'ASX filings pipeline',
   profiles: 'Company profiles',
   news: 'News pipeline',

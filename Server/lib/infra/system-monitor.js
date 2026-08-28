@@ -110,9 +110,12 @@ async function getSystemSnapshot() {
   const appJobs = [];
 
   if (state.status === 'running') {
+    const pipeLabel = state.activePipeline === 'asx'
+      ? 'ASX pipeline'
+      : 'Canada pipeline';
     appJobs.push({
-      id: 'filing-pipeline',
-      label: `Filing pipeline (${state.currentPhase || 'running'})`,
+      id: state.activePipeline === 'asx' ? 'asx-pipeline' : 'filing-pipeline',
+      label: `${pipeLabel} (${state.currentPhase || 'running'})`,
       status: 'running',
       pid: process.pid,
       startedAt: state.startedAt ? new Date(state.startedAt).getTime() : null,

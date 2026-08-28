@@ -19,6 +19,7 @@ router.get('/status', (req, res) => {
   const cfg = loadConfig();
   res.json({
     status: state.status,
+    activePipeline: state.activePipeline,
     currentPhase: state.currentPhase,
     startedAt: state.startedAt,
     stoppedAt: state.stoppedAt,

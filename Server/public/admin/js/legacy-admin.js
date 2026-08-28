@@ -1679,7 +1679,7 @@ function mountPipelineCronBuilders() {
     const el = document.getElementById(id);
     if (el && typeof cronBuilderHtml === 'function') el.innerHTML = cronBuilderHtml(prefix, label);
   };
-  mount('pl-main-cron-mount', 'pl-main', 'Filing pipeline schedule');
+  mount('pl-main-cron-mount', 'pl-main', 'Canada pipeline schedule');
   mount('pl-asx-cron-mount', 'pl-asx', 'ASX pipeline schedule');
   mount('pl-news-cron-mount', 'pl-news', 'News releases schedule');
   mount('pl-prof-cron-mount', 'pl-prof', 'Profile scrape schedule');
@@ -1849,7 +1849,12 @@ function renderPipelineStatus(s) {
   const stopB  = document.getElementById('pl-stop-btn');
 
   dot.className = `pl-hero-dot status-dot ${s.status}`;
-  label.textContent = s.status === 'running' ? (s.currentPhase ? `Running - ${s.currentPhase}` : 'Running') : 'Idle';
+  const pipelineName = s.activePipeline === 'asx'
+    ? 'ASX'
+    : (s.activePipeline === 'canada' || s.activePipeline === 'main' ? 'Canada' : null);
+  label.textContent = s.status === 'running'
+    ? (pipelineName ? `${pipelineName} — ${s.currentPhase || 'running'}` : (s.currentPhase ? `Running — ${s.currentPhase}` : 'Running'))
+    : 'Idle';
 
   if (s.status === 'running') {
     const p = s.progress || {};
@@ -2011,7 +2016,7 @@ async function pipelineStart() {
   try {
     const r = await fetch(`${API}/api/pipeline/start`, { method: 'POST' }).then(r => r.json());
     if (r.error) { toast(r.error, 'err'); return; }
-    toast('Pipeline started');
+    toast('Canada pipeline started');
     _plLogOffset = 0;
     document.getElementById('pl-log-box').innerHTML = '';
     await pipelinePollStatus();
@@ -2084,7 +2089,7 @@ async function pipelineSeedersStart() {
 
 async function pipelineCronToggle(enabled, which = 'main') {
   const map = {
-    main: { enabled, label: 'Main pipeline' },
+    main: { enabled, label: 'Canada pipeline' },
     asx: { asxEnabled: enabled, label: 'ASX pipeline' },
     news: { newsEnabled: enabled, label: 'News pipeline' },
     profiles: { profilesEnabled: enabled, label: 'Profile scrape' },
