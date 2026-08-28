@@ -11,6 +11,8 @@ const {
   escapeJsString,
 } = require('./security');
 
+const { dispatchCdpMouse, findCaptchaClickTarget } = require('./cdp-input');
+
 const VIEW_HTML = fs.readFileSync(path.join(__dirname, '../public/relay/view.html'), 'utf8');
 
 const NAV_TIMEOUT_MS = parseInt(process.env.RELAY_NAV_TIMEOUT_MS || '45000', 10);
@@ -100,42 +102,22 @@ async function navigatePage(page, worker, ws, cdp, viewport, input) {
   }
 }
 
-async function handleInput(page, msg, viewport) {
-  const { w: vw, h: vh } = viewportSize(viewport);
-  const dw = msg.displayW > 0 ? msg.displayW : vw;
-  const dh = msg.displayH > 0 ? msg.displayH : vh;
-  const { x, y } = scalePoint(msg.x ?? 0, msg.y ?? 0, dw, dh, vw, vh);
-  const button = msg.button === 2 ? 'right' : 'left';
-
-  switch (msg.type) {
-    case 'mouse':
-      if (msg.event === 'move') {
-        await page.mouse.move(x, y);
-      } else if (msg.event === 'down') {
-        await page.mouse.move(x, y);
-        await page.mouse.down({ button });
-      } else if (msg.event === 'up') {
-        await page.mouse.move(x, y);
-        await page.mouse.up({ button });
-      } else if (msg.event === 'click') {
-        await page.mouse.click(x, y, { button, clickCount: msg.clickCount || 1 });
-      } else if (msg.event === 'wheel') {
-        await page.mouse.move(x, y);
-        await page.mouse.wheel(0, msg.deltaY || 0);
-      }
-      break;
-    case 'key':
-      if (msg.event === 'keydown' && msg.key) {
-        if (msg.key.length === 1) {
-          await page.keyboard.type(msg.key);
-        } else {
-          await page.keyboard.press(msg.key);
-        }
-      }
-      break;
-    default:
-      break;
+async function handleInput(page, cdp, msg, viewport) {
+  if (msg.type === 'mouse') {
+    const result = await dispatchCdpMouse(cdp, msg, viewport);
+    return result;
   }
+
+  if (msg.type === 'key' && msg.event === 'keydown' && msg.key) {
+    if (msg.key.length === 1) {
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', text: msg.key, key: msg.key });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: msg.key });
+    } else {
+      await page.keyboard.press(msg.key);
+    }
+  }
+
+  return null;
 }
 
 function attachRelayViewer(app, httpServer) {
@@ -294,7 +276,7 @@ function attachRelayViewer(app, httpServer) {
         // input at priority so a human can solve the wall without waiting behind
         // a long poll. While a task is running, viewer input still interleaves
         // between scraper steps because sessions no longer hold one queue lock.
-        const viewerPriority = worker.status === STATUS.NEEDS_HUMAN;
+        const viewerPriority = worker.status === STATUS.NEEDS_HUMAN || !worker.busy;
 
         runQueued(workerId, async () => {
           try {
@@ -309,7 +291,17 @@ function attachRelayViewer(app, httpServer) {
               await navigatePage(page, worker, ws, cdp, viewport, target);
               return;
             }
-            await handleInput(page, msg, viewport);
+            if (msg.type === 'find_captcha') {
+              const target = await findCaptchaClickTarget(page);
+              if (ws.readyState === ws.OPEN) {
+                ws.send(JSON.stringify({ type: 'captcha_target', target }));
+              }
+              return;
+            }
+            const result = await handleInput(page, cdp, msg, viewport);
+            if (result && ws.readyState === ws.OPEN) {
+              ws.send(JSON.stringify({ type: 'input_ack', ...result }));
+            }
           } catch (err) {
             if (ws.readyState === ws.OPEN) {
               ws.send(JSON.stringify({ type: 'error', message: err.message }));

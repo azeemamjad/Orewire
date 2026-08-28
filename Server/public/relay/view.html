@@ -34,9 +34,11 @@
       padding: 8px 16px;
       background: #151c26;
       border-bottom: 1px solid #2d3a4d;
+      flex-wrap: wrap;
     }
     .toolbar input {
       flex: 1;
+      min-width: 200px;
       padding: 8px 12px;
       border-radius: 6px;
       border: 1px solid #2d3a4d;
@@ -54,6 +56,8 @@
       cursor: pointer;
       font-size: 13px;
     }
+    .toolbar button.secondary { background: #334155; }
+    .toolbar button.captcha { background: #b45309; }
     .stage {
       flex: 1;
       display: flex;
@@ -72,14 +76,34 @@
       max-width: 100%;
       line-height: 0;
       touch-action: none;
+      user-select: none;
     }
     #frame-wrap:focus { outline: 2px solid #818cf8; outline-offset: 2px; }
     #frame {
       display: block;
-      max-width: 100%;
+      width: 100%;
       height: auto;
       user-select: none;
       pointer-events: none;
+      -webkit-user-drag: none;
+    }
+    #click-dot, #captcha-marker {
+      position: absolute;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      display: none;
+    }
+    #click-dot {
+      width: 14px;
+      height: 14px;
+      border: 2px solid #22c55e;
+      border-radius: 50%;
+      box-shadow: 0 0 8px rgba(34,197,94,.8);
+    }
+    #captcha-marker {
+      border: 2px dashed #fbbf24;
+      background: rgba(251, 191, 36, 0.12);
+      border-radius: 6px;
     }
     .hint {
       font-size: 11px;
@@ -104,19 +128,21 @@
   <div class="toolbar">
     <input type="url" id="url-bar" placeholder="Navigate this browser…" />
     <button type="button" id="go-btn">Go</button>
-    <button type="button" id="refresh-btn">Refresh</button>
+    <button type="button" id="refresh-btn" class="secondary">Refresh</button>
+    <button type="button" id="find-captcha-btn" class="captcha" title="Highlight the captcha button on the page">Find captcha</button>
     <button type="button" id="stop-nav-btn" style="background:#5c3d3d;color:#f0e0e0;">Stop load</button>
   </div>
   <div class="stage">
     <div id="frame-wrap" tabindex="0" title="Click here to control the remote browser">
       <img id="frame" alt="Live browser" draggable="false" />
+      <div id="captcha-marker"></div>
+      <div id="click-dot"></div>
     </div>
   </div>
-  <p class="hint" id="hint">Click, type, and scroll in the frame — input is sent to the server browser in real time.</p>
+  <p class="hint" id="hint">Click inside the frame to control the remote browser. Green dot confirms your click reached the server.</p>
   <p class="hint captcha" id="captcha-hint" hidden>
-    Captcha mode: click inside the frame first, then solve the challenge.
-    Press-and-hold widgets need you to hold the mouse button down until the bar completes.
-    When finished, return to Admin → Relay and click <strong>Mark active (resume)</strong>.
+    <strong>Press-and-hold captcha (SEDAR+ / PerimeterX):</strong> click the button, keep holding 5–10 seconds with slight mouse movement, then release.
+    Use <em>Find captcha</em> to highlight the target. When done, Admin → Relay → <strong>Mark active (resume)</strong>.
   </p>
 
   <script>
@@ -126,10 +152,13 @@
     const frame = document.getElementById('frame');
     const wrap = document.getElementById('frame-wrap');
     const urlBar = document.getElementById('url-bar');
+    const clickDot = document.getElementById('click-dot');
+    const captchaMarker = document.getElementById('captcha-marker');
 
     let viewport = { width: 1280, height: 900 };
     let ws;
     let pointerDown = null;
+    let ackTimer = null;
 
     function setStatus(text, ok) {
       statusEl.textContent = text;
@@ -145,20 +174,60 @@
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
     }
 
-    function displaySize() {
-      const r = wrap.getBoundingClientRect();
-      return {
-        displayW: r.width > 0 ? r.width : viewport.width,
-        displayH: r.height > 0 ? r.height : viewport.height,
-      };
+    /** Map pointer to coordinates on the rendered screencast image (not the outer wrap). */
+    function imageRect() {
+      const ir = frame.getBoundingClientRect();
+      if (ir.width > 0 && ir.height > 0) return ir;
+      return wrap.getBoundingClientRect();
     }
 
     function pointerPayload(e, event) {
-      const r = wrap.getBoundingClientRect();
+      const r = imageRect();
       const x = e.clientX - r.left;
       const y = e.clientY - r.top;
-      const d = displaySize();
-      return { type: 'mouse', event, x, y, button: e.button, ...d };
+      return {
+        type: 'mouse',
+        event,
+        x,
+        y,
+        button: e.button,
+        buttons: e.buttons,
+        displayW: r.width,
+        displayH: r.height,
+      };
+    }
+
+    function showClickAck(x, y) {
+      const r = imageRect();
+      const wrapR = wrap.getBoundingClientRect();
+      const left = (x / viewport.width) * r.width + (r.left - wrapR.left);
+      const top = (y / viewport.height) * r.height + (r.top - wrapR.top);
+      clickDot.style.left = left + 'px';
+      clickDot.style.top = top + 'px';
+      clickDot.style.display = 'block';
+      clearTimeout(ackTimer);
+      ackTimer = setTimeout(() => { clickDot.style.display = 'none'; }, 1200);
+    }
+
+    function showCaptchaTarget(target) {
+      if (!target) {
+        setStatus('No captcha widget found on page', false);
+        captchaMarker.style.display = 'none';
+        return;
+      }
+      const r = imageRect();
+      const wrapR = wrap.getBoundingClientRect();
+      const left = (target.x - target.w / 2) / viewport.width * r.width + (r.left - wrapR.left);
+      const top = (target.y - target.h / 2) / viewport.height * r.height + (r.top - wrapR.top);
+      const w = (target.w / viewport.width) * r.width;
+      const h = (target.h / viewport.height) * r.height;
+      captchaMarker.style.left = left + 'px';
+      captchaMarker.style.top = top + 'px';
+      captchaMarker.style.width = w + 'px';
+      captchaMarker.style.height = h + 'px';
+      captchaMarker.style.display = 'block';
+      setStatus('Captcha highlighted — press and hold inside the box', true);
+      wrap.focus();
     }
 
     wrap.addEventListener('pointerdown', (e) => {
@@ -169,27 +238,23 @@
       pointerDown = { x: e.clientX, y: e.clientY, button: e.button };
       send(pointerPayload(e, 'down'));
     });
+
     wrap.addEventListener('pointerup', (e) => {
-      const payload = pointerPayload(e, 'up');
-      send(payload);
-      if (pointerDown) {
-        const dx = Math.abs(e.clientX - pointerDown.x);
-        const dy = Math.abs(e.clientY - pointerDown.y);
-        if (dx < 8 && dy < 8) {
-          send({ ...payload, type: 'mouse', event: 'click', clickCount: e.detail || 1 });
-        }
-      }
+      e.preventDefault();
+      send(pointerPayload(e, 'up'));
       pointerDown = null;
       try { wrap.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     });
+
     wrap.addEventListener('pointermove', (e) => {
       if (!wrap.hasPointerCapture(e.pointerId) && !(e.buttons & 1)) return;
+      e.preventDefault();
       send(pointerPayload(e, 'move'));
     });
+
     wrap.addEventListener('wheel', (e) => {
       e.preventDefault();
-      const r = wrap.getBoundingClientRect();
-      const d = displaySize();
+      const r = imageRect();
       send({
         type: 'mouse',
         event: 'wheel',
@@ -197,20 +262,21 @@
         y: e.clientY - r.top,
         deltaY: e.deltaY,
         button: 0,
-        ...d,
+        displayW: r.width,
+        displayH: r.height,
       });
     }, { passive: false });
 
+    wrap.addEventListener('contextmenu', (e) => e.preventDefault());
+
     window.addEventListener('keydown', (e) => {
       if (e.target === urlBar) return;
-      if (document.activeElement !== wrap && !wrap.contains(document.activeElement)) {
-        wrap.focus();
-      }
+      wrap.focus();
       e.preventDefault();
       let key = e.key;
       if (key === 'Enter') key = 'Enter';
       else if (key === 'Backspace') key = 'Backspace';
-      else if (key === 'Tab') { e.preventDefault(); key = 'Tab'; }
+      else if (key === 'Tab') key = 'Tab';
       else if (key.length > 1 && !['Enter','Backspace','Tab','Escape','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(key)) return;
       send({ type: 'key', event: 'keydown', key });
     });
@@ -223,19 +289,23 @@
     }
 
     document.getElementById('go-btn').addEventListener('click', navigateFromBar);
+    document.getElementById('refresh-btn').addEventListener('click', () => {
+      setStatus('Refreshing…', null);
+      send({ type: 'refresh' });
+    });
+    document.getElementById('find-captcha-btn').addEventListener('click', () => {
+      setStatus('Locating captcha…', null);
+      send({ type: 'find_captcha' });
+    });
+    document.getElementById('stop-nav-btn').addEventListener('click', () => {
+      setStatus('Stopping…', null);
+      send({ type: 'cancel_navigate' });
+    });
     urlBar.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
         navigateFromBar();
       }
-    });
-    document.getElementById('refresh-btn').addEventListener('click', () => {
-      setStatus('Refreshing…', null);
-      send({ type: 'refresh' });
-    });
-    document.getElementById('stop-nav-btn').addEventListener('click', () => {
-      setStatus('Stopping…', null);
-      send({ type: 'cancel_navigate' });
     });
 
     function connect() {
@@ -244,7 +314,7 @@
       ws.onclose = (ev) => {
         const reason = ev.reason ? ': ' + ev.reason : '';
         const hint = ev.code === 1006 && !ev.reason
-          ? ' (often nginx: enable WebSocket proxy - see Server/deploy/nginx-backend.example.conf)'
+          ? ' (often nginx: enable WebSocket proxy)'
           : '';
         setStatus('Disconnected' + reason + hint, false);
       };
@@ -261,11 +331,16 @@
           const isCaptchaUrl = /validate\.perfdrive|captcha-delivery|cdn-cgi\/challenge|incapsula|px-captcha/i.test(msg.url || '');
           if (msg.needsHuman || isCaptchaUrl) {
             captchaHint.hidden = false;
+            send({ type: 'find_captcha' });
           }
         } else if (msg.type === 'frame') {
           frame.src = 'data:image/jpeg;base64,' + msg.data;
           if (msg.w) viewport.width = msg.w;
           if (msg.h) viewport.height = msg.h;
+        } else if (msg.type === 'input_ack') {
+          showClickAck(msg.x, msg.y);
+        } else if (msg.type === 'captcha_target') {
+          showCaptchaTarget(msg.target);
         } else if (msg.type === 'url') {
           urlBar.value = msg.url;
           setStatus('Live', true);
