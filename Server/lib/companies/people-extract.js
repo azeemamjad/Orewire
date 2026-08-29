@@ -73,16 +73,12 @@ async function fetchHtml(url) {
 async function fetchHtmlBrowser(url) {
   // Lazy require so playwright is only loaded when the browser path is used.
   const { withProxyFallback } = require('../scraper/utils/proxy-fallback');
-  return withProxyFallback(async (browser) => {
-    const ctx = await browser.newContext({ userAgent: UA });
-    const page = await ctx.newPage();
-    try {
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: BROWSER_TIMEOUT_MS });
-      await page.waitForTimeout(1200);
-      return await page.content();
-    } finally {
-      await ctx.close();
-    }
+  // No userAgent override: the engine runs real Chrome, and pinning a UA on top
+  // desynchronises navigator.userAgent from the sec-ch-ua headers it sends.
+  return withProxyFallback(async ({ page }) => {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: BROWSER_TIMEOUT_MS });
+    await page.waitForTimeout(1200);
+    return page.content();
   });
 }
 

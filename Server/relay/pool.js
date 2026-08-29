@@ -1,8 +1,8 @@
-const { getChromium } = require('./playwright');
 const { STATUS } = require('./constants');
 const { buildWorkerPlans, getPoolCounts, maskProxyForApi, refreshProxyCache } = require('./proxies');
 const { clearQueue } = require('./worker-queue');
-const { STEALTH_INIT, applyStealthIdentity, randomViewport } = require('./stealth');
+const { launchSession, describeEngine } = require('./engines');
+const { createScreen } = require('./screen');
 const { forceKillBrowser } = require('./browser-kill');
 const { resolveRelayHeadless } = require('./env');
 
@@ -51,6 +51,11 @@ class RelayPool {
       busy: !!w.busy,
       currentTask: w.currentTask || null,
       proxy: maskProxyForApi(w.proxy),
+      engine: w.engine || null,
+      driver: w.driver || null,
+      channel: w.channel || null,
+      headless: w.headless ?? null,
+      timezone: w.geo?.timezoneId || null,
     }));
   }
 
@@ -62,11 +67,14 @@ class RelayPool {
   isWorkerHealthy(id) {
     const w = typeof id === 'string' ? this.workers.get(id) : id;
     try {
+      // A persistent context has no Browser handle — Playwright returns null from
+      // context.browser() for launchPersistentContext — so health is judged from
+      // the context and page. `cdp` is deliberately not required: Camoufox
+      // workers are Firefox and never have one.
       return !!(
         w &&
-        w.browser && w.browser.isConnected() &&
-        w.page && !w.page.isClosed() &&
-        w.cdp
+        w.context && !w._closed &&
+        w.page && !w.page.isClosed()
       );
     } catch {
       return false;
@@ -116,22 +124,25 @@ class RelayPool {
       throw new Error(`Worker ${id} already exists`);
     }
 
-    const chromium = getChromium();
-    // Randomise the window size per worker — a fixed viewport across every
-    // session is itself a weak fingerprint.
-    const viewport = randomViewport();
-
     const entry = {
       id,
       label,
       status: STATUS.STARTING,
       url: url || 'about:blank',
-      viewport,
+      viewport: { width: 1366, height: 768 },
       startedAt: new Date().toISOString(),
       browser: null,
       context: null,
       page: null,
       cdp: null,
+      screen: null,
+      engine: null,
+      driver: null,
+      channel: null,
+      headless: null,
+      profileDir: null,
+      geo: null,
+      supportsCdp: false,
       lastError: null,
       viewerCount: 0,
       proxy: proxy || null,
@@ -142,104 +153,80 @@ class RelayPool {
     this.workers.set(id, entry);
 
     try {
-      const launchOpts = {
+      // Everything about *how* the browser is launched — which engine, real
+      // Chrome vs bundled Chromium, persistent profile, headed vs headless,
+      // locale/timezone matched to the proxy's exit IP — lives in relay/engines.
+      // The pool only cares that it gets a usable page back.
+      const session = await launchSession({
+        workerId: id,
+        proxy: proxy || null,
         headless: resolveRelayHeadless(),
-        args: [
-          '--no-sandbox',
-          '--disable-blink-features=AutomationControlled',
-          '--disable-dev-shm-usage',
-        ],
-        // Drop the "Chrome is being controlled by automated test software" switch,
-        // which sets navigator.webdriver and other automation tells.
-        ignoreDefaultArgs: ['--enable-automation'],
-      };
-      // Real Chrome avoids HeadlessChrome client-hint blocks on SEDAR+ / Radware walls.
-      if (process.env.BROWSER_CHANNEL) launchOpts.channel = process.env.BROWSER_CHANNEL;
+      });
 
-      // Launch-level proxy (same as scraper fallback / admin Test). Context-only
-      // proxy can fail to apply and look "healthy" while traffic goes direct.
-      if (proxy?.server) {
-        launchOpts.proxy = { server: proxy.server };
-        if (proxy.username) launchOpts.proxy.username = proxy.username;
-        if (proxy.password) launchOpts.proxy.password = proxy.password;
-      }
+      entry.context = session.context;
+      entry.page = session.page;
+      entry.cdp = session.cdp;
+      entry.browser = session.browser;
+      entry.browserPid = session.pid;
+      entry.viewport = session.viewport;
+      entry.engine = session.engine;
+      entry.driver = session.driver;
+      entry.channel = session.channel;
+      entry.headless = session.headless;
+      entry.profileDir = session.profileDir;
+      entry.geo = session.geo;
+      entry.supportsCdp = session.supportsCdp;
+      entry.screen = createScreen(entry);
 
-      const contextOpts = {
-        acceptDownloads: true,
-        viewport,
-        locale: process.env.LOCALE || 'en-US',
-        timezoneId: process.env.TIMEZONE || 'America/Toronto',
-      };
-
-      const browser = await chromium.launch(launchOpts);
-
-      // A crashed/closed browser must not keep being handed out as if healthy.
-      // Flag the entry so the manager respawns it on the next acquire.
-      try {
-        entry.browserPid = browser.process()?.pid || null;
-      } catch {
-        entry.browserPid = null;
-      }
-
-      browser.on('disconnected', () => {
+      // A persistent context emits 'close' where a Browser emits 'disconnected'.
+      // Same meaning: the browser is gone, stop handing it out.
+      session.context.on('close', () => {
         if (this.workers.get(id) !== entry) return;
+        entry._closed = true;
         entry.status = STATUS.ERROR;
-        entry.lastError = entry.lastError || 'browser disconnected';
+        entry.lastError = entry.lastError || 'browser closed';
         entry.busy = false;
         entry.currentTask = null;
-        // Kill the OS process and drop Playwright refs — don't leave RAM-eating zombies.
+        // Kill the OS process and drop driver refs — don't leave RAM-eating zombies.
         setImmediate(() => {
           this.purgeWorkerResources(id, { reason: entry.lastError }).catch((err) => {
-            console.error(`[Relay] Failed to purge ${id} after disconnect: ${err.message}`);
+            console.error(`[Relay] Failed to purge ${id} after close: ${err.message}`);
           });
         });
       });
 
-      // Pin the UA major version to the *actual* browser build so UA / engine /
-      // client-hints stay consistent (a mismatch is an instant bot signal), and
-      // strip the "HeadlessChrome" token Playwright leaks in headless mode.
-      let realVersion = '124.0.0.0';
-      try { realVersion = browser.version() || realVersion; } catch { /* ignore */ }
-      const major = String(realVersion.split('.')[0] || '124');
-      const ua = process.env.USER_AGENT ||
-        `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`;
-      contextOpts.userAgent = ua;
-
-      const context = await browser.newContext(contextOpts);
-      await context.addInitScript(STEALTH_INIT);
-      const page = await context.newPage();
-      const cdp = await context.newCDPSession(page);
-      // Apply UA + matching Sec-CH-UA client hints at the network layer.
-      await applyStealthIdentity(cdp, browser, { userAgent: ua });
-
       const syncUrl = () => {
         try {
-          entry.url = page.url();
+          entry.url = session.page.url();
         } catch {
           /* ignore */
         }
       };
-      page.on('framenavigated', (frame) => {
-        if (frame === page.mainFrame()) syncUrl();
+      session.page.on('framenavigated', (frame) => {
+        if (frame === session.page.mainFrame()) syncUrl();
       });
-      page.on('load', syncUrl);
+      session.page.on('load', syncUrl);
 
-      entry.browser = browser;
-      entry.context = context;
-      entry.page = page;
-      entry.cdp = cdp;
-      entry.browserPid = entry.browserPid || null;
       entry.status = status;
 
-      if (url && url !== 'about:blank') {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
-        entry.url = page.url();
-      } else {
-        entry.url = 'about:blank';
+      // Normalise the start page: a persistent Chrome profile can open on
+      // chrome://newtab, which would show up as the worker's "live page".
+      // Skip the navigation when the page is already there — a freshly launched
+      // Camoufox context is still navigating to about:blank at this point, and a
+      // second goto to the same URL is rejected as an interrupted navigation.
+      const target = url && url !== 'about:blank' ? url : 'about:blank';
+      const current = session.page.url();
+      if (target !== 'about:blank' || !/^(about:blank)?$/.test(current)) {
+        await session.page.goto(target, { waitUntil: 'domcontentloaded', timeout: 120000 });
       }
+      entry.url = session.page.url();
 
       const proxyTag = proxy?.label || 'direct';
-      console.log(`[Relay] ${id} (${label}) ready — ${proxyTag} → ${entry.url}`);
+      const geoTag = session.geo?.timezoneId ? ` tz=${session.geo.timezoneId}` : '';
+      console.log(
+        `[Relay] ${id} (${label}) ready — ${session.engine}/${session.channel} `
+        + `${session.headless ? 'headless' : 'headed'} — ${proxyTag}${geoTag} → ${entry.url}`,
+      );
       return entry;
     } catch (err) {
       entry.status = STATUS.ERROR;
@@ -255,6 +242,12 @@ class RelayPool {
     this._starting = true;
     try {
       await refreshProxyCache();
+      const engineInfo = describeEngine();
+      console.log(
+        `[Relay] Engine: ${engineInfo.engine} via ${engineInfo.driver}`
+        + `${engineInfo.patched ? '' : ' (UNPATCHED — expect bot walls)'}`
+        + `${engineInfo.chromeChannel ? ` channel=${engineInfo.chromeChannel}` : ''}`,
+      );
       const plans = buildWorkerPlans();
       if (!plans.length) {
         throw new Error('Relay pool size is 0 — add enabled proxies in Admin → Proxies');
@@ -369,9 +362,10 @@ class RelayPool {
     if (!w?.page) throw new Error('Worker not found');
     w.navGen = (w.navGen || 0) + 1;
     const { page } = w;
-    // CDP stopLoading aborts an in-flight (possibly hung) navigation immediately,
-    // before we try page-level calls that could otherwise block behind it.
-    try { await w.cdp?.send('Page.stopLoading'); } catch { /* ignore */ }
+    // Abort an in-flight (possibly hung) navigation immediately, before we try
+    // page-level calls that could otherwise block behind it. CDP does this
+    // out-of-band on Chromium; the Firefox path falls back to window.stop().
+    try { await w.screen?.stopLoading(); } catch { /* ignore */ }
     try {
       await page.evaluate(() => window.stop()).catch(() => {});
     } catch { /* ignore */ }
@@ -411,22 +405,22 @@ class RelayPool {
     if (!w || w._purging) return;
     w._purging = true;
     const browser = w.browser;
+    const context = w.context;
     const pid = w.browserPid;
     try {
       try { if (w.cdp) w.cdp.removeAllListeners(); } catch { /* ignore */ }
+      try { await w.screen?.pause(); } catch { /* ignore */ }
       try {
         if (w.page && !w.page.isClosed()) {
           await withTimeout(w.page.close(), CLOSE_TIMEOUT_MS);
         }
       } catch { /* ignore */ }
-      try {
-        if (w.context) await withTimeout(w.context.close(), CLOSE_TIMEOUT_MS);
-      } catch { /* ignore */ }
-      await forceKillBrowser(browser, pid);
+      await forceKillBrowser({ browser, context, pid });
       w.browser = null;
       w.context = null;
       w.page = null;
       w.cdp = null;
+      w.screen = null;
       w.browserPid = null;
       w.status = STATUS.ERROR;
       w.lastError = opts.reason || w.lastError || 'browser disconnected';
@@ -475,20 +469,20 @@ class RelayPool {
     w.busy = false;
     w.currentTask = null;
     const browser = w.browser;
+    const context = w.context;
     const pid = w.browserPid;
+    try { await w.screen?.pause(); } catch { /* ignore */ }
     try {
       if (w.page && !w.page.isClosed()) {
         await withTimeout(w.page.close(), CLOSE_TIMEOUT_MS);
       }
     } catch { /* ignore */ }
-    try {
-      if (w.context) await withTimeout(w.context.close(), CLOSE_TIMEOUT_MS);
-    } catch { /* ignore */ }
-    await forceKillBrowser(browser, pid);
+    await forceKillBrowser({ browser, context, pid });
     w.browser = null;
     w.context = null;
     w.page = null;
     w.cdp = null;
+    w.screen = null;
     w.browserPid = null;
   }
 

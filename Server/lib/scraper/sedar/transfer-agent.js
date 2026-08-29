@@ -62,6 +62,9 @@ const BASE_URL    = 'https://www.sedarplus.ca/home/';
 const PROFILE_SEARCH_URL =
   'https://www.sedarplus.ca/csa-party/service/create.html?targetAppCode=csa-party&service=searchIndustryParticipant&_locale=en';
 
+// NOTE: ignored since the engine rework — relay/engines owns viewport, UA
+// (never overridden) and locale/timezone (matched to the proxy exit IP).
+// See Server/relay/README.md.
 function buildContextOptions() {
   return {
     viewport: randomViewport(),

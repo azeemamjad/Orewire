@@ -18,7 +18,13 @@
     "audit:filing-storage": "node scripts/audit-filing-storage.js",
     "presign:s3-url": "node scripts/presign-s3-url.js",
     "webbridge": "WEBBRIDGE=1 node index.js",
-    "x-browser": "node x-browser/server.js"
+    "x-browser": "node x-browser/server.js",
+    "relay:test-stealth": "node scripts/test-stealth.js",
+    "relay:test-sedar": "node scripts/test-stealth.js --flow sedar",
+    "relay:fetch-camoufox": "camoufox-js fetch",
+    "relay:install-browsers": "patchright install chromium && patchright install chrome",
+    "relay:test-engine": "node scripts/test-relay-engine.js",
+    "relay:measure-bandwidth": "node scripts/measure-bandwidth.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.0",
@@ -34,10 +40,14 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^1.4.5-lts.1",
     "node-cron": "^4.2.1",
+    "patchright": "^1.62.2",
     "pg": "^8.21.0",
     "playwright": "1.61.1",
     "unpdf": "^1.8.0",
     "ws": "^8.21.0",
     "xlsx": "^0.18.5"
+  },
+  "optionalDependencies": {
+    "camoufox-js": "^0.12.0"
   }
 }

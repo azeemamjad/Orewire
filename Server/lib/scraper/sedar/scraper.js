@@ -4,6 +4,7 @@ const path = require('path');
 
 const { humanDelay, humanClick, humanType, randomViewport, STEALTH_INIT } = require('../utils/human');
 const { withBrowserSession } = require('../utils/browser-session');
+const ledger = require('../utils/download-ledger');
 const { DOWNLOADS_DIR, COOKIE_FILE } = require('../paths');
 
 const BASE_URL = 'https://www.sedarplus.ca/home/';
@@ -11,6 +12,11 @@ const DEFAULT_DAYS_BACK = 30;
 // Browser / context setup
 // ---------------------------------------------------------------------------
 
+// NOTE: as of the engine rework these options are no longer applied — both the
+// relay and local paths let relay/engines own the context (viewport must be null
+// so innerWidth tracks the real window, UA is never overridden, locale/timezone
+// come from the proxy's exit IP). Kept only so callers keep their signature.
+// See Server/relay/README.md.
 function buildContextOptions() {
   const viewport = randomViewport();
   const options = {
@@ -309,10 +315,10 @@ async function downloadByFetch(page, href, destDir, fallbackName) {
   }, href);
 
   const filename = filenameFromDisposition(result.cd, fallbackName);
-  const dest     = path.resolve(destDir, filename);
+  const dest     = uniqueDest(destDir, filename);
   console.log(`  → saving to: ${dest}`);
   fs.writeFileSync(dest, Buffer.from(result.bytes));
-  return filename;
+  return path.basename(dest);
 }
 
 // ---------------------------------------------------------------------------
@@ -335,35 +341,93 @@ async function getNextButton(page) {
   return null;
 }
 
-async function downloadPage(page, companyDir, pageNum, saved, companyName) {
-  const docLinks = page.locator('td.appTblCell2 a.appDocumentLink');
-  const count    = await docLinks.count();
+/**
+ * Read each results row's cells by column header rather than by fixed index —
+ * SEDAR+ has reordered these before. Returns the issuer, document name,
+ * submitted timestamp and stated file size, all of which are on the page before
+ * we spend a single byte on the PDF itself.
+ */
+async function readResultRows(page) {
+  return page.$$eval('table.appTable', (tables) => {
+    const table = tables[0];
+    if (!table) return [];
+    const headers = Array.from(table.querySelectorAll('th'))
+      .map((th) => (th.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase());
+    const col = (name) => headers.findIndex((h) => h.includes(name));
+    const iProfile = col('profile');
+    const iSubmitted = col('submitted');
+    const iSize = col('file size');
+
+    return Array.from(table.querySelectorAll('tr'))
+      .map((tr) => {
+        const link = tr.querySelector('td.appTblCell2 a.appDocumentLink');
+        if (!link) return null;
+        const tds = Array.from(tr.querySelectorAll('td'));
+        const cell = (i) => (i >= 0 && tds[i] ? (tds[i].textContent || '').replace(/\s+/g, ' ').trim() : '');
+        return {
+          text: (link.textContent || '').trim(),
+          href: link.getAttribute('href'),
+          profile: cell(iProfile),
+          submitted: cell(iSubmitted),
+          sizeText: cell(iSize),
+        };
+      })
+      .filter(Boolean);
+  });
+}
+
+// Two filings can legitimately share a document name ("52-109FV2 … CEO (E).pdf"
+// shows up every quarter), and they used to be written to the same path — the
+// later one silently overwrote the earlier, losing a document AND paying for the
+// bytes twice. Disambiguate instead.
+function uniqueDest(destDir, filename) {
+  let candidate = path.resolve(destDir, filename);
+  if (!fs.existsSync(candidate)) return candidate;
+  const ext = path.extname(filename);
+  const base = filename.slice(0, filename.length - ext.length);
+  for (let n = 2; n < 1000; n++) {
+    candidate = path.resolve(destDir, `${base} (${n})${ext}`);
+    if (!fs.existsSync(candidate)) return candidate;
+  }
+  return path.resolve(destDir, `${base}-${Date.now()}${ext}`);
+}
+
+async function downloadPage(page, companyDir, pageNum, saved, companyName, tally) {
+  const rows = await readResultRows(page);
+  const count = rows.length;
   console.log(`[SEDAR] Page ${pageNum} — ${count} document(s)`);
 
   const needle = companyName ? normalizeProfileName(companyName) : null;
   let skipped = 0;
+  let alreadyHave = 0;
 
-  for (let i = 0; i < count; i++) {
-    const link     = docLinks.nth(i);
-    const text     = (await link.textContent()).trim();
-    const href     = await link.getAttribute('href');
-    let   fallback = safeFilename(text);
+  for (const row of rows) {
+    const text = row.text;
+    const href = row.href;
+    let fallback = safeFilename(text);
     if (!fallback.toLowerCase().endsWith('.pdf')) fallback += '.pdf';
 
-    // Every results row carries the filing issuer in its "Profile(s)" column
-    // (td.appTblCell1). Check it per row so a stray result can never be written
-    // into another company's folder, whatever the search state was.
-    if (needle) {
-      const rowProfile = await link.evaluate((el) => {
-        const tr = el.closest('tr');
-        const cell = tr && tr.querySelector('td.appTblCell1');
-        return cell ? cell.textContent.replace(/\s+/g, ' ').trim() : '';
-      });
-      if (rowProfile && !profileNamesMatch(needle, normalizeProfileName(rowProfile))) {
-        skipped++;
-        console.warn(`  ⚠ skipping "${fallback}" — filed by "${rowProfile}", not "${companyName}"`);
-        continue;
-      }
+    // Every results row carries the filing issuer in its "Profile(s)" column.
+    // Check it per row so a stray result can never be written into another
+    // company's folder, whatever the search state was.
+    if (needle && row.profile && !profileNamesMatch(needle, normalizeProfileName(row.profile))) {
+      skipped++;
+      console.warn(`  ⚠ skipping "${fallback}" — filed by "${row.profile}", not "${companyName}"`);
+      continue;
+    }
+
+    // Already fetched on a previous run? A 30-day window re-scraped nightly is
+    // ~29 days of documents we already own; this is where the proxy bill went.
+    const key = ledger.keyFor({
+      source: 'sedar',
+      company: row.profile || companyName,
+      doc: text,
+      submitted: row.submitted,
+    });
+    if (row.submitted && ledger.has(key)) {
+      alreadyHave++;
+      if (tally) tally.savedBytes += ledger.parseSize(row.sizeText);
+      continue;
     }
 
     try {
@@ -371,6 +435,19 @@ async function downloadPage(page, companyDir, pageNum, saved, companyName) {
       const filename = await downloadByFetch(page, href, companyDir, fallback);
       console.log(`  ✓ [p${pageNum}] ${filename}`);
       saved.push(filename);
+      if (tally) tally.fetchedBytes += ledger.parseSize(row.sizeText);
+      if (row.submitted) {
+        ledger.add({
+          key,
+          source: 'sedar',
+          company: row.profile || companyName,
+          doc: text,
+          submitted: row.submitted,
+          size: ledger.parseSize(row.sizeText),
+          filename,
+          at: new Date().toISOString(),
+        });
+      }
     } catch (err) {
       console.error(`  ✗ Failed (${fallback}): ${err.message}`);
     }
@@ -378,6 +455,9 @@ async function downloadPage(page, companyDir, pageNum, saved, companyName) {
 
   if (skipped) {
     console.warn(`[SEDAR] Page ${pageNum} — skipped ${skipped}/${count} document(s) filed by another issuer`);
+  }
+  if (alreadyHave) {
+    console.log(`[SEDAR] Page ${pageNum} — ${alreadyHave}/${count} already downloaded, not re-fetched`);
   }
 }
 
@@ -409,10 +489,11 @@ async function scrapeSedarOnPage(page, context, companyName, options = {}) {
 
   console.log(`[SEDAR] Downloading to: ${companyDir} (max ${MAX_PAGES} pages)`);
   const saved = [];
+  const tally = { fetchedBytes: 0, savedBytes: 0 };
 
   for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
     if (guardCaptcha) await guardCaptcha();
-    await downloadPage(page, companyDir, pageNum, saved, companyName);
+    await downloadPage(page, companyDir, pageNum, saved, companyName, tally);
 
     const nextBtn = await getNextButton(page);
     if (!nextBtn) {
@@ -427,7 +508,11 @@ async function scrapeSedarOnPage(page, context, companyName, options = {}) {
     await humanDelay(800, 1400);
   }
 
-  console.log(`[SEDAR] Done — ${saved.length} file(s) downloaded`);
+  const mb = (n) => `${(n / 1024 / 1024).toFixed(2)} MB`;
+  console.log(
+    `[SEDAR] Done — ${saved.length} file(s) downloaded (${mb(tally.fetchedBytes)}); `
+    + `${mb(tally.savedBytes)} skipped as already held`,
+  );
   return saved;
 }
 

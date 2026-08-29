@@ -137,11 +137,12 @@ async function testPlaywrightProxy(proxyConfig) {
 
   try {
     browser = await chromium.launch(buildProxyLaunchOptions(proxyConfig));
-    const context = await browser.newContext({
-      userAgent:
-        process.env.USER_AGENT ||
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    });
+    // No userAgent override: pinning a stale Chrome/124 string onto a real
+    // Chrome 152 desynchronises navigator.userAgent from the sec-ch-ua headers,
+    // which is exactly the mismatch the relay was fixed to stop emitting. It
+    // also meant this Test button probed with a different fingerprint from the
+    // one production actually uses.
+    const context = await browser.newContext();
     const page = await context.newPage();
 
     const ipCheck = await readExitIp(page);

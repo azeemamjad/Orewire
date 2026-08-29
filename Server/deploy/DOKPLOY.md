@@ -22,6 +22,39 @@ Do **not** point Dokploy at the repo root (`/`) — builds will fail or use the 
 
 For Relay, allocate **≥ 1 GB shared memory** (`/dev/shm`) on the backend container if Dokploy exposes that setting.
 
+## Relay browser (important)
+
+The backend image is built to get past bot walls. Four things it does that a plain
+Node image does not — see `Server/relay/README.md` for the full reasoning:
+
+| | why |
+|---|---|
+| Installs **real Google Chrome** (`patchright install chrome`) | bundled Chromium advertises `HeadlessChrome` in `sec-ch-ua`; SEDAR+ rejects it at the header layer |
+| Starts **Xvfb** in `docker-entrypoint.sh`, runs Chrome **headed** | headless Chrome differs in ways no script can hide |
+| Passes `--enable-unsafe-swiftshader` when the host has no GPU | Chrome 126+ otherwise exposes **no WebGL at all**, which is a loud bot signal |
+| `exec`s node as PID 1 | so Dokploy's SIGTERM stops the container immediately instead of waiting out the 10s kill timeout |
+
+**Image size** is ~4.4 GB (Playwright base + Chrome). Build args:
+
+```bash
+--build-arg INSTALL_CAMOUFOX=1           # +200MB, adds the Camoufox fallback engine
+--build-arg INSTALL_PATCHED_CHROMIUM=1   # +900MB, only if you set BROWSER_CHANNEL=chromium
+```
+
+**Browser profiles** persist under `/app/data/profiles` on the mounted volume — one
+Chrome profile per proxy worker, carrying cookies between runs so the browser looks
+like a returning visitor. Budget a few hundred MB and expect them to grow; deleting
+a profile directory burns that session and starts it clean.
+
+Verify a deployed image before trusting it:
+
+```bash
+docker run --rm --shm-size=1g <image> node scripts/test-stealth.js --flow sedar
+```
+
+That asserts every fingerprint signal and walks the real SEDAR+ search flow. It
+exits non-zero on failure, so it can gate a deploy.
+
 ### Local (docker compose)
 
 From the repo root:
@@ -45,9 +78,14 @@ The server container mounts a volume at `/app/data` for scraper downloads and co
 3. **Dockerfile path:** `Dockerfile`
 4. **Container port:** `8070`
 5. **Domain:** `backend.orewire.com` (HTTPS via Dokploy / Traefik)
-6. **Env:** paste from `Server/.env.example` (production values); set `PORT=8070`, `RELAY_ENABLED=true`, `RELAY_HEADLESS=true` (or omit — Docker auto-forces headless)
-7. **Volume:** persistent storage → `/app/data` (downloads + cookies)
-8. **Shared memory:** ≥ 1 GB if Relay is enabled
+6. **Env:** paste from `Server/.env.example` (production values); set `PORT=8070`, `RELAY_ENABLED=true`, and **`RELAY_HEADLESS=false`**
+   > ⚠️ This changed. The old advice was `RELAY_HEADLESS=true` because headed mode
+   > needed a display the container didn't have. The image now starts Xvfb in its
+   > entrypoint, so a display exists — and headless Chrome is scored heavily by
+   > SEDAR+'s Radware wall. Leaving this at `true` re-breaks scraping.
+   > Do **not** set `USER_AGENT` either (see below).
+7. **Volume:** persistent storage → `/app/data` (downloads, cookies, **browser profiles**)
+8. **Shared memory:** ≥ 1 GB — required, not optional, now that Chrome runs headed
 9. **Redeploy** after git pull when `Server/Dockerfile` or `playwright` version changes
 
 Production filing storage uses **AWS S3 only** (`AWS_S3_ENABLED=true`). Keep the bucket private and use presigned URLs (`AWS_S3_PRESIGNED_URLS=true`).

@@ -82,26 +82,16 @@ function randomViewport() {
   return VIEWPORTS[randomInt(0, VIEWPORTS.length - 1)];
 }
 
-// Stealth init script. Prefer the shared, hardened version from the Server relay
-// module (single source of truth); fall back to a compact local copy if that
-// path isn't reachable (e.g. Scraper running standalone).
+// Stealth init script — see Server/relay/stealth.js for why this is a no-op.
+// Short version: patching navigator from JS leaves fingerprints (an own
+// `webdriver` property, a plugins array whose toString is "[object Array]", a
+// non-native getParameter) that are louder than what they hide. The browser
+// itself is now real Chrome via patchright, which reports these correctly.
 let STEALTH_INIT;
 try {
-  const root = serverRoot();
-  ({ STEALTH_INIT } = require(path.join(root, 'relay/stealth')));
+  ({ STEALTH_INIT } = require(path.join(serverRoot(), 'relay/stealth')));
 } catch {
-  STEALTH_INIT = `
-    (() => {
-      const def = (o, p, g) => { try { Object.defineProperty(o, p, { get: g, configurable: true }); } catch (e) {} };
-      def(navigator, 'webdriver', () => undefined);
-      if (!window.chrome) window.chrome = {};
-      window.chrome.runtime = window.chrome.runtime || {};
-      def(navigator, 'languages', () => ['en-US', 'en']);
-      def(navigator, 'hardwareConcurrency', () => 8);
-      def(navigator, 'deviceMemory', () => 8);
-      for (const k of Object.keys(window)) { if (/^cdc_/.test(k)) { try { delete window[k]; } catch (e) {} } }
-    })();
-  `;
+  STEALTH_INIT = '/* stealth: intentionally empty — see Server/relay/stealth.js */';
 }
 
 module.exports = {

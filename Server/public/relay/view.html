@@ -322,7 +322,12 @@
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.type === 'ready') {
-          labelEl.textContent = msg.label || 'Relay session';
+          // Say which browser this actually is, and warn when the live view is
+          // the slower polled transport (Firefox/Camoufox has no CDP screencast)
+          // so a choppy picture doesn't read as a broken session.
+          const engineTag = msg.engine ? ` · ${msg.engine}` : '';
+          const transportTag = msg.transport === 'poll' ? ' · polled view (~2 fps)' : '';
+          labelEl.textContent = (msg.label || 'Relay session') + engineTag + transportTag;
           if (msg.url) urlBar.value = msg.url;
           if (msg.viewport) viewport = msg.viewport;
           setStatus('Live', true);

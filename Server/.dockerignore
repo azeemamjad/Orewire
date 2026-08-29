@@ -9,3 +9,12 @@ data/cookies/*
 .gitignore
 *.md
 deploy/
+
+# Relay browser profiles — live session cookies. Baking these into the image
+# would ship one machine's session to every container (and add ~230MB).
+data/profiles/
+# Runtime state; the /app/data volume supplies these at run time.
+data/*.jsonl
+data/jobs.json
+data/seed-state.json
+tmp/

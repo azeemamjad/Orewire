@@ -54,3 +54,12 @@ Server/data/app.db-wal
 
 # PDFs
 *.pdf
+
+# Record of documents already fetched (prevents paying for the same PDF twice).
+Server/data/download-ledger.jsonl
+data/download-ledger.jsonl
+
+# Relay browser profiles (persistent Chrome/Camoufox user-data-dirs).
+# These hold live session cookies and storage — never commit them.
+Server/data/profiles/
+data/profiles/

@@ -1,17 +1,38 @@
 /**
- * Stealth helpers for relay browsers — reduce the automation/headless
- * fingerprints that walls like PerfDrive/ShieldSquare (Imperva) score on.
+ * Stealth — deliberately almost empty. Read this before adding anything back.
  *
- * Two layers:
- *   1. STEALTH_INIT — an init script (runs before page scripts) that patches the
- *      JS-visible signals: navigator.webdriver, window.chrome, plugins, WebGL
- *      vendor/renderer, permissions, languages, hardware.
- *   2. applyStealthIdentity() — sets the UA + matching Client Hints via CDP, so
- *      the network-layer UA, navigator.userAgent, and Sec-CH-UA headers all
- *      agree and never leak "HeadlessChrome".
+ * This module used to inject a large init script that redefined
+ * navigator.webdriver, navigator.plugins, window.chrome, WebGL vendor strings
+ * and permissions, plus a CDP override that claimed the browser was Windows
+ * Chrome. Measured against a real wall, every one of those made the browser
+ * MORE identifiable, not less:
+ *
+ *   - `Object.defineProperty(navigator, 'webdriver', …)` leaves an own property
+ *     on the instance. Real Chrome inherits `webdriver` from Navigator.prototype
+ *     and nothing shadows it, so `hasOwnProperty('webdriver') === true` is a
+ *     signal that exists only on patched browsers.
+ *   - The faked plugin list was a plain Array, so
+ *     `Object.prototype.toString.call(navigator.plugins)` returned
+ *     `[object Array]`. No browser on earth reports that; real Chrome reports
+ *     `[object PluginArray]`. This one tell is enough on its own.
+ *   - The patched `WebGLRenderingContext.prototype.getParameter` no longer
+ *     stringifies to `[native code]`, and it claimed a Direct3D11 renderer on a
+ *     Linux host.
+ *   - `applyStealthIdentity()` pinned a Windows UA and Windows client hints on a
+ *     Linux machine, while fonts, WebGL and the rest stayed Linux. SEDAR+'s
+ *     block page echoed the pinned UA straight back in its `sst=` parameter.
+ *
+ * The replacement is not a better init script — it is not needing one:
+ * `patchright` + real Google Chrome + headed + a persistent profile reports
+ * these values natively and correctly (see relay/engines/chromium.js). Verify
+ * with `npm run relay:test-stealth`, which asserts each of the above.
+ *
+ * Set RELAY_LEGACY_STEALTH=true to restore the old script. It is kept only so
+ * the difference can be measured, not because it is ever the right choice.
  */
 
-// Realistic desktop viewports (kept in sync with how a real Chrome window looks).
+// Realistic desktop window sizes. Harmless and still useful — a pool where every
+// worker shares one viewport is a single fingerprint wearing several IPs.
 const VIEWPORTS = [
   { width: 1366, height: 768 },
   { width: 1440, height: 900 },
@@ -23,125 +44,64 @@ function randomViewport() {
   return VIEWPORTS[Math.floor(Math.random() * VIEWPORTS.length)];
 }
 
-const STEALTH_INIT = `
+const LEGACY_STEALTH_INIT = `
 (() => {
   const def = (obj, prop, getter) => {
     try { Object.defineProperty(obj, prop, { get: getter, configurable: true }); } catch (e) {}
   };
-
-  // 1. webdriver flag — headed Chrome has it undefined (not false).
   def(navigator, 'webdriver', () => undefined);
-
-  // 2. window.chrome — present on real Chrome, absent in vanilla automation.
-  if (!window.chrome) {
-    window.chrome = {};
-  }
+  if (!window.chrome) window.chrome = {};
   window.chrome.runtime = window.chrome.runtime || {};
-  window.chrome.app = window.chrome.app || { isInstalled: false, InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' }, RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' } };
-  window.chrome.csi = window.chrome.csi || function () { return {}; };
-  window.chrome.loadTimes = window.chrome.loadTimes || function () { return {}; };
-
-  // 3. Languages.
   def(navigator, 'languages', () => ['en-US', 'en']);
-
-  // 4. Plugins / mimeTypes — empty arrays are a headless tell. Build array-likes
-  //    that report the standard Chrome PDF entries.
-  const mkPlugin = (name, filename, desc) => {
-    const p = { name, filename, description: desc, length: 1 };
-    p[0] = { type: 'application/pdf', suffixes: 'pdf', description: desc, enabledPlugin: p };
-    return p;
-  };
-  const pdf = mkPlugin('Chrome PDF Plugin', 'internal-pdf-viewer', 'Portable Document Format');
-  const pdfv = mkPlugin('Chrome PDF Viewer', 'mhjfbmdgcfjbbpaeojofohoefgiehjai', '');
-  const nacl = mkPlugin('Native Client', 'internal-nacl-plugin', '');
-  const plugins = [pdf, pdfv, nacl];
-  plugins.item = (i) => plugins[i] || null;
-  plugins.namedItem = (n) => plugins.find((p) => p.name === n) || null;
-  plugins.refresh = () => {};
-  def(navigator, 'plugins', () => plugins);
-
-  // 5. permissions.query — headless returns 'denied' for notifications while
-  //    Notification.permission is 'default'; align them.
-  try {
-    const orig = navigator.permissions && navigator.permissions.query;
-    if (orig) {
-      navigator.permissions.query = (params) =>
-        params && params.name === 'notifications'
-          ? Promise.resolve({ state: Notification.permission, onchange: null })
-          : orig.call(navigator.permissions, params);
-    }
-  } catch (e) {}
-
-  // 6. WebGL vendor/renderer — SwiftShader/Google reveals headless. Report a
-  //    common Intel GPU string instead.
-  try {
-    const patch = (proto) => {
-      const getParam = proto.getParameter;
-      proto.getParameter = function (p) {
-        if (p === 37445) return 'Google Inc. (Intel)';                                  // UNMASKED_VENDOR_WEBGL
-        if (p === 37446) return 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)'; // UNMASKED_RENDERER_WEBGL
-        return getParam.call(this, p);
-      };
-    };
-    if (window.WebGLRenderingContext) patch(WebGLRenderingContext.prototype);
-    if (window.WebGL2RenderingContext) patch(WebGL2RenderingContext.prototype);
-  } catch (e) {}
-
-  // 7. Hardware.
   def(navigator, 'hardwareConcurrency', () => 8);
   def(navigator, 'deviceMemory', () => 8);
-
-  // 8. Scrub Playwright/CDP artefacts.
   for (const k of Object.keys(window)) {
-    if (/^cdc_/.test(k) || /\\$cdc_/.test(k)) { try { delete window[k]; } catch (e) {} }
+    if (/^cdc_/.test(k)) { try { delete window[k]; } catch (e) {} }
   }
 })();
 `;
 
+const NOOP_INIT = '/* relay stealth: intentionally empty — see relay/stealth.js */';
+
+function legacyEnabled() {
+  return process.env.RELAY_LEGACY_STEALTH === 'true';
+}
+
 /**
- * Build a clean Windows-Chrome UA whose major version matches the actual
- * browser, and push it + matching Client Hints through CDP so headers,
- * navigator.userAgent and Sec-CH-UA all agree.
- * @returns {string} the UA that was applied (so callers can store it).
+ * Injected by callers that still do `context.addInitScript(STEALTH_INIT)`.
+ * A no-op unless the legacy script is explicitly re-enabled.
  */
-async function applyStealthIdentity(cdp, browser, { userAgent } = {}) {
+const STEALTH_INIT = legacyEnabled() ? LEGACY_STEALTH_INIT : NOOP_INIT;
+
+/**
+ * No-op kept for call-site compatibility. Returns the browser's real UA so
+ * callers that stored the result keep working — the point is that we no longer
+ * override anything.
+ */
+async function applyStealthIdentity(cdp, browser) {
+  if (!legacyEnabled()) {
+    try { return browser?.version?.() || null; } catch { return null; }
+  }
+  // Legacy path retained purely for A/B measurement; see the header.
   let fullVersion = '124.0.0.0';
   try { fullVersion = browser.version() || fullVersion; } catch { /* ignore */ }
   const major = String(fullVersion.split('.')[0] || '124');
-  const ua =
-    userAgent ||
-    `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`;
-
+  const ua = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`;
   try {
     await cdp.send('Network.setUserAgentOverride', {
       userAgent: ua,
       acceptLanguage: 'en-US,en;q=0.9',
       platform: 'Win32',
-      userAgentMetadata: {
-        brands: [
-          { brand: 'Chromium', version: major },
-          { brand: 'Google Chrome', version: major },
-          { brand: 'Not.A/Brand', version: '24' },
-        ],
-        fullVersion,
-        fullVersionList: [
-          { brand: 'Chromium', version: fullVersion },
-          { brand: 'Google Chrome', version: fullVersion },
-          { brand: 'Not.A/Brand', version: '24.0.0.0' },
-        ],
-        platform: 'Windows',
-        platformVersion: '15.0.0',
-        architecture: 'x86',
-        model: '',
-        mobile: false,
-        bitness: '64',
-        wow64: false,
-      },
     });
-  } catch {
-    /* CDP override unsupported — context userAgent still applies */
-  }
+  } catch { /* ignore */ }
   return ua;
 }
 
-module.exports = { STEALTH_INIT, applyStealthIdentity, randomViewport, VIEWPORTS };
+module.exports = {
+  STEALTH_INIT,
+  LEGACY_STEALTH_INIT,
+  applyStealthIdentity,
+  randomViewport,
+  VIEWPORTS,
+  legacyEnabled,
+};

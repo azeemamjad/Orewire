@@ -11,49 +11,14 @@ const {
   escapeJsString,
 } = require('./security');
 
-const { dispatchCdpMouse, findCaptchaClickTarget } = require('./cdp-input');
+const { findCaptchaClickTarget } = require('./cdp-input');
 
 const VIEW_HTML = fs.readFileSync(path.join(__dirname, '../public/relay/view.html'), 'utf8');
 
 const NAV_TIMEOUT_MS = parseInt(process.env.RELAY_NAV_TIMEOUT_MS || '45000', 10);
 
-function viewportSize(viewport) {
-  return {
-    w: viewport.width || viewport.w || 1280,
-    h: viewport.height || viewport.h || 900,
-  };
-}
-
-function scalePoint(x, y, displayW, displayH, viewportW, viewportH) {
-  const dw = displayW > 0 ? displayW : viewportW;
-  const dh = displayH > 0 ? displayH : viewportH;
-  const clampedX = Math.max(0, Math.min(x, dw));
-  const clampedY = Math.max(0, Math.min(y, dh));
-  return {
-    x: Math.round((clampedX / dw) * viewportW),
-    y: Math.round((clampedY / dh) * viewportH),
-  };
-}
-
 function normalizeNavigateUrl(input) {
   return assertAllowedNavigationUrl(input);
-}
-
-async function stopScreencast(cdp) {
-  try {
-    await cdp.send('Page.stopScreencast');
-  } catch { /* ignore */ }
-}
-
-async function startScreencast(cdp, viewport) {
-  await cdp.send('Page.enable');
-  await cdp.send('Page.startScreencast', {
-    format: 'jpeg',
-    quality: 75,
-    maxWidth: viewport.width,
-    maxHeight: viewport.height,
-    everyNthFrame: 1,
-  });
 }
 
 async function unstickPage(page) {
@@ -65,12 +30,14 @@ async function unstickPage(page) {
   } catch { /* ignore */ }
 }
 
-async function navigatePage(page, worker, ws, cdp, viewport, input) {
+async function navigatePage(page, worker, ws, input) {
   const url = normalizeNavigateUrl(input);
   const gen = ++worker.navGen;
   ws.send(JSON.stringify({ type: 'navigating', url }));
 
-  await stopScreencast(cdp);
+  // Pause capture across the navigation: a screencast held open through a
+  // cross-document load streams stale frames and, on some pages, wedges.
+  await worker.screen.pause();
 
   try {
     await page.goto(url, {
@@ -94,7 +61,7 @@ async function navigatePage(page, worker, ws, cdp, viewport, input) {
   } finally {
     if (worker.navGen === gen) {
       try {
-        await startScreencast(cdp, viewport);
+        await worker.screen.resume();
       } catch (e) {
         ws.send(JSON.stringify({ type: 'error', message: `Screencast resume failed: ${e.message}` }));
       }
@@ -102,21 +69,13 @@ async function navigatePage(page, worker, ws, cdp, viewport, input) {
   }
 }
 
-async function handleInput(page, cdp, msg, viewport) {
+async function handleInput(worker, msg) {
   if (msg.type === 'mouse') {
-    const result = await dispatchCdpMouse(cdp, msg, viewport);
-    return result;
+    return worker.screen.mouse(msg);
   }
-
-  if (msg.type === 'key' && msg.event === 'keydown' && msg.key) {
-    if (msg.key.length === 1) {
-      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', text: msg.key, key: msg.key });
-      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: msg.key });
-    } else {
-      await page.keyboard.press(msg.key);
-    }
+  if (msg.type === 'key') {
+    await worker.screen.key(msg);
   }
-
   return null;
 }
 
@@ -161,10 +120,8 @@ function attachRelayViewer(app, httpServer) {
 
   wss.on('connection', async (ws, req) => {
     let workerId = null;
-    let screencastActive = false;
     let viewerCounted = false;
-    let cdpRef = null;
-    let onFrame = null;
+    let detach = null;
     let cleanup = null;
 
     try {
@@ -191,33 +148,34 @@ function attachRelayViewer(app, httpServer) {
         ws.close(4002, err.message || 'Session error');
         return;
       }
-      const { page, cdp, label, viewport } = worker;
-      cdpRef = cdp;
+      const { page, label, viewport, screen } = worker;
+      if (!screen) throw new Error('Worker has no screen transport — respawn it');
       pool.incrementViewers(workerId);
       viewerCounted = true;
 
-      ws.send(JSON.stringify({ type: 'ready', label, url: page.url(), viewport, needsHuman: worker.status === STATUS.NEEDS_HUMAN }));
+      ws.send(JSON.stringify({
+        type: 'ready',
+        label,
+        url: page.url(),
+        viewport,
+        engine: worker.engine || null,
+        // Firefox/Camoufox workers stream polled screenshots rather than a CDP
+        // screencast, so the UI can tell the operator why it looks choppier.
+        transport: screen.supportsCdp ? 'screencast' : 'poll',
+        needsHuman: worker.status === STATUS.NEEDS_HUMAN,
+      }));
 
-      onFrame = (params) => {
+      const onFrame = (frame) => {
         if (ws.readyState !== ws.OPEN) return;
         try {
-          ws.send(
-            JSON.stringify({
-              type: 'frame',
-              data: params.data,
-              w: viewport.width,
-              h: viewport.height,
-            })
-          );
+          ws.send(JSON.stringify({ type: 'frame', data: frame.data, w: frame.w, h: frame.h }));
         } catch { /* connection closing */ }
-        cdp.send('Page.screencastFrameAck', { sessionId: params.sessionId }).catch(() => {});
       };
 
-      // Register the frame listener first; if startScreencast throws, the catch
-      // below removes it via cdpRef/onFrame so it does not leak.
-      cdp.on('Page.screencastFrame', onFrame);
-      await startScreencast(cdp, viewport);
-      screencastActive = true;
+      // The capture is shared across viewers and refcounted inside the screen:
+      // attaching a second viewer does not start a second stream, and detaching
+      // one does not freeze the others.
+      detach = await screen.attach(onFrame);
 
       const onNav = (frame) => {
         if (frame !== page.mainFrame() || ws.readyState !== ws.OPEN) return;
@@ -228,20 +186,16 @@ function attachRelayViewer(app, httpServer) {
       };
       page.on('framenavigated', onNav);
 
-      // Tear down only THIS viewer's resources. The CDP screencast is shared by
-      // every viewer of the worker, so it is stopped only when the last one
-      // leaves — otherwise one disconnect would freeze the others.
+      // Tear down only THIS viewer's resources — the shared capture stops on its
+      // own once the last listener detaches.
       let cleanedUp = false;
       cleanup = async () => {
         if (cleanedUp) return;
         cleanedUp = true;
         page.off('framenavigated', onNav);
-        cdp.off('Page.screencastFrame', onFrame);
+        if (detach) await detach().catch(() => {});
         viewerCounted = false;
-        const remaining = pool.decrementViewers(workerId);
-        if (screencastActive && remaining === 0) {
-          await stopScreencast(cdp);
-        }
+        pool.decrementViewers(workerId);
       };
 
       ws.on('message', (raw) => {
@@ -255,14 +209,14 @@ function attachRelayViewer(app, httpServer) {
         // which the queued recovery blanks the page and resumes the screencast.
         if (msg.type === 'cancel_navigate') {
           worker.navGen = (worker.navGen || 0) + 1;
-          cdp.send('Page.stopLoading').catch(() => {});
+          screen.stopLoading().catch(() => {});
           ws.send(JSON.stringify({ type: 'cancelled' }));
           runQueued(workerId, async () => {
             try {
               await unstickPage(page);
               worker.url = page.url();
               ws.send(JSON.stringify({ type: 'url', url: page.url() }));
-              if (screencastActive) await startScreencast(cdp, viewport);
+              await screen.resume();
             } catch (err) {
               if (ws.readyState === ws.OPEN) {
                 ws.send(JSON.stringify({ type: 'error', message: err.message }));
@@ -281,14 +235,14 @@ function attachRelayViewer(app, httpServer) {
         runQueued(workerId, async () => {
           try {
             if (msg.type === 'navigate') {
-              await navigatePage(page, worker, ws, cdp, viewport, msg.url);
+              await navigatePage(page, worker, ws, msg.url);
               return;
             }
             if (msg.type === 'refresh') {
               const target = page.url() && page.url() !== 'about:blank'
                 ? page.url()
                 : 'about:blank';
-              await navigatePage(page, worker, ws, cdp, viewport, target);
+              await navigatePage(page, worker, ws, target);
               return;
             }
             if (msg.type === 'find_captcha') {
@@ -298,7 +252,7 @@ function attachRelayViewer(app, httpServer) {
               }
               return;
             }
-            const result = await handleInput(page, cdp, msg, viewport);
+            const result = await handleInput(worker, msg);
             if (result && ws.readyState === ws.OPEN) {
               ws.send(JSON.stringify({ type: 'input_ack', ...result }));
             }
@@ -318,9 +272,9 @@ function attachRelayViewer(app, httpServer) {
         // Fully wired — let the normal teardown run.
         cleanup().catch(() => {});
       } else {
-        // Failed mid-setup: remove any partial listener and undo the view count
-        // so we never leak a listener on the shared CDP session.
-        try { cdpRef?.off?.('Page.screencastFrame', onFrame); } catch { /* ignore */ }
+        // Failed mid-setup: detach any partial listener and undo the view count
+        // so we never leak a listener on the shared capture.
+        if (detach) await detach().catch(() => {});
         if (viewerCounted) pool.decrementViewers(workerId);
       }
       ws.close(4002, err.message || 'Session error');

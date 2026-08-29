@@ -43,7 +43,10 @@ function interruptWorker(workerId) {
   if (typeof w._humanResume === 'function') {
     try { w._humanResume('stopped'); } catch { /* ignore */ }
   }
-  try { w.cdp?.send('Page.stopLoading'); } catch { /* ignore */ }
+  // Route through the screen transport, not raw CDP: a Camoufox (Firefox)
+  // worker has no cdp session, so `w.cdp?.send(...)` would silently do nothing
+  // and Stop would fail to interrupt a hung navigation.
+  try { w.screen?.stopLoading()?.catch?.(() => {}); } catch { /* ignore */ }
 }
 
 function requestStop(cancelKey) {

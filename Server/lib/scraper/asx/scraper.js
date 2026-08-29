@@ -57,6 +57,8 @@ async function downloadAsxCsvBrowser(options = {}) {
     'asx_seed',
     {
       relaySlot: options.relaySlot || 1,
+      // NOTE: ignored since the engine rework — relay/engines owns the context.
+      // See Server/relay/README.md.
       contextOptions: {
         acceptDownloads: true,
         viewport: { width: 1280, height: 900 },

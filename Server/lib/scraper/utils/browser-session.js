@@ -41,10 +41,10 @@ async function withBrowserSession(taskSlug, options, fn) {
     }
   }
 
-  const ctxOpts = options?.contextOptions || {
-    acceptDownloads: true,
-    viewport: { width: 1280, height: 900 },
-  };
+  // NOTE: contextOptions from callers is deliberately ignored now. The engine
+  // owns viewport (must be null so innerWidth tracks the real window), UA (never
+  // overridden), and locale/timezone (matched to the proxy exit IP). Re-applying
+  // a caller's viewport/UA/headers here is what made the local path detectable.
 
   // Best-effort captcha detection for the local path. There's no human to solve
   // it here, so the guard throws — surfacing the wall instead of silently
@@ -57,23 +57,15 @@ async function withBrowserSession(taskSlug, options, fn) {
     /* relay module not reachable — guard becomes a no-op */
   }
 
-  return withProxyFallback(async (browser) => {
-    const context = await browser.newContext(ctxOpts);
-    const page = await context.newPage();
+  return withProxyFallback(async ({ context, page }) => {
     const guardCaptcha = async () => {
       if (detectCaptchaOnPage && (await detectCaptchaOnPage(page))) {
         throw new CaptchaRequiredError(`Bot wall detected on ${page.url()} (local run — no human to solve)`);
       }
     };
-    try {
-      return await callback({ page, context, browser, workerId: null, guardCaptcha });
-    } finally {
-      try {
-        await context.close();
-      } catch {
-        /* ignore */
-      }
-    }
+    // The context's lifetime is owned by withProxyFallback, which closes it per
+    // tier attempt — closing it here would break the fallback to the next tier.
+    return callback({ page, context, browser: null, workerId: null, guardCaptcha });
   });
 }
 

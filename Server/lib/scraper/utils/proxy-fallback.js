@@ -1,10 +1,24 @@
-const { chromium } = require('playwright');
+/**
+ * Proxy fallback for scrapers running *outside* the relay pool
+ * (OREWIRE_RELAY !== 'in-process', which is the default).
+ *
+ * This used to launch vanilla Playwright's bundled Chromium, headless, with the
+ * automation flags — the exact combination SEDAR+'s Radware wall rejects. It now
+ * goes through relay/engines, so the local path gets the same real-Chrome,
+ * patched-driver, persistent-profile, geo-matched browser the relay workers do.
+ *
+ * The callback contract changed with it: a persistent context has no Browser
+ * handle to hand out, so callbacks receive a ready `{ context, page }` session
+ * and the lifecycle is owned here.
+ */
 const {
   getCachedProxies,
   refreshProxyCache,
   rowToPlaywrightProxy,
   getDirectProxyConfig,
 } = require('../../../relay/proxy-store');
+const { launchSession } = require('../../../relay/engines');
+const { resolveRelayHeadless } = require('../../../relay/env');
 
 /**
  * Proxy fallback tiers: datacenter proxies from DB, then residential, then direct.
@@ -62,24 +76,6 @@ async function getProxyTiers() {
   return filtered.length ? filtered : tiers;
 }
 
-function buildLaunchOptions(tier) {
-  const opts = {
-    headless: process.env.HEADLESS !== 'false',
-    args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'],
-  };
-  // Bundled Chromium reports "HeadlessChrome" in its sec-ch-ua client hints even
-  // when run headed, and SEDAR+'s Radware wall 403s on that alone. Only the real
-  // Chrome build gets served a page. BROWSER_CHANNEL=chrome opts into it; leave
-  // unset to keep the bundled browser (fine for targets with no bot wall).
-  if (process.env.BROWSER_CHANNEL) opts.channel = process.env.BROWSER_CHANNEL;
-  if (tier.server) {
-    opts.proxy = { server: tier.server };
-    if (tier.username) opts.proxy.username = tier.username;
-    if (tier.password) opts.proxy.password = tier.password;
-  }
-  return opts;
-}
-
 function isNetworkError(err) {
   const msg = (err.message || String(err) || '').toLowerCase();
   const name = String(err?.name || '').toLowerCase();
@@ -97,17 +93,32 @@ function isNetworkError(err) {
       || name.includes('timeout');
 }
 
+/**
+ * Each tier gets its own persistent profile, so a run that falls back from
+ * datacenter to residential does not carry the burned session's cookies onto
+ * the new IP — which is itself a linkage a wall can score.
+ */
+function profileIdForTier(tier) {
+  return `local-${tier.label}${tier.proxy_id ? `-${tier.proxy_id}` : ''}`;
+}
+
+/**
+ * @param {(session: { context, page, browser: null, tier: object }) => Promise<any>} fn
+ */
 async function withProxyFallback(fn) {
   const tiers = await getProxyTiers();
   let lastErr;
 
   for (const tier of tiers) {
-    let browser;
+    let session;
     try {
-      browser = await chromium.launch(buildLaunchOptions(tier));
       console.error(`[Proxy] Trying ${tier.label}…`);
-      const result = await fn(browser, tier);
-      return result;
+      session = await launchSession({
+        workerId: profileIdForTier(tier),
+        proxy: tier.server ? { server: tier.server, username: tier.username, password: tier.password } : null,
+        headless: resolveRelayHeadless(),
+      });
+      return await fn({ ...session, tier }, tier);
     } catch (err) {
       lastErr = err;
       if (isNetworkError(err)) {
@@ -116,8 +127,8 @@ async function withProxyFallback(fn) {
         throw err;
       }
     } finally {
-      if (browser) {
-        try { await browser.close(); } catch { /* ignore */ }
+      if (session?.context) {
+        try { await session.context.close(); } catch { /* ignore */ }
       }
     }
   }
@@ -125,4 +136,4 @@ async function withProxyFallback(fn) {
   throw lastErr;
 }
 
-module.exports = { getProxyTiers, buildLaunchOptions, isNetworkError, withProxyFallback };
+module.exports = { getProxyTiers, isNetworkError, withProxyFallback };
