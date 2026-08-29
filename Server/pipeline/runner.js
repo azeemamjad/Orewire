@@ -42,6 +42,45 @@ async function relaySlotCount(tier) {
 }
 
 /**
+ * Errors that mean "the network path is broken", not "this company failed".
+ *
+ * A dead proxy answers every CONNECT identically, so without this distinction a
+ * single bad proxy marches through the whole queue marking every company as an
+ * error — one run produced 1559 identical ERR_TUNNEL_CONNECTION_FAILEDs at
+ * roughly one company per second before anyone could stop it.
+ *
+ * Deliberately narrow: generic "timeout" is NOT included, because a slow page or
+ * a missing selector times out too and that is a per-company problem.
+ */
+const TRANSPORT_ERROR_RE = new RegExp([
+  'err_tunnel_connection_failed',
+  'err_proxy_connection_failed',
+  'err_proxy_auth_requested',
+  'err_no_supported_proxies',
+  'err_connection_refused',
+  'err_connection_reset',
+  'err_connection_closed',
+  'err_connection_failed',
+  'err_name_not_resolved',
+  'err_internet_disconnected',
+  'err_address_unreachable',
+  'econnrefused',
+  'ehostunreach',
+  'enetunreach',
+].join('|'), 'i');
+
+function isTransportError(err) {
+  return TRANSPORT_ERROR_RE.test(err?.message || String(err || ''));
+}
+
+// How many back-to-back transport failures before we stop the run. Any success
+// resets the counter, so a single flaky request never trips it.
+const TRANSPORT_FAILURE_LIMIT = Math.max(
+  1,
+  parseInt(process.env.PIPELINE_TRANSPORT_FAILURE_LIMIT || '8', 10),
+);
+
+/**
  * Hand out at most `limit` concurrent permits. A SEDAR+ download holds its
  * relay worker for the whole scrape, so without this the extra download workers
  * queue on a busy worker and die with "No available 'res' relay worker".
@@ -102,11 +141,11 @@ async function spawnWorker(company, workerId, cfg, relay = {}) {
     }
     state.progress.done++;
     addLog('out', `${tag} ✓ download done`);
-    return 0;
+    return { ok: true };
   } catch (err) {
     state.progress.errors++;
     addLog('err', `${tag} ✗ ${err.message}`);
-    return 1;
+    return { ok: false, transport: isTransportError(err), message: err.message };
   } finally {
     restoreScraperEnv(saved);
     if (releaseRelay) releaseRelay();
@@ -133,15 +172,46 @@ async function runDownloadQueue(companies, cfg) {
     acquire: slots > 0 ? createSemaphore(slots) : null,
   };
 
+  // Circuit breaker: consecutive transport failures mean the proxy/network is
+  // down, and every remaining company will fail the same way. Stop instead of
+  // converting a proxy outage into thousands of "errored" companies that then
+  // have to be found and re-queued by hand.
+  let consecutiveTransportFailures = 0;
+  let abortReason = null;
+
   async function drain(id) {
     while (queue.length > 0) {
+      if (abortReason) return;
       if (state.stopRequested) {
         addLog('warn', `[Pipeline] Worker ${id} stopping (stop requested)`);
         return;
       }
       const company = queue.shift();
       if (!company) break;
-      await spawnWorker(company, id, cfg, relay);
+      const result = await spawnWorker(company, id, cfg, relay);
+
+      if (result.ok) {
+        consecutiveTransportFailures = 0;
+      } else if (result.transport) {
+        consecutiveTransportFailures += 1;
+        if (consecutiveTransportFailures >= TRANSPORT_FAILURE_LIMIT) {
+          abortReason = result.message;
+          addLog('err',
+            `[Pipeline] ABORTING — ${consecutiveTransportFailures} consecutive network/proxy `
+            + `failures ("${result.message}"). ${queue.length} companies left unattempted `
+            + '(they were NOT marked as errors).');
+          addLog('err',
+            '[Pipeline] The proxy is refusing connections. Run `npm run relay:diagnose-proxies` '
+            + 'on this host — it prints the reason Chrome hides behind ERR_TUNNEL_CONNECTION_FAILED '
+            + '(auth rejected / quota exhausted / unreachable).');
+          return;
+        }
+      } else {
+        // A per-company failure (bad name, no results, parse error) says nothing
+        // about the network, so it must not count toward the breaker.
+        consecutiveTransportFailures = 0;
+      }
+
       // After each download completes, queue its PDFs for analysis
       if (cfg.analyze) {
         queueAnalysesForCompany(company);
@@ -674,4 +744,6 @@ async function runAsxPipeline() {
   }
 }
 
-module.exports = { runPipeline, runAsxPipeline };
+// isTransportError is exported for tests — misclassifying here either lets a
+// proxy outage burn the queue, or aborts a run over one slow page.
+module.exports = { runPipeline, runAsxPipeline, isTransportError };

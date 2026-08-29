@@ -24,7 +24,8 @@
     "relay:fetch-camoufox": "camoufox-js fetch",
     "relay:install-browsers": "patchright install chromium && patchright install chrome",
     "relay:test-engine": "node scripts/test-relay-engine.js",
-    "relay:measure-bandwidth": "node scripts/measure-bandwidth.js"
+    "relay:measure-bandwidth": "node scripts/measure-bandwidth.js",
+    "relay:diagnose-proxies": "node scripts/diagnose-proxies.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.0",
