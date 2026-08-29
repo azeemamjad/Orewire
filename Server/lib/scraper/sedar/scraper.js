@@ -77,7 +77,54 @@ async function goToDocumentsPage(page, guardCaptcha) {
   if (guardCaptcha) await guardCaptcha();
 }
 
+/**
+ * Reuse the search page we are already on instead of walking
+ * home -> "Search SEDAR+" -> "Documents" again.
+ *
+ * A relay worker keeps one page alive across tasks, so consecutive companies
+ * land on the previous company's results. SEDAR+ has a "Clear search criteria"
+ * link there that puts the profile input back, and using it is better on every
+ * axis: ~32 KB instead of three page loads, no wait for the landing page, and —
+ * the part that matters most — one residential IP does not hit the home page
+ * 1571 times in a row, which is a pattern in itself. A real user runs many
+ * searches from the same page.
+ *
+ * The node id is dynamic (`nodeW544`, `nodeW847`, …), so match on the text.
+ *
+ * @returns {Promise<boolean>} true if the search form is ready to use
+ */
+async function tryReuseSearchPage(page) {
+  if (process.env.SEDAR_REUSE_SEARCH === 'false') return false;
+  try {
+    if (!/sedarplus\.ca\/csa-party/.test(page.url() || '')) return false;
+
+    // Already sitting on an unused search form (previous run cleared it).
+    const input = page.locator('input[placeholder="Profile name or number"]');
+    if (await input.count() && await input.first().isVisible()) return true;
+
+    const clear = page.locator('a').filter({ hasText: /^Clear search criteria$/i }).first();
+    if (!(await clear.count())) return false;
+    await humanDelay(300, 700);
+    await clear.click();
+    await page.waitForSelector('input[placeholder="Profile name or number"]', {
+      state: 'visible', timeout: 20000,
+    });
+    console.log('[SEDAR] Reused search page (cleared criteria — no home-page reload)');
+    return true;
+  } catch {
+    // Anything unexpected (a bot wall, a changed layout) falls through to the
+    // full navigation, which re-establishes a known-good state.
+    return false;
+  }
+}
+
 async function navigateToDocumentsSearch(page, context, guardCaptcha) {
+  if (await tryReuseSearchPage(page)) {
+    if (guardCaptcha) await guardCaptcha();
+    await humanDelay(400, 700);
+    return;
+  }
+
   await goToDocumentsPage(page, guardCaptcha);
 
   try {
@@ -301,7 +348,15 @@ function filenameFromDisposition(cd, fallback) {
 
 async function downloadByFetch(page, href, destDir, fallbackName) {
   // Fetch the resource from within the page's JS context — preserves session,
-  // cookies and referrer so the server accepts the request
+  // cookies and referrer so the server accepts the request.
+  //
+  // The bytes come back as base64, NOT as an array of numbers. `Array.from(new
+  // Uint8Array(buf))` looks harmless but every byte crosses the CDP bridge as a
+  // separate JSON number and lands in Node as a boxed element of a 5-million-
+  // entry JSArray. Measured: a 5 MB PDF peaked at 694 MB of Node heap — 139x the
+  // file. Two of those at once is the ~2 GB V8 ceiling, which is exactly how the
+  // pipeline died with "Ineffective mark-compacts near heap limit" after 96
+  // minutes. Base64 costs 2.8x instead of 139x, over the same network path.
   const result = await page.evaluate(async (url) => {
     const res = await fetch(url, {
       credentials: 'include',
@@ -311,13 +366,21 @@ async function downloadByFetch(page, href, destDir, fallbackName) {
     const cd = res.headers.get('content-disposition') || '';
     const ct = res.headers.get('content-type') || '';
     const buf = await res.arrayBuffer();
-    return { bytes: Array.from(new Uint8Array(buf)), cd, ct };
+    const view = new Uint8Array(buf);
+    // Chunked: String.fromCharCode.apply blows the argument-list limit (and the
+    // stack) somewhere around a hundred thousand bytes.
+    let bin = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < view.length; i += CHUNK) {
+      bin += String.fromCharCode.apply(null, view.subarray(i, i + CHUNK));
+    }
+    return { b64: btoa(bin), cd, ct };
   }, href);
 
   const filename = filenameFromDisposition(result.cd, fallbackName);
   const dest     = uniqueDest(destDir, filename);
   console.log(`  → saving to: ${dest}`);
-  fs.writeFileSync(dest, Buffer.from(result.bytes));
+  fs.writeFileSync(dest, Buffer.from(result.b64, 'base64'));
   return path.basename(dest);
 }
 
@@ -542,4 +605,4 @@ async function scrapeSedar(companyName, options = {}) {
   );
 }
 
-module.exports = { scrapeSedar, scrapeSedarOnPage };
+module.exports = { scrapeSedar, scrapeSedarOnPage, tryReuseSearchPage };

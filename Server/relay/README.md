@@ -173,6 +173,40 @@ survives PDF pruning — file existence is not a valid substitute once
 
 The `source` field makes it reusable for ASX/CSE; only SEDAR is wired up so far.
 
+## Batch behaviour
+
+**One search page, many companies.** The scraper used to walk
+home → "Search SEDAR+" → "Documents" for every company. Over a 1571-company run
+that is 1571 home-page loads from a single residential IP, which is a pattern in
+itself — a real user runs many searches from the same page. SEDAR+ has a
+"Clear search criteria" link on the results page that puts the profile input
+back; `tryReuseSearchPage()` uses it when the worker is already on a search page,
+costing ~32 KB instead of three page loads. Measured over three companies: one
+home-page load instead of three, with the correct profile applied each time.
+
+Reuse is skipped automatically whenever the page is not a SEDAR+ search page —
+after a bot wall, a crash, or on the local path where each company gets a fresh
+context — so a broken state always falls back to the full navigation.
+`SEDAR_REUSE_SEARCH=false` disables it.
+
+**Retries and the circuit breaker.** A company gets `PIPELINE_COMPANY_ATTEMPTS`
+tries (3) spaced `PIPELINE_RETRY_DELAY_MS` apart (5 min), but only for failures
+worth retrying: proxy/network errors, a 403 or perfdrive redirect, a timeout, or
+the profile re-render race. "No SEDAR+ profile matches" is permanent — most
+companies that fail do so for that reason, and retrying them would burn ten
+minutes each for nothing.
+
+The retry wait happens *outside* the relay permit, so a sleeping worker never
+holds the single residential slot hostage.
+
+Behind that, `PIPELINE_TRANSPORT_FAILURE_LIMIT` (3) consecutive companies that
+exhaust every attempt with **network** errors aborts the run and leaves the rest
+of the queue unattempted rather than marked as errors. This exists because a
+single dead proxy once produced 1559 identical `ERR_TUNNEL_CONNECTION_FAILED`
+errors at roughly one company per second. Note the split: a 403 or bot wall is
+retried but does *not* count toward the breaker — that is the site, not the
+network.
+
 ## If it starts failing again
 
 1. `npm run relay:test-stealth` first — it tells you *which* signal regressed.

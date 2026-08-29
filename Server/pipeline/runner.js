@@ -73,11 +73,66 @@ function isTransportError(err) {
   return TRANSPORT_ERROR_RE.test(err?.message || String(err || ''));
 }
 
+/**
+ * Failures worth trying again after a wait: the network path, and the site
+ * throttling or walling us (403 with a Transaction ID, a perfdrive redirect, a
+ * captcha). These are about *when* we asked, not *what* we asked for.
+ */
+const RETRYABLE_ERROR_RE = new RegExp([
+  '403', 'forbidden', 'transaction id',
+  'bot wall', 'captcha', 'perfdrive', 'shieldsquare', 'incapsula',
+  'access denied', 'too many requests', '429',
+  'timeout', 'timed out',
+  // The known profile re-render race — transient, and worth another go.
+  'never applied the profile filter',
+  'did not finish applying the profile',
+].join('|'), 'i');
+
+/**
+ * Permanent for this company — retrying burns the wait for nothing. A company
+ * with no SEDAR+ profile will still have none in five minutes, and the
+ * mismatch guards exist precisely to refuse rather than retry.
+ */
+// Matched BEFORE the retryable patterns, so keep it narrow and specific.
+// "refusing to run an unfiltered search" deliberately does NOT appear here: it
+// is the tail of the re-render race message above, which is transient. Only the
+// genuinely permanent cases belong here — above all "no profile matches", which
+// is the normal answer for a company that simply is not on SEDAR+, and which
+// would otherwise burn the full retry budget for every one of them.
+const PERMANENT_ERROR_RE = new RegExp([
+  'no sedar\\+? profile matches',
+  'refusing to download another issuer',
+  'but we asked for',                      // applied profile "A" but we asked for "B"
+].join('|'), 'i');
+
+function isRetryableError(err) {
+  const msg = err?.message || String(err || '');
+  if (PERMANENT_ERROR_RE.test(msg)) return false;
+  return isTransportError(err) || RETRYABLE_ERROR_RE.test(msg);
+}
+
+// Per-company retry policy. Defaults: 3 attempts, 5 minutes apart.
+const COMPANY_ATTEMPTS = Math.max(1, parseInt(process.env.PIPELINE_COMPANY_ATTEMPTS || '3', 10));
+const RETRY_DELAY_MS = Math.max(0, parseInt(process.env.PIPELINE_RETRY_DELAY_MS || '300000', 10));
+
+/** Sleep that still notices a stop request instead of blocking it for minutes. */
+async function interruptibleSleep(ms, shouldStop) {
+  const step = 1000;
+  for (let waited = 0; waited < ms; waited += step) {
+    if (shouldStop()) return false;
+    await new Promise((r) => setTimeout(r, Math.min(step, ms - waited)));
+  }
+  return true;
+}
+
 // How many back-to-back transport failures before we stop the run. Any success
 // resets the counter, so a single flaky request never trips it.
+// Each counted failure is already COMPANY_ATTEMPTS tries spread over the retry
+// delay, so this is deliberately small: three companies that exhaust every
+// attempt at the transport layer means the proxy is down, not unlucky.
 const TRANSPORT_FAILURE_LIMIT = Math.max(
   1,
-  parseInt(process.env.PIPELINE_TRANSPORT_FAILURE_LIMIT || '8', 10),
+  parseInt(process.env.PIPELINE_TRANSPORT_FAILURE_LIMIT || '3', 10),
 );
 
 /**
@@ -139,13 +194,15 @@ async function spawnWorker(company, workerId, cfg, relay = {}) {
         taskSlug: 'pipeline_sedar_batch',
       });
     }
-    state.progress.done++;
     addLog('out', `${tag} ✓ download done`);
     return { ok: true };
   } catch (err) {
-    state.progress.errors++;
-    addLog('err', `${tag} ✗ ${err.message}`);
-    return { ok: false, transport: isTransportError(err), message: err.message };
+    return {
+      ok: false,
+      transport: isTransportError(err),
+      retryable: isRetryableError(err),
+      message: err.message,
+    };
   } finally {
     restoreScraperEnv(saved);
     if (releaseRelay) releaseRelay();
@@ -188,17 +245,45 @@ async function runDownloadQueue(companies, cfg) {
       }
       const company = queue.shift();
       if (!company) break;
-      const result = await spawnWorker(company, id, cfg, relay);
+
+      const labelArg = company.exchange === 'ASX' ? (company.ticker || company.name) : company.name;
+      const label = `[W${id}|${labelArg.substring(0, 22)}]`;
+      let result;
+      for (let attempt = 1; attempt <= COMPANY_ATTEMPTS; attempt++) {
+        // Each attempt acquires and releases the relay permit inside
+        // spawnWorker, so the wait below never holds a scarce residential slot
+        // hostage — with `res slot 1/1` that would stall every other worker.
+        result = await spawnWorker(company, id, cfg, relay);
+        if (result.ok) break;
+
+        const last = attempt >= COMPANY_ATTEMPTS;
+        if (!result.retryable) {
+          addLog('err', `${label} ✗ ${result.message}`);
+          break;
+        }
+        if (last) {
+          addLog('err', `${label} ✗ ${result.message} (gave up after ${attempt} attempts)`);
+          break;
+        }
+        addLog('warn',
+          `${label} attempt ${attempt}/${COMPANY_ATTEMPTS} failed (${result.message}) — `
+          + `retrying in ${Math.round(RETRY_DELAY_MS / 1000)}s`);
+        const slept = await interruptibleSleep(RETRY_DELAY_MS, () => state.stopRequested || !!abortReason);
+        if (!slept) return;
+      }
 
       if (result.ok) {
+        state.progress.done++;
         consecutiveTransportFailures = 0;
       } else if (result.transport) {
+        state.progress.errors++;
         consecutiveTransportFailures += 1;
         if (consecutiveTransportFailures >= TRANSPORT_FAILURE_LIMIT) {
           abortReason = result.message;
           addLog('err',
-            `[Pipeline] ABORTING — ${consecutiveTransportFailures} consecutive network/proxy `
-            + `failures ("${result.message}"). ${queue.length} companies left unattempted `
+            `[Pipeline] ABORTING — ${consecutiveTransportFailures} consecutive companies failed `
+            + `every one of their ${COMPANY_ATTEMPTS} attempts with network/proxy errors `
+            + `("${result.message}"). ${queue.length} companies left unattempted `
             + '(they were NOT marked as errors).');
           addLog('err',
             '[Pipeline] The proxy is refusing connections. Run `npm run relay:diagnose-proxies` '
@@ -209,6 +294,7 @@ async function runDownloadQueue(companies, cfg) {
       } else {
         // A per-company failure (bad name, no results, parse error) says nothing
         // about the network, so it must not count toward the breaker.
+        state.progress.errors++;
         consecutiveTransportFailures = 0;
       }
 
@@ -746,4 +832,4 @@ async function runAsxPipeline() {
 
 // isTransportError is exported for tests — misclassifying here either lets a
 // proxy outage burn the queue, or aborts a run over one slow page.
-module.exports = { runPipeline, runAsxPipeline, isTransportError };
+module.exports = { runPipeline, runAsxPipeline, isTransportError, isRetryableError };
