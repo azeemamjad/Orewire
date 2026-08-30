@@ -2733,9 +2733,19 @@ async function loadProxies() {
     tbody.innerHTML = directRow + items.map((p) => {
       const lastUsed = p.lastUsedAt ? new Date(p.lastUsedAt).toLocaleString() : 'N/A';
       const enabledCls = p.enabled ? 'proxy-enabled' : 'proxy-disabled';
-      const enabledTxt = p.enabled ? 'Yes' : 'No';
+      // "Enabled" alone cannot answer the question that matters once you have a
+      // free primary and a metered standby: which one is actually carrying
+      // traffic right now.
+      const enabledTxt = p.enabled
+        ? (p.fallbackOnly ? 'Standby' : 'Yes')
+        : 'No';
+      const roleTag = p.enabled && p.fallbackOnly
+        ? ' <span title="Used only when every primary in this tier is failing" '
+          + 'style="font-size:10px;padding:1px 6px;border-radius:9px;background:#8883;color:var(--muted);'
+          + 'vertical-align:middle;">FALLBACK ONLY</span>'
+        : '';
       return `<tr>
-        <td>${esc(p.name)}</td>
+        <td>${esc(p.name)}${roleTag}</td>
         <td>${tierTag(p.tier)}</td>
         <td><code>${esc(p.host)}:${p.port}</code></td>
         <td>${esc(p.usernameDisplay || p.username || (p.passwordSet ? '••••' : 'N/A'))}</td>

@@ -1,5 +1,6 @@
 const express = require('express');
-const { getChromium } = require('../../relay/playwright');
+const { launchSession } = require('../../relay/engines');
+const { resolveRelayHeadless } = require('../../relay/env');
 const { pool } = require('../../relay/pool');
 const {
   listAllProxies,
@@ -93,21 +94,6 @@ async function fetchDirectExitIp() {
   }
 }
 
-function buildProxyLaunchOptions(proxyConfig) {
-  const opts = {
-    headless: true,
-    args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'],
-  };
-  // Proxy must be on launch (same as scraper proxy-fallback). Context-only proxy
-  // can silently fall through to direct and report a false OK.
-  if (proxyConfig?.server) {
-    opts.proxy = { server: proxyConfig.server };
-    if (proxyConfig.username) opts.proxy.username = proxyConfig.username;
-    if (proxyConfig.password) opts.proxy.password = proxyConfig.password;
-  }
-  return opts;
-}
-
 async function readExitIp(page) {
   const res = await page.goto(IP_CHECK_URL, {
     waitUntil: 'domcontentloaded',
@@ -133,25 +119,34 @@ async function probeUrl(page, url, timeoutMs) {
   }
 }
 
+/**
+ * Probe a proxy with the *same* browser the scrapers use.
+ *
+ * This used to launch chromium directly with its own flags, which meant the Test
+ * button answered a different question from "will the pipeline work" — different
+ * fingerprint, different channel, and after the driver moved to patchright it
+ * needed a browser build the image does not ship at all
+ * ("Executable doesn't exist at /ms-playwright/chromium_headless_shell-…").
+ *
+ * Going through relay/engines fixes all three: real Chrome, the production
+ * configuration, and the proxy applied at launch so it cannot silently fall
+ * through to a direct connection and report a false OK.
+ */
 async function testPlaywrightProxy(proxyConfig) {
-  const chromium = getChromium();
   const started = Date.now();
-  let browser;
+  let session;
   const directIp = await fetchDirectExitIp();
 
   try {
-    browser = await chromium.launch(buildProxyLaunchOptions(proxyConfig));
-    // No userAgent override: pinning a stale Chrome/124 string onto a real
-    // Chrome 152 desynchronises navigator.userAgent from the sec-ch-ua headers,
-    // which is exactly the mismatch the relay was fixed to stop emitting. It
-    // also meant this Test button probed with a different fingerprint from the
-    // one production actually uses.
-    const context = await browser.newContext();
-    const page = await context.newPage();
+    session = await launchSession({
+      workerId: `proxy-test-${proxyConfig?.proxy_id ?? 'direct'}`,
+      proxy: proxyConfig?.server ? proxyConfig : null,
+      headless: resolveRelayHeadless(),
+    });
+    const { context, page } = session;
 
     const ipCheck = await readExitIp(page);
     if (!ipCheck.ip) {
-      await context.close();
       return {
         ok: false,
         error: `Proxy reached ${IP_CHECK_URL} but no IP was returned (${ipCheck.raw || 'empty'})`,
@@ -164,7 +159,6 @@ async function testPlaywrightProxy(proxyConfig) {
 
     // Same exit IP as the server ⇒ proxy was not applied (common false positive).
     if (directIp && ipCheck.ip === directIp && proxyConfig?.server) {
-      await context.close();
       return {
         ok: false,
         error: `Exit IP ${ipCheck.ip} matches server IP — traffic is not going through the proxy`,
@@ -181,8 +175,6 @@ async function testPlaywrightProxy(proxyConfig) {
     const probe = PROBE_URL && PROBE_URL !== TEST_URL
       ? await probeUrl(page, PROBE_URL, PROBE_TIMEOUT_MS)
       : null;
-
-    await context.close();
 
     return {
       ok: true,
@@ -204,8 +196,8 @@ async function testPlaywrightProxy(proxyConfig) {
       directIp,
     };
   } finally {
-    if (browser) {
-      try { await browser.close(); } catch { /* ignore */ }
+    if (session?.context) {
+      try { await session.context.close(); } catch { /* ignore */ }
     }
   }
 }

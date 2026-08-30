@@ -66,9 +66,12 @@ function resolveChannel() {
   } else {
     _channel = null;
     console.warn(
-      '[Relay] Google Chrome not found — using bundled Chromium. Bot walls that '
-      + 'score sec-ch-ua (SEDAR+/Radware) will block it. Install Chrome, or run '
-      + '`npx patchright install chrome`.',
+      '[Relay] Google Chrome not found — falling back to the patched Chromium. '
+      + 'Bot walls that score sec-ch-ua (SEDAR+/Radware) will block it, and the '
+      + 'Docker image does not ship that build by default, so launching will fail '
+      + "with \"Executable doesn't exist at /ms-playwright/chromium_headless_shell-…\". "
+      + 'Fix with `npx patchright install chrome` (preferred), or rebuild the image '
+      + 'with --build-arg INSTALL_PATCHED_CHROMIUM=1.',
     );
   }
   return _channel;

@@ -8,34 +8,28 @@ require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 const path = require('path');
 const { getDatacenterProxy, getResidentialProxy, getDirectProxy, DC_PORTS } = require('../relay/proxies');
 
-const { getChromium } = require('../relay/playwright');
+// Same browser the scrapers use: launching chromium directly here would probe a
+// different fingerprint than production, and needs a browser build the image
+// does not ship. See relay/engines.
+const { launchSession } = require('../relay/engines');
+const { resolveRelayHeadless } = require('../relay/env');
 
 const TEST_URL = process.env.RELAY_PROXY_TEST_URL || 'https://example.com/';
 const TIMEOUT_MS = parseInt(process.env.RELAY_PROXY_TEST_TIMEOUT_MS || '25000', 10);
 
 async function testProxy(label, proxy) {
-  const chromium = getChromium();
   const started = Date.now();
-  let browser;
+  let session;
   try {
-    browser = await chromium.launch({
-      headless: true,
-      args: ['--no-sandbox'],
+    session = await launchSession({
+      workerId: `proxy-cli-${proxy?.proxy_id ?? 'direct'}`,
+      proxy: proxy?.server ? proxy : null,
+      headless: resolveRelayHeadless(),
     });
-    const contextOpts = {};
-    if (proxy?.server) {
-      contextOpts.proxy = {
-        server: proxy.server,
-        username: proxy.username || undefined,
-        password: proxy.password || undefined,
-      };
-    }
-    const context = await browser.newContext(contextOpts);
-    const page = await context.newPage();
+    const { page } = session;
     await page.goto(TEST_URL, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_MS });
     const title = await page.title();
     const finalUrl = page.url();
-    await context.close();
     return {
       label,
       ok: true,
@@ -55,26 +49,31 @@ async function testProxy(label, proxy) {
       username: proxy?.username ? String(proxy.username).replace(/(sessid-)[\w-]+/i, '$1***') : null,
     };
   } finally {
-    if (browser) {
-      try { await browser.close(); } catch { /* ignore */ }
+    if (session?.context) {
+      try { await session.context.close(); } catch { /* ignore */ }
     }
   }
 }
 
 async function testDirect() {
-  const chromium = getChromium();
   const started = Date.now();
-  let browser;
+  let session;
   try {
-    browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
-    const page = await browser.newPage();
+    session = await launchSession({
+      workerId: 'proxy-cli-direct',
+      proxy: null,
+      headless: resolveRelayHeadless(),
+    });
+    const { page } = session;
     await page.goto(TEST_URL, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_MS });
     const title = await page.title();
     return { label: 'Direct (no proxy)', ok: true, ms: Date.now() - started, title, url: page.url() };
   } catch (err) {
     return { label: 'Direct (no proxy)', ok: false, ms: Date.now() - started, error: err.message };
   } finally {
-    if (browser) try { await browser.close(); } catch { /* ignore */ }
+    if (session?.context) {
+      try { await session.context.close(); } catch { /* ignore */ }
+    }
   }
 }
 
