@@ -362,6 +362,30 @@ black hole instead of a clean failure it can fail over from.
 - Admin → Relay shows `coolingDown` per worker, so you can see at a glance whether
   paid traffic is flowing.
 
+## Troubleshooting
+
+**`REMOTE HOST IDENTIFICATION HAS CHANGED` / `Host key verification failed`**
+
+Expected exactly once: the first time you mount the `/app/data` volume. The
+container's SSH host key lives on that volume, so mounting it (empty) makes the
+entrypoint generate a new one, and the laptop still has the old key pinned. Not
+an attack — ssh doing its job.
+
+```bash
+ssh-keygen -f ~/.ssh/known_hosts -R '[ssh.orewire.com]:2222'
+```
+
+autossh reconnects within a couple of minutes; no restart needed. It should not
+recur, because the host key now persists on the volume. If it happens again
+*without* a volume change, take it seriously.
+
+Confirm the tunnel is up with:
+
+```bash
+ss -tn | grep :2222        # an ESTAB line means connected
+journalctl -u orewire-tunnel -n 20 --no-pager
+```
+
 ## Things to watch
 
 - **Upload is the bottleneck.** PDFs travel SEDAR+ → home → server, so they leave
