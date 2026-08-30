@@ -1,0 +1,36 @@
+# Reverse-tunnel endpoint, running inside the backend container.
+#
+# The laptop opens an outbound connection here and forwards its local proxy to
+# 127.0.0.1:8888 *inside this container*, which is where Chrome then points. The
+# forwarded port therefore never exists on the host or on any shared network —
+# only on this container's loopback.
+Port 2222
+HostKey /app/data/tunnel/ssh_host_ed25519_key
+
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AllowUsers tunnel
+
+# Keys are resolved per connection so the admin panel can add or rotate the
+# laptop's key with no redeploy. The script applies the restriction prefix, so a
+# key pasted into a web form can never arrive unrestricted.
+AuthorizedKeysFile none
+AuthorizedKeysCommand /usr/local/bin/tunnel-authorized-keys.sh
+AuthorizedKeysCommandUser nobody
+
+# 'remote' permits only -R. Without it this key could be used as a jump host into
+# the container and whatever the app can reach.
+AllowTcpForwarding remote
+PermitOpen none
+PermitTunnel no
+AllowAgentForwarding no
+X11Forwarding no
+PermitTTY no
+PermitUserRC no
+
+# Default (no GatewayPorts): the forward binds loopback only.
+ClientAliveInterval 30
+ClientAliveCountMax 3
+LogLevel INFO

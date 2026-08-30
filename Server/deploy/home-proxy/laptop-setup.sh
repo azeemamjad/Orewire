@@ -15,9 +15,9 @@
 set -euo pipefail
 
 SERVER_HOST="${SERVER_HOST:-}"
-TUNNEL_USER="${TUNNEL_USER:-tunnel}"        # the user inside the tunnel container
-SSH_PORT="${SSH_PORT:-2222}"                # published port of the tunnel container
-TUNNEL_PORT="${TUNNEL_PORT:-8888}"          # bound inside that container
+TUNNEL_USER="${TUNNEL_USER:-tunnel}"        # the sshd user inside the backend container
+SSH_PORT="${SSH_PORT:-2222}"                # port 2222 published on the backend app
+TUNNEL_PORT="${TUNNEL_PORT:-8888}"          # bound on that container's loopback
 PROXY_PORT="${PROXY_PORT:-3128}"
 PROXY_USER="${PROXY_USER:-orewire}"
 ENABLE_AT_BOOT="${ENABLE_AT_BOOT:-1}"
@@ -172,7 +172,7 @@ ExecStart=/usr/bin/autossh -M 0 -N \\
   -o UserKnownHostsFile=$HOME_DIR/.ssh/known_hosts \\
   -i $KEY \\
   -p $SSH_PORT \\
-  -R 0.0.0.0:$TUNNEL_PORT:127.0.0.1:$PROXY_PORT \\
+  -R $TUNNEL_PORT:127.0.0.1:$PROXY_PORT \\
   $TUNNEL_USER@$SERVER_HOST
 Restart=always
 RestartSec=10
@@ -207,7 +207,7 @@ $PUBKEY
 
    Name          Home network
    Tier          residential
-   Host          tunnel            <-- the container's service name, not an IP
+   Host          127.0.0.1         <-- the tunnel ends inside the backend container
    Port          $TUNNEL_PORT
    Username      $PROXY_USER
    Password      $PROXY_PASS

@@ -16,6 +16,8 @@ const {
 } = require('../../relay/proxy-store');
 const { retentionDays } = require('../../lib/usage-log-retention');
 const tunnelKey = require('../../lib/infra/tunnel-key');
+const net = require('net');
+const dns = require('dns').promises;
 
 const router = express.Router();
 
@@ -247,6 +249,69 @@ router.post('/rebuild-pool', async (_req, res) => {
 //
 // The tunnel container resolves keys per connection, so writing this file takes
 // effect on the next connection — no redeploy, and no shell on the server.
+
+/**
+ * Why `ERR_PROXY_CONNECTION_FAILED` — three very different causes look identical
+ * from the browser, so answer them separately: does the name resolve (is the
+ * container deployed and on this network), does the port accept a connection (is
+ * the laptop's tunnel actually up), and is the key on a shared volume at all.
+ *
+ * That last one is easy to get wrong silently: writing the key always appears to
+ * succeed, because the directory is created if missing.
+ */
+async function probeTunnelEndpoint(host, port) {
+  const out = { host, port, dns: null, address: null, reachable: false, error: null };
+  try {
+    const r = await dns.lookup(host);
+    out.dns = 'ok';
+    out.address = r.address;
+  } catch (err) {
+    out.dns = err.code || 'lookup failed';
+    // Docker's embedded DNS returns ENOTFOUND for an unknown service name, but a
+    // resolver under load (or a musl/glibc difference) answers EAI_AGAIN for the
+    // same situation. Both mean "that name does not exist here".
+    const unresolvable = ['ENOTFOUND', 'EAI_AGAIN', 'EAI_NONAME', 'ENODATA'].includes(err.code);
+    out.error = unresolvable
+      ? `No host named "${host}" — the proxy row's Host should be 127.0.0.1 `
+        + '(the tunnel terminates inside this container).'
+      : `DNS lookup for "${host}" failed (${err.code || err.message}).`;
+    return out;
+  }
+
+  await new Promise((resolve) => {
+    const sock = net.connect({ host, port });
+    const done = (err) => {
+      if (err) {
+        out.error = err.code === 'ECONNREFUSED'
+          ? `Nothing is listening on ${host}:${port}, so your laptop's tunnel is not connected. `
+            + 'Check `systemctl status orewire-tunnel` on the laptop; if it is running, the key '
+            + 'below is probably not the one the laptop is using, or port 2222 is not published '
+            + 'on this app in Dokploy.'
+          : `Could not connect to ${host}:${port} (${err.code || err.message}).`;
+      } else {
+        out.reachable = true;
+      }
+      try { sock.destroy(); } catch { /* ignore */ }
+      resolve();
+    };
+    sock.setTimeout(5000);
+    sock.on('connect', () => done(null));
+    sock.on('timeout', () => done({ code: 'ETIMEDOUT' }));
+    sock.on('error', done);
+  });
+
+  return out;
+}
+
+router.get('/tunnel-status', async (req, res) => {
+  // The tunnel terminates on this container's loopback, so that is the default.
+  const host = String(req.query.host || process.env.TUNNEL_PROXY_HOST || '127.0.0.1');
+  const rawPort = parseInt(String(req.query.port || process.env.TUNNEL_PROXY_PORT || '8888'), 10);
+  const port = Number.isFinite(rawPort) && rawPort > 0 && rawPort <= 65535 ? rawPort : 8888;
+  const key = tunnelKey.getKeyInfo();
+  const endpoint = await probeTunnelEndpoint(host, port);
+  res.json({ tunnelKey: key, endpoint });
+});
 
 router.get('/tunnel-key', (_req, res) => {
   res.json({ tunnelKey: tunnelKey.getKeyInfo() });

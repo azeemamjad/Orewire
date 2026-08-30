@@ -9,6 +9,9 @@ data/cookies/*
 .gitignore
 *.md
 deploy/
+# ...except the sshd config the image actually installs (negation must come
+# after the directory exclusion above).
+!deploy/tunnel-sshd/
 
 # Relay browser profiles — live session cookies. Baking these into the image
 # would ship one machine's session to every container (and add ~230MB).

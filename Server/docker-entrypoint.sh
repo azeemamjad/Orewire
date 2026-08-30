@@ -32,4 +32,25 @@ if ! kill -0 "$XVFB_PID" 2>/dev/null; then
   echo "[entrypoint] Xvfb failed to start — the relay will fall back to headless and get blocked." >&2
 fi
 
+# Reverse-tunnel endpoint for the home-network proxy. Opt out with
+# TUNNEL_SSHD=0. The host key lives on the data volume so the laptop does not see
+# it change on every redeploy and refuse to connect.
+if [ "${TUNNEL_SSHD:-1}" = "1" ] && [ -x /usr/sbin/sshd ]; then
+  KEYDIR="${TUNNEL_KEY_DIR:-/app/data/tunnel}"
+  mkdir -p "$KEYDIR"
+  if [ ! -f "$KEYDIR/ssh_host_ed25519_key" ]; then
+    echo "[entrypoint] generating tunnel host key"
+    ssh-keygen -t ed25519 -N '' -f "$KEYDIR/ssh_host_ed25519_key" >/dev/null
+  fi
+  chmod 600 "$KEYDIR/ssh_host_ed25519_key"
+  mkdir -p /run/sshd
+  if /usr/sbin/sshd -f /etc/ssh/sshd_config.tunnel -t 2>/dev/null; then
+    /usr/sbin/sshd -f /etc/ssh/sshd_config.tunnel
+    echo "[entrypoint] tunnel sshd listening on 2222 (proxy will appear on 127.0.0.1:${TUNNEL_LISTEN_PORT:-8888})"
+  else
+    echo "[entrypoint] tunnel sshd config invalid — skipping" >&2
+    /usr/sbin/sshd -f /etc/ssh/sshd_config.tunnel -t || true
+  fi
+fi
+
 exec "$@"

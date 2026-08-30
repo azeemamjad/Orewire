@@ -8,10 +8,19 @@ ENV NODE_ENV=production \
 
 # poppler-utils + tesseract: OCR for image-only / scanned PDFs.
 # xvfb + xdpyinfo: let the relay run Chrome headed on a host with no monitor.
+# openssh-server: the reverse-tunnel endpoint for the home-network proxy. It
+# lives in this image rather than a second container because the app deploys as a
+# single Dockerfile application — and because the forwarded port then exists only
+# on this container's loopback, not on the host or a shared network.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-       poppler-utils tesseract-ocr xvfb x11-utils \
-  && rm -rf /var/lib/apt/lists/*
+       poppler-utils tesseract-ocr xvfb x11-utils openssh-server \
+  && rm -rf /var/lib/apt/lists/* \
+  && mkdir -p /run/sshd \
+  && adduser --disabled-password --gecos '' --shell /usr/sbin/nologin tunnel \
+  # A locked account ("!" in /etc/shadow) is refused by sshd outright when
+  # UsePAM is off, public key or not. Give it an unusable random password.
+  && echo "tunnel:$(head -c 32 /dev/urandom | base64 | tr -d '\n')" | chpasswd
 
 # Camoufox is optional: it pulls better-sqlite3, which needs a native build the
 # Playwright image has no toolchain for. The default install skips optional deps
@@ -49,7 +58,12 @@ RUN if [ "$INSTALL_CAMOUFOX" = "1" ]; then npx camoufox-js fetch; fi
 
 COPY . .
 
-RUN mkdir -p data/downloads data/cookies data/profiles \
+# sshd refuses an AuthorizedKeysCommand writable by anyone but root.
+RUN install -m 0644 -o root -g root deploy/tunnel-sshd/sshd_config /etc/ssh/sshd_config.tunnel \
+ && install -m 0755 -o root -g root deploy/tunnel-sshd/authorized-keys.sh \
+      /usr/local/bin/tunnel-authorized-keys.sh
+
+RUN mkdir -p data/downloads data/cookies data/profiles data/tunnel \
   && chmod +x docker-entrypoint.sh
 
 ENV PORT=8070

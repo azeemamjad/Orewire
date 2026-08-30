@@ -14,7 +14,11 @@
 const fs = require('fs');
 const path = require('path');
 
-const KEY_FILE = process.env.TUNNEL_KEYS_FILE || '/keys/authorized_key.pub';
+// On the data volume, so the key survives redeploys — and so the sshd running in
+// this same container reads exactly what the admin panel writes. No shared
+// volume between containers, and nothing to misconfigure.
+const KEY_FILE = process.env.TUNNEL_KEYS_FILE
+  || path.join(process.env.TUNNEL_KEY_DIR || '/app/data/tunnel', 'authorized_key.pub');
 
 // Only key types OpenSSH will accept, and only a single line. Anything with a
 // newline could smuggle a second authorized_keys entry with its own options.
@@ -33,6 +37,7 @@ function getKeyInfo() {
     fingerprintish: null,
     path: KEY_FILE,
     writable: isWritable(),
+    persisted: isPersisted(),
   };
   try {
     const raw = fs.readFileSync(KEY_FILE, 'utf8').trim();
@@ -48,6 +53,40 @@ function getKeyInfo() {
     /* not configured yet */
   }
   return info;
+}
+
+/**
+ * Will this key survive a redeploy?
+ *
+ * The key lives on the data volume, so sshd in this same container reads exactly
+ * what the panel writes — there is no second container to share with. What can
+ * still go wrong is the volume not being mounted at all, in which case the key is
+ * written into the container's writable layer and silently disappears on the next
+ * deploy, with the panel cheerfully reporting "Key configured" until then.
+ *
+ * The key's own directory is a subdirectory of the mount, so walk up: if any
+ * ancestor is a mount point, the file is on a volume.
+ */
+function isPersisted() {
+  try {
+    const info = fs.readFileSync('/proc/self/mountinfo', 'utf8');
+    const mounts = new Set(
+      info.split('\n').map((line) => line.split(' ')[4]).filter(Boolean),
+    );
+    // Find the nearest enclosing mount. If that is "/" the file is on the
+    // container's writable layer and vanishes on the next deploy; anything
+    // deeper (e.g. /app/data) is a real volume.
+    let dir = path.dirname(KEY_FILE);
+    for (;;) {
+      if (mounts.has(dir)) return dir !== '/';
+      const parent = path.dirname(dir);
+      if (parent === dir) return false;
+      dir = parent;
+    }
+  } catch {
+    // Not Linux, or no procfs — cannot tell, so do not claim a problem.
+    return null;
+  }
 }
 
 function isWritable() {
@@ -97,4 +136,4 @@ function clearKey() {
   }
 }
 
-module.exports = { getKeyInfo, setKey, clearKey, keyFilePath };
+module.exports = { getKeyInfo, setKey, clearKey, keyFilePath, isPersisted };

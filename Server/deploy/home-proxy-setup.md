@@ -43,16 +43,22 @@ on the server as well — add `Port 443` to `sshd_config` — and point the tunn
 
 ## Setup, step by step
 
-The server side is a **container**, not host configuration. That matters: it
-means no changes to the host's sshd, and no dependence on the docker bridge
-gateway address — which changes whenever Dokploy recreates the network. The app
-reaches the proxy at the stable service name `tunnel:8888`.
+The SSH endpoint runs **inside the backend container**. No host configuration, no
+second app to deploy, and no cross-container networking — which matters because
+the backend deploys as a single Dokploy *Dockerfile application*, not a Compose
+stack.
 
 ```
-laptop ──ssh──▶ server:2222 ──▶ [tunnel container] binds 0.0.0.0:8888
-                                        ▲
-      orewire-server ──http://tunnel:8888┘ ──▶ (back down the tunnel) ──▶ laptop tinyproxy ──▶ SEDAR+
+laptop ──ssh──▶ backend.orewire.com:2222 ──▶ sshd inside orewire-server
+                                                     │ binds 127.0.0.1:8888
+      Chrome (same container) ──http://127.0.0.1:8888┘ ──▶ back down the tunnel
+                                                        ──▶ laptop tinyproxy ──▶ SEDAR+
 ```
+
+The forwarded port exists only on that container's **loopback** — not on the
+host, not on any shared network. And because the admin panel and sshd live in the
+same container, there is no shared volume to misconfigure: the panel writes the
+key exactly where sshd reads it.
 
 ### 1. On the laptop (once)
 
@@ -80,38 +86,37 @@ Save the password — it is not stored anywhere else in readable form.
 The tunnel starts at boot by default. For on-demand only, pass `ENABLE_AT_BOOT=0`
 and start it yourself with `sudo systemctl start orewire-tunnel`.
 
-### 2. On the server (once, in a panel — no terminal)
+### 2. On the server (once, in Dokploy's UI — no terminal)
 
-Deploy the tunnel container **once**. It needs no key at deploy time.
+Two settings on the **existing backend application**, then redeploy:
 
-In **Dokploy**: add a Compose application pointing at
-`Server/deploy/home-proxy/docker-compose.tunnel.yml`, and set two variables in
-its environment:
-
-| variable | value |
+| setting | value |
 |---|---|
-| `OREWIRE_NETWORK` | the docker network the backend already runs on |
-| `TUNNEL_KEYS_VOLUME` | the volume the backend mounts at `/keys` (default `orewire_tunnel-keys`) |
+| **Ports** | publish `2222` → `2222` |
+| **Volumes** | a persistent volume mounted at `/app/data` |
 
-The backend also needs that same volume mounted at `/keys` — it is already in
-`docker-compose.yml`; in Dokploy add it as a volume mount on the backend app.
+The volume is what makes the key and the SSH host key survive a redeploy. Without
+it the panel will warn you, rather than silently losing the key on the next
+deploy.
 
-That is the only server-side step, and it is a one-off. Everything after this
-happens in the OreWire admin panel.
+Redeploy so the image is rebuilt with sshd included. That is the entire
+server-side step, and it is a one-off — everything after this is the admin panel.
+
+Set `TUNNEL_SSHD=0` in the app's environment to disable the endpoint entirely.
 
 ### 2b. Add the key from the admin panel
 
 **Admin → Proxies → Home network tunnel.** Paste the public key that
 `laptop-setup.sh` printed and press Save.
 
-The tunnel container resolves keys **per connection**, so this takes effect on
+sshd resolves keys **per connection**, so this takes effect on
 the laptop's next attempt — no redeploy, no restart, no shell. Rotating or
 revoking the key is the same form: paste a new one, or press Remove.
 
 The panel only ever accepts a single-line OpenSSH *public* key. Pasting a private
 key, or trying to smuggle a second key on another line, is rejected — and the
-restriction prefix (`restrict,port-forwarding,permitlisten="0.0.0.0:8888"`) is
-applied by the container itself, so a key added through a web form can never
+restriction prefix (`restrict,port-forwarding,permitlisten="localhost:8888"`) is
+applied by sshd itself, so a key added through a web form can never
 arrive unrestricted.
 
 ### 3. Start the tunnel and wire it up
@@ -122,7 +127,7 @@ systemctl status orewire-tunnel --no-pager
 ```
 
 Admin → Proxies → Add proxy, using the printed values — note **Host is `tunnel`**,
-the container's service name, not an IP address. Then edit the Oxylabs row and
+the backend container's own loopback. Then edit the Oxylabs row and
 tick **Fallback only**.
 
 Verify end to end:
@@ -180,42 +185,39 @@ blacklisted. Any single one of these gates prevents that; use all four.
 
 ### 1. The forwarded port never touches the host
 
-The tunnel binds `0.0.0.0:8888` **inside the tunnel container**, so that address
-exists only on that container's own network interface. It is not on the host, not
-on a bridge the host shares, and not reachable from outside. The single published
-port is 2222 (ssh), and the key that reaches it can do exactly one thing.
+The tunnel binds port 8888 on the **backend container's loopback**. Not the
+host, not a shared network, not any interface reachable from outside — only
+processes inside that container (i.e. Chrome) can use it. `GatewayPorts` is left
+at its default (off) precisely so the forward cannot be moved off loopback.
 
-This is also why the container approach is better than tunnelling to the host:
-there is no `GatewayPorts` change to make on the host's sshd, and no docker
-bridge gateway address to chase when Dokploy recreates the network.
-
-The container's own `sshd_config` sets `GatewayPorts clientspecified` — **not**
-`yes`. `yes` would force every remote forward onto an address of its choosing,
-overriding the `permitlisten` restriction pinned to the key.
+The single publicly published port is 2222 (ssh), and the key that reaches it can
+do exactly one thing.
 
 ### 2. The SSH key can do nothing except open that one port
 
-The container writes the authorized_keys line itself, so the restriction cannot
-be omitted by mistake:
+sshd resolves keys through `AuthorizedKeysCommand`, which builds the line itself —
+so the restriction cannot be omitted by mistake, however the key was supplied:
 
 ```
-restrict,port-forwarding,permitlisten="0.0.0.0:8888" ssh-ed25519 AAAA... orewire-tunnel-laptop
+restrict,port-forwarding,permitlisten="localhost:8888" ssh-ed25519 AAAA... orewire-tunnel-laptop
 ```
 
 - `restrict` disables everything; `port-forwarding` re-enables only forwarding.
-- `permitlisten` pins the key to that exact address and port. Note the address
-  **must** be written out: a bare `permitlisten="8888"` only matches a request
-  for `localhost`, which is not what the laptop asks for.
-- The container's sshd additionally sets `AllowTcpForwarding remote`, so `-L` is
-  refused — the key cannot be used as a jump host into the rest of the docker
-  network — plus `PermitOpen none`, `PermitTTY no`, and a `nologin` shell.
+- `permitlisten` pins the key to that one port. The address form matters: ssh
+  sends the hostname `localhost` when the client asks for a bare `-R 8888:…`,
+  and that is treated as distinct from `127.0.0.1`, so the two sides have to
+  agree. They do: the client uses a bare port, the server permits `localhost:8888`.
+- `AllowTcpForwarding remote` means `-L` is refused, so the key cannot be used as
+  a jump host into the container or anything it can reach — plus `PermitOpen none`,
+  `PermitTTY no`, and a `nologin` shell.
 
-Verified behaviour, from the container's own logs:
+Verified against the built image:
 
 ```
-This account is not available                         # shell refused
-remote forward to host 0.0.0.0 port 9999 ... denied   # other ports refused
-refused local port forward: ... target 1.1.1.1 port 80 # -L refused
+This account is currently not available.              # shell refused
+remote port forwarding failed for listen port 9999    # any other port refused
+-L through the tunnel -> 000                          # local forwarding refused
+CONNECT=200 via 127.0.0.1:8888                        # the permitted forward works
 ```
 
 ### 3. The proxy requires credentials
@@ -314,7 +316,7 @@ ExecStart=/usr/bin/autossh -M 0 -N \
   -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=accept-new \
   -i /home/YOUR_LOGIN/.ssh/orewire-tunnel \
   -p 2222 \
-  -R 0.0.0.0:8888:127.0.0.1:3128 \
+  -R 8888:127.0.0.1:3128 \
   tunnel@backend.orewire.com
 Restart=always
 RestartSec=10

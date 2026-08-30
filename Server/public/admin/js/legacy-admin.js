@@ -2655,18 +2655,41 @@ async function loadTunnelKey() {
   const el = document.getElementById('tunnel-key-status');
   if (!el) return;
   try {
-    const data = await fetch(`${API}/api/admin/proxies/tunnel-key`).then((r) => r.json());
+    // Probe the endpoint too: "key configured" on its own says nothing about
+    // whether the tunnel container exists or the laptop is connected.
+    const home = (_proxiesCache || []).find((p) => /^(127\.0\.0\.1|localhost|tunnel)$/i.test(p.host || ''));
+    const qs = home ? `?host=${encodeURIComponent(home.host)}&port=${home.port}` : '';
+    const data = await fetch(`${API}/api/admin/proxies/tunnel-status${qs}`).then((r) => r.json());
     const t = data.tunnelKey || {};
+    const ep = data.endpoint || {};
     if (!t.writable) {
       el.innerHTML = '<span style="color:var(--danger,#c00);">The key directory is not writable — '
         + 'the tunnel container\'s <code>/keys</code> volume is not mounted into this container. '
         + 'See Server/deploy/home-proxy-setup.md.</span>';
       return;
     }
-    el.innerHTML = t.configured
+    const rows = [];
+    rows.push(t.configured
       ? `<span style="color:var(--ok,#0a0);">✓ Key configured</span> — <code>${esc(t.type || '')}</code> `
         + `${esc(t.comment || '')} <span style="color:var(--muted);">${esc(t.fingerprintish || '')}</span>`
-      : '<span style="color:var(--muted);">No key configured — the laptop cannot connect yet.</span>';
+      : '<span style="color:var(--muted);">No key configured — the laptop cannot connect yet.</span>');
+
+    // Writing the key always appears to succeed (the directory is created if
+    // missing), so say plainly when it is going somewhere nothing else can read.
+    if (t.persisted === false) {
+      rows.push('<span style="color:var(--danger,#c00);">✗ <code>' + esc(t.path || '')
+        + '</code> is not on a volume</span> — the key is in the container\'s writable layer and will '
+        + 'be lost on the next deploy. Mount a persistent volume at <code>/app/data</code>.');
+    }
+
+    rows.push(ep.reachable
+      ? `<span style="color:var(--ok,#0a0);">✓ Tunnel endpoint reachable</span> — `
+        + `<code>${esc(ep.host)}:${ep.port}</code>${ep.address ? ` (${esc(ep.address)})` : ''}, `
+        + 'your laptop is connected.'
+      : `<span style="color:var(--danger,#c00);">✗ Cannot reach <code>${esc(ep.host || '?')}:${ep.port || '?'}</code></span> — `
+        + esc(ep.error || 'unknown reason'));
+
+    el.innerHTML = rows.map((r) => `<div style="margin:4px 0;">${r}</div>`).join('');
   } catch (err) {
     el.textContent = `Could not read tunnel key: ${err.message}`;
   }
@@ -2703,7 +2726,6 @@ async function clearTunnelKey() {
 }
 
 async function loadProxies() {
-  loadTunnelKey();
   const tbody = document.getElementById('proxies-body');
   if (!tbody) return;
   tbody.innerHTML = '<tr class="empty-row"><td colspan="9">Loading…</td></tr>';
@@ -2712,6 +2734,9 @@ async function loadProxies() {
     if (data.error) throw new Error(data.error);
     const items = data.items || [];
     _proxiesCache = items;
+    // After the cache is filled, so the tunnel probe can use the Home Network
+    // row's actual host/port rather than falling back to a default.
+    loadTunnelKey();
     const totalEl = document.getElementById('proxies-total');
     if (totalEl) totalEl.textContent = String(data.total ?? items.length);
     const direct = data.directWorker;
