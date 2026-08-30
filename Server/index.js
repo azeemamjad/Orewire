@@ -135,6 +135,11 @@ async function start() {
   }
 
   server.listen(PORT, () => {
+    try {
+      const { warnIfDataNotPersisted } = require('./lib/infra/mounts');
+      const { DOWNLOADS_DIR } = require('./lib/scraper/paths');
+      warnIfDataNotPersisted(require('path').resolve(DOWNLOADS_DIR, '..'));
+    } catch { /* never block startup on a diagnostic */ }
     console.log(`Mining Intel server running → http://localhost:${PORT}`);
     console.log(`Admin Relay → http://localhost:${PORT}/admin/relay.html`);
     const { startAll } = require('./lib/schedulers');

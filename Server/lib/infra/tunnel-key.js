@@ -55,38 +55,12 @@ function getKeyInfo() {
   return info;
 }
 
-/**
- * Will this key survive a redeploy?
- *
- * The key lives on the data volume, so sshd in this same container reads exactly
- * what the panel writes — there is no second container to share with. What can
- * still go wrong is the volume not being mounted at all, in which case the key is
- * written into the container's writable layer and silently disappears on the next
- * deploy, with the panel cheerfully reporting "Key configured" until then.
- *
- * The key's own directory is a subdirectory of the mount, so walk up: if any
- * ancestor is a mount point, the file is on a volume.
- */
+// Shared with the boot-time check in index.js — one implementation, so the
+// panel and the startup warning can never disagree.
+const { isPathPersisted } = require('./mounts');
+
 function isPersisted() {
-  try {
-    const info = fs.readFileSync('/proc/self/mountinfo', 'utf8');
-    const mounts = new Set(
-      info.split('\n').map((line) => line.split(' ')[4]).filter(Boolean),
-    );
-    // Find the nearest enclosing mount. If that is "/" the file is on the
-    // container's writable layer and vanishes on the next deploy; anything
-    // deeper (e.g. /app/data) is a real volume.
-    let dir = path.dirname(KEY_FILE);
-    for (;;) {
-      if (mounts.has(dir)) return dir !== '/';
-      const parent = path.dirname(dir);
-      if (parent === dir) return false;
-      dir = parent;
-    }
-  } catch {
-    // Not Linux, or no procfs — cannot tell, so do not claim a problem.
-    return null;
-  }
+  return isPathPersisted(path.dirname(KEY_FILE));
 }
 
 function isWritable() {
