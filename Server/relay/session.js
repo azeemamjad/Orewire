@@ -4,11 +4,15 @@ const { runQueued, yieldQueue, waitForQueueIdle } = require('./worker-queue');
 const {
   getPoolCounts,
   getProxyWorkersForTier,
+  getPrimaryProxyWorkersForTier,
+  getFallbackProxyWorkersForTier,
   DIRECT_WORKER_ID,
   startUsageEvent,
   finishUsageEvent,
   refreshProxyCache,
 } = require('./proxy-store');
+const { isTransportError } = require('./net-errors');
+const proxyHealth = require('./proxy-health');
 const { getBrowserTask, logTaskEvent, TASK_DEFINITIONS } = require('./task-registry');
 const {
   CaptchaRequiredError,
@@ -57,12 +61,8 @@ function tierWorkerCount(tier) {
   return c.dcCount;
 }
 
-// All worker ids in a tier, ordered to start at the requested slot then wrap —
-// so a task prefers its assigned slot but can spill onto siblings when busy.
-function candidateWorkerIds(tier, slotIndex) {
-  if (tier === 'direct') return [DIRECT_WORKER_ID];
-  const ids = getProxyWorkersForTier(tier);
-  if (!ids.length) return [DIRECT_WORKER_ID];
+function rotate(ids, slotIndex) {
+  if (!ids.length) return [];
   const n = ids.length;
   const start = Math.max(1, Math.min(parseInt(slotIndex, 10) || 1, n));
   const out = [];
@@ -70,18 +70,59 @@ function candidateWorkerIds(tier, slotIndex) {
   return out;
 }
 
+/**
+ * Worker ids for a tier, split into the ones we want to use and the ones we
+ * would rather not pay for.
+ *
+ * Primaries are rotated so a task prefers its assigned slot but can spill onto
+ * siblings when busy. Fallback-only workers (a metered provider standing behind
+ * a free home tunnel) are deliberately NOT part of that rotation — they are
+ * reached only when every primary is unusable, so "busy" never costs money.
+ */
+function candidateWorkerIds(tier, slotIndex) {
+  if (tier === 'direct') return { primary: [DIRECT_WORKER_ID], fallback: [] };
+  const primary = getPrimaryProxyWorkersForTier(tier);
+  const fallback = getFallbackProxyWorkersForTier(tier);
+  if (!primary.length && !fallback.length) return { primary: [DIRECT_WORKER_ID], fallback: [] };
+  // Every proxy in the tier is marked fallback-only: treat them as primaries
+  // rather than refusing to run at all.
+  if (!primary.length) return { primary: rotate(fallback, slotIndex), fallback: [] };
+  return { primary: rotate(primary, slotIndex), fallback };
+}
+
 // The "manager": hand back a healthy, idle worker in the tier. Dead/missing
 // browsers are respawned before use; a busy worker is skipped for the next one;
 // if every worker is busy we wait (poll) until one frees or we time out.
 async function acquireManagedWorker(tier, slotIndex, taskSlug, opts = {}) {
-  const ids = candidateWorkerIds(tier, slotIndex);
+  const { primary, fallback } = candidateWorkerIds(tier, slotIndex);
   const waitMs = parseInt(opts.acquireWaitMs ?? process.env.RELAY_ACQUIRE_WAIT_MS ?? '60000', 10);
   const pollMs = 1500;
   const deadline = Date.now() + Math.max(0, waitMs);
   let lastReason = 'no workers configured';
+  let announcedFallback = false;
 
   for (;;) {
     if (opts.shouldStop?.()) throw new TaskStoppedError();
+
+    // Primaries that have been failing at the transport layer are skipped for a
+    // cooldown. Only when *every* primary is cooling down do we let the paid
+    // fallback in — a busy primary is never a reason to spend.
+    const livePrimary = primary.filter((id) => !proxyHealth.isCoolingDown(id));
+    let ids = livePrimary;
+    if (!livePrimary.length && fallback.length) {
+      ids = fallback;
+      if (!announcedFallback) {
+        announcedFallback = true;
+        console.warn(
+          `[Relay] All primary '${tier}' proxies are in cooldown `
+          + `(${primary.map((id) => `${id}: ${proxyHealth.listHealth()[id]?.lastError || 'failing'}`).join('; ')})`
+          + ` — falling back to ${fallback.join(', ')}`,
+        );
+      }
+    } else if (!ids.length) {
+      ids = primary; // nothing live and no fallback — retry the primaries anyway
+    }
+
     for (const id of ids) {
       let w = pool.getWorker(id);
       const dead = !w || w.status === STATUS.ERROR || !pool.isWorkerHealthy(id);
@@ -227,6 +268,8 @@ async function withRelaySession(taskSlug, slotIndex, fn, opts = {}) {
     if (await detectCaptchaOnPage(w.page)) {
       await pauseForHumanCaptcha(w.page, `Captcha suspected on ${w.page.url()}`);
     }
+    // Anything that completed proves the proxy is carrying traffic.
+    proxyHealth.markSuccess(workerId);
     return result;
   } catch (err) {
     if (err instanceof TaskStoppedError) {
@@ -253,6 +296,22 @@ async function withRelaySession(taskSlug, slotIndex, fn, opts = {}) {
     } else {
       usageStatus = 'error';
       usageError = err?.message || String(err);
+      if (isTransportError(err)) {
+        const entered = proxyHealth.markTransportFailure(workerId, usageError);
+        if (entered) {
+          console.warn(
+            `[Relay] ${workerId} taken out of rotation for `
+            + `${Math.round(proxyHealth.COOLDOWN_MS / 1000)}s after `
+            + `${proxyHealth.FAILURES_BEFORE_COOLDOWN} transport failures: ${usageError}`,
+          );
+          await logTaskEvent({
+            taskSlug,
+            workerId,
+            status: 'proxy_cooldown',
+            message: `Proxy cooling down after repeated transport failures: ${usageError}`,
+          }).catch(() => {});
+        }
+      }
     }
     throw err;
   } finally {
@@ -264,7 +323,10 @@ async function withRelaySession(taskSlug, slotIndex, fn, opts = {}) {
   }
 }
 
+// candidateWorkerIds is exported for tests — this is the decision that keeps
+// paid traffic off a healthy free proxy, so it needs to be verifiable.
 module.exports = {
+  candidateWorkerIds,
   relayWiringEnabled,
   workerIdForTask,
   ensurePoolReady,

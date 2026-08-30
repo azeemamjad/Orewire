@@ -1,0 +1,36 @@
+Port 22
+HostKey /etc/ssh/keys/ssh_host_ed25519_key
+
+# Keys only, one user, and that user has no shell.
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+# Resolved per connection, so the admin panel can rotate the key without a
+# restart. The script also applies the restrict/permitlisten prefix, so a key
+# pasted into a web form cannot arrive unrestricted.
+AuthorizedKeysFile none
+AuthorizedKeysCommand /usr/local/bin/authorized-keys.sh
+AuthorizedKeysCommandUser nobody
+AllowUsers tunnel
+
+# 'remote' permits only -R. Without this the tunnel could be used as a jump host
+# into the rest of the docker network with -L.
+AllowTcpForwarding remote
+PermitOpen none
+PermitTunnel no
+AllowAgentForwarding no
+X11Forwarding no
+PermitTTY no
+PermitUserRC no
+
+# 'clientspecified', never 'yes': the key's permitlisten pins the exact listen
+# address, and 'yes' would override what the client asked for.
+GatewayPorts clientspecified
+
+# Drop a tunnel the laptop silently lost (sleep, network change, CGNAT timeout)
+# so the relay sees a clean failure instead of a black hole.
+ClientAliveInterval 30
+ClientAliveCountMax 3
+
+LogLevel INFO

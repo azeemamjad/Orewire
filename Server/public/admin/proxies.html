@@ -61,6 +61,24 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
   </div>
 
   <div class="usage-log-section">
+    <h2>Home network tunnel</h2>
+    <p style="font-size:13px;color:var(--muted);margin-top:-6px;">
+      Lets the scraper use your own connection as the primary proxy, with a paid
+      provider marked <em>Fallback only</em> standing by. Paste the public key
+      printed by <code>laptop-setup.sh</code> — it takes effect on the laptop's
+      next connection, no redeploy needed.
+    </p>
+    <div id="tunnel-key-status" style="margin:10px 0;font-size:14px;">Loading…</div>
+    <div class="config-field span-2" style="max-width:900px;">
+      <label for="tunnel-key-input">Laptop public key (the <code>.pub</code> file — never a private key)</label>
+      <input id="tunnel-key-input" autocomplete="off" spellcheck="false"
+             placeholder="ssh-ed25519 AAAAC3NzaC1... orewire-tunnel-yourlaptop" />
+    </div>
+    <div style="margin:10px 0 24px;">
+      <button class="btn btn-primary btn-sm" type="button" onclick="saveTunnelKey()">Save key</button>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="clearTunnelKey()">Remove key</button>
+    </div>
+
     <h2>Usage log <span style="font-size:13px;font-weight:normal;color:var(--muted);">(last <span id="proxy-retention-days">3</span> days)</span></h2>
     <div class="table-wrap">
       <table>
@@ -109,6 +127,15 @@ nav li a { color: inherit; text-decoration: none; display: flex; align-items: ce
         <label style="display:flex;align-items:center;gap:8px;margin:14px 0;font-size:14px;">
           <input type="checkbox" id="px-enabled" checked /> Enabled (spawn browser in pool)
         </label>
+        <label style="display:flex;align-items:center;gap:8px;margin:14px 0;font-size:14px;">
+          <input type="checkbox" id="px-fallback-only" /> Fallback only — use this proxy
+          <em>only</em> when every primary in its tier is failing
+        </label>
+        <p style="margin:-6px 0 14px;font-size:12px;opacity:.7;">
+          Tick this on a metered provider so a free primary (e.g. a home-network tunnel)
+          carries normal traffic. Fallback proxies are never used just because the primary
+          is busy — only when it is down.
+        </p>
         <div style="text-align:right;">
           <button type="button" class="btn btn-ghost btn-sm" onclick="closeProxyModal()">Cancel</button>
           <button type="submit" class="btn btn-primary btn-sm">Save</button>

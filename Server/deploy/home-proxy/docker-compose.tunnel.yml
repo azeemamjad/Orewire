@@ -1,0 +1,53 @@
+# Reverse-tunnel endpoint for the laptop proxy.
+#
+# Deploy this ALONGSIDE the backend, attached to the same docker network, so the
+# app reaches the proxy at the stable service name `tunnel:8888`. That avoids
+# both host-level sshd changes and the docker bridge gateway address, which
+# changes whenever the network is recreated.
+#
+# Dokploy: new application -> Compose -> point at this file. Set
+# TUNNEL_AUTHORIZED_KEY and OREWIRE_NETWORK in the environment.
+#
+# Plain compose on the host:
+#   OREWIRE_NETWORK=$(docker inspect -f \
+#     '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' orewire-server) \
+#   TUNNEL_AUTHORIZED_KEY="$(cat ~/.ssh/orewire-tunnel.pub)" \
+#   docker compose -f docker-compose.tunnel.yml up -d --build
+
+services:
+  tunnel:
+    build: ./tunnel
+    image: orewire-tunnel:latest
+    container_name: orewire-tunnel
+    restart: unless-stopped
+    ports:
+      # The ONLY thing exposed to the internet. Key-only auth, and the key can
+      # do nothing but open port 8888 inside this container.
+      - "${TUNNEL_SSH_PORT:-2222}:22"
+    environment:
+      # Contents of the laptop's ~/.ssh/orewire-tunnel.pub. The container adds
+      # the restrict/permitlisten prefix itself so it cannot be forgotten.
+      # Optional. Leave unset and add the key from OreWire Admin -> Proxies
+      # instead — the container reads /keys on every connection, so the panel can
+      # add or rotate it with no redeploy.
+      TUNNEL_AUTHORIZED_KEY: "${TUNNEL_AUTHORIZED_KEY:-}"
+      TUNNEL_LISTEN_PORT: "8888"
+    volumes:
+      # Stable host key — without it the laptop sees a changed host key on every
+      # restart and refuses to connect.
+      - tunnel-hostkeys:/etc/ssh/keys
+      # Must be the SAME volume the backend mounts at /keys.
+      - tunnel-keys:/keys
+    networks:
+      - orewire
+
+networks:
+  orewire:
+    external: true
+    name: "${OREWIRE_NETWORK:?set OREWIRE_NETWORK to the backend's docker network}"
+
+volumes:
+  tunnel-hostkeys:
+  tunnel-keys:
+    external: true
+    name: "${TUNNEL_KEYS_VOLUME:-orewire_tunnel-keys}"

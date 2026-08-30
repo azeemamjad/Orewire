@@ -483,6 +483,10 @@ async function migrate() {
       updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  // fallback_only: use this proxy only when every primary in its tier is down.
+  // Lets a free home-network tunnel be primary and a metered provider stand by,
+  // without splitting traffic between them.
+  await safeQuery(`ALTER TABLE browser_proxies ADD COLUMN IF NOT EXISTS fallback_only BOOLEAN NOT NULL DEFAULT FALSE`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_browser_proxies_tier_enabled ON browser_proxies(tier, enabled, sort_order)`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_browser_proxies_sort ON browser_proxies(sort_order, id)`);
 

@@ -57,6 +57,7 @@ function rowToPlaywrightProxy(row) {
   return {
     proxy_id: row.id,
     tier: row.tier,
+    fallback_only: isFallbackProxy(row),
     relay_tier: tierToRelayTier(row.tier),
     slot: null,
     server,
@@ -100,6 +101,7 @@ function formatProxyRow(row, { includePassword = false } = {}) {
     password: includePassword ? row.password : undefined,
     sessid: row.sessid,
     enabled: row.enabled,
+    fallbackOnly: !!row.fallback_only,
     sortOrder: row.sort_order,
     sessionCount: row.session_count,
     errorCount: row.error_count,
@@ -133,10 +135,27 @@ function getEnabledProxies() {
   return _cache.proxies.filter((p) => p.enabled);
 }
 
+function isFallbackProxy(row) {
+  return !!row?.fallback_only;
+}
+
+/**
+ * Enabled proxies in a tier, primaries first.
+ *
+ * Order is load-bearing: the relay walks this list and only reaches a
+ * fallback-only proxy when every primary is unusable, so a metered provider
+ * never gets traffic just because the free one is busy.
+ */
 function getProxiesForRelayTier(relayTier) {
   const dbTier = relayTierToDbTier(relayTier);
   if (relayTier === 'direct') return [];
-  return getEnabledProxies().filter((p) => p.tier === dbTier);
+  const rows = getEnabledProxies().filter((p) => p.tier === dbTier);
+  return [...rows.filter((p) => !isFallbackProxy(p)), ...rows.filter(isFallbackProxy)];
+}
+
+/** Primaries only — what the pipeline should size its concurrency against. */
+function getPrimaryProxiesForRelayTier(relayTier) {
+  return getProxiesForRelayTier(relayTier).filter((p) => !isFallbackProxy(p));
 }
 
 function workerIdForProxyRow(row) {
@@ -146,6 +165,17 @@ function workerIdForProxyRow(row) {
 function getProxyWorkersForTier(relayTier) {
   if (relayTier === 'direct') return [DIRECT_WORKER_ID];
   return getProxiesForRelayTier(relayTier).map(workerIdForProxyRow);
+}
+
+function getPrimaryProxyWorkersForTier(relayTier) {
+  if (relayTier === 'direct') return [DIRECT_WORKER_ID];
+  return getPrimaryProxiesForRelayTier(relayTier).map(workerIdForProxyRow);
+}
+
+/** Worker ids in a tier that may only be used as a last resort. */
+function getFallbackProxyWorkersForTier(relayTier) {
+  if (relayTier === 'direct') return [];
+  return getProxiesForRelayTier(relayTier).filter(isFallbackProxy).map(workerIdForProxyRow);
 }
 
 function getPoolCounts() {
@@ -280,8 +310,8 @@ async function getProxyById(id) {
 async function createProxy(data) {
   const r = await db.query(
     `INSERT INTO browser_proxies
-      (name, tier, host, port, username, password, sessid, enabled, sort_order)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      (name, tier, host, port, username, password, sessid, enabled, sort_order, fallback_only)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING *`,
     [
       data.name,
@@ -293,6 +323,7 @@ async function createProxy(data) {
       data.sessid || null,
       data.enabled !== false,
       data.sort_order ?? 0,
+      !!data.fallback_only,
     ],
   );
   await refreshProxyCache();
@@ -318,6 +349,7 @@ async function updateProxy(id, data) {
   if (data.sessid !== undefined) set('sessid', data.sessid || null);
   if (data.enabled !== undefined) set('enabled', !!data.enabled);
   if (data.sort_order !== undefined) set('sort_order', data.sort_order);
+  if (data.fallback_only !== undefined) set('fallback_only', !!data.fallback_only);
 
   if (fields.length === 0) return getProxyById(id);
 
@@ -390,6 +422,10 @@ module.exports = {
   getPoolCounts,
   buildWorkerPlans,
   getProxyInventory,
+  isFallbackProxy,
+  getPrimaryProxiesForRelayTier,
+  getPrimaryProxyWorkersForTier,
+  getFallbackProxyWorkersForTier,
   maskProxyForApi,
   parseProxyIdFromWorkerId,
   startUsageEvent,

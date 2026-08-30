@@ -24,7 +24,7 @@ const { applyScraperEnv, restoreScraperEnv, relayWiringEnabled } = require('../l
 const { runSedarDownload } = require('../lib/scraper/runners/sedar');
 const { runAsxDownload } = require('../lib/scraper/runners/asx');
 const { runAnalyzeOne } = require('../lib/scraper/runners/analyze-one');
-const { refreshProxyCache, getProxyWorkersForTier } = require('../relay/proxy-store');
+const { refreshProxyCache, getPrimaryProxyWorkersForTier } = require('../relay/proxy-store');
 
 /**
  * Relay worker slots actually available in a tier right now. Hard-coding this
@@ -33,8 +33,10 @@ const { refreshProxyCache, getProxyWorkersForTier } = require('../relay/proxy-st
  */
 async function relaySlotCount(tier) {
   try {
+    // Primaries only: a fallback-only proxy is standby capacity, not a slot to
+    // schedule against, or the pipeline would dispatch paid traffic by default.
     await refreshProxyCache();
-    return getProxyWorkersForTier(tier).length;
+    return getPrimaryProxyWorkersForTier(tier).length;
   } catch (err) {
     addLog('warn', `[Pipeline] Could not read ${tier} relay pool: ${err.message}`);
     return 0;
@@ -52,26 +54,7 @@ async function relaySlotCount(tier) {
  * Deliberately narrow: generic "timeout" is NOT included, because a slow page or
  * a missing selector times out too and that is a per-company problem.
  */
-const TRANSPORT_ERROR_RE = new RegExp([
-  'err_tunnel_connection_failed',
-  'err_proxy_connection_failed',
-  'err_proxy_auth_requested',
-  'err_no_supported_proxies',
-  'err_connection_refused',
-  'err_connection_reset',
-  'err_connection_closed',
-  'err_connection_failed',
-  'err_name_not_resolved',
-  'err_internet_disconnected',
-  'err_address_unreachable',
-  'econnrefused',
-  'ehostunreach',
-  'enetunreach',
-].join('|'), 'i');
-
-function isTransportError(err) {
-  return TRANSPORT_ERROR_RE.test(err?.message || String(err || ''));
-}
+const { isTransportError } = require('../relay/net-errors');
 
 /**
  * Failures worth trying again after a wait: the network path, and the site

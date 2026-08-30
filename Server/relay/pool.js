@@ -2,6 +2,7 @@ const { STATUS } = require('./constants');
 const { buildWorkerPlans, getPoolCounts, maskProxyForApi, refreshProxyCache } = require('./proxies');
 const { clearQueue } = require('./worker-queue');
 const { launchSession, describeEngine } = require('./engines');
+const proxyHealth = require('./proxy-health');
 const { createScreen } = require('./screen');
 const { forceKillBrowser } = require('./browser-kill');
 const { resolveRelayHeadless } = require('./env');
@@ -51,6 +52,11 @@ class RelayPool {
       busy: !!w.busy,
       currentTask: w.currentTask || null,
       proxy: maskProxyForApi(w.proxy),
+      // "Is this proxy currently carrying traffic, or has the relay failed over
+      // to a paid one?" — the question you actually want answered at a glance.
+      coolingDown: proxyHealth.isCoolingDown(w.id),
+      cooldownRemainingMs: proxyHealth.cooldownRemainingMs(w.id),
+      fallbackOnly: !!w.proxy?.fallback_only,
       engine: w.engine || null,
       driver: w.driver || null,
       channel: w.channel || null,

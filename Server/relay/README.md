@@ -189,6 +189,25 @@ after a bot wall, a crash, or on the local path where each company gets a fresh
 context — so a broken state always falls back to the full navigation.
 `SEDAR_REUSE_SEARCH=false` disables it.
 
+**Breaks.** Every 3-6 companies (re-rolled each time, never periodic) the worker
+stops searching, reads one or two other pages on SEDAR+, and comes back —
+`lib/scraper/utils/session-rhythm.js`. A session that only ever hits the search
+form, at a constant rate, with no other navigation, is a recognisable shape no
+matter how clean the fingerprint is.
+
+The browse targets are copied **verbatim** from the landing page's own links, and
+deliberately exclude anything with side effects: no Filer Login, no Register to
+File, no alert-subscription forms, and not the French locale (which would break
+the scraper's selectors). Do not reconstruct these URLs from memory — SEDAR+
+answers an unknown `service=` name with HTTP 200 and a blank shell, so a typo
+fails silently and leaves the browser repeatedly requesting a page that does not
+exist, which is worse than not browsing at all.
+
+Breaks cost some search-page reuse: after reading elsewhere the worker is no
+longer on a search page, so the next company does a full navigation. That is the
+intended trade — the point is to stop looking mechanical, and it is still roughly
+one navigation per 3-6 companies instead of one per company.
+
 **Retries and the circuit breaker.** A company gets `PIPELINE_COMPANY_ATTEMPTS`
 tries (3) spaced `PIPELINE_RETRY_DELAY_MS` apart (5 min), but only for failures
 worth retrying: proxy/network errors, a 403 or perfdrive redirect, a timeout, or
@@ -206,6 +225,29 @@ single dead proxy once produced 1559 identical `ERR_TUNNEL_CONNECTION_FAILED`
 errors at roughly one company per second. Note the split: a 403 or bot wall is
 retried but does *not* count toward the breaker — that is the site, not the
 network.
+
+## Proxy failover
+
+A proxy row can be marked **Fallback only** (Admin → Proxies). Such a proxy is
+used only when every primary in its tier is failing — never merely because the
+primary is busy. That is what lets a free home-network tunnel carry normal
+traffic with a metered provider standing behind it, without a queue backlog
+quietly running up a bill. Pipeline concurrency is sized on *primary* slots for
+the same reason.
+
+Health cannot be probed at acquire time: a browser launched with a dead proxy
+starts cleanly and only fails on the first navigation. So `relay/proxy-health.js`
+learns it from task outcomes — `RELAY_PROXY_FAILURES_BEFORE_COOLDOWN` (3)
+consecutive transport failures take a proxy out for `RELAY_PROXY_COOLDOWN_MS`
+(10 min), and any success resets the streak. A 403 or bot wall deliberately does
+**not** count: that is SEDAR+ throttling you, and paying for a different exit
+would not fix it.
+
+Admin → Relay shows `coolingDown` per worker, so "am I spending money right now"
+is answerable at a glance.
+
+Setup for the home-network tunnel, including how to stop it becoming an open
+proxy: [deploy/home-proxy-setup.md](../deploy/home-proxy-setup.md).
 
 ## If it starts failing again
 

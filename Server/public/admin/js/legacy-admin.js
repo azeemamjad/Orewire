@@ -2584,6 +2584,10 @@ function openProxyModal(id) {
   document.getElementById('px-id').value = id ? String(id) : '';
   document.getElementById('proxy-modal-title').textContent = id ? 'Edit proxy' : 'Add proxy';
   document.getElementById('px-enabled').checked = true;
+  // form.reset() already clears this, but be explicit: a new proxy must never
+  // inherit "fallback only" from whatever row was edited last.
+  const fbNew = document.getElementById('px-fallback-only');
+  if (fbNew) fbNew.checked = false;
   if (id) {
     const row = (_proxiesCache || []).find((p) => p.id === id);
     if (row) {
@@ -2593,6 +2597,8 @@ function openProxyModal(id) {
       document.getElementById('px-port').value = row.port || '';
       document.getElementById('px-username').value = row.username || '';
       document.getElementById('px-sessid').value = row.sessid || '';
+      const fb = document.getElementById('px-fallback-only');
+      if (fb) fb.checked = !!row.fallbackOnly;
       document.getElementById('px-sort').value = row.sortOrder ?? 0;
       document.getElementById('px-enabled').checked = !!row.enabled;
     }
@@ -2645,7 +2651,59 @@ async function loadProxyUsageLog() {
   }
 }
 
+async function loadTunnelKey() {
+  const el = document.getElementById('tunnel-key-status');
+  if (!el) return;
+  try {
+    const data = await fetch(`${API}/api/admin/proxies/tunnel-key`).then((r) => r.json());
+    const t = data.tunnelKey || {};
+    if (!t.writable) {
+      el.innerHTML = '<span style="color:var(--danger,#c00);">The key directory is not writable — '
+        + 'the tunnel container\'s <code>/keys</code> volume is not mounted into this container. '
+        + 'See Server/deploy/home-proxy-setup.md.</span>';
+      return;
+    }
+    el.innerHTML = t.configured
+      ? `<span style="color:var(--ok,#0a0);">✓ Key configured</span> — <code>${esc(t.type || '')}</code> `
+        + `${esc(t.comment || '')} <span style="color:var(--muted);">${esc(t.fingerprintish || '')}</span>`
+      : '<span style="color:var(--muted);">No key configured — the laptop cannot connect yet.</span>';
+  } catch (err) {
+    el.textContent = `Could not read tunnel key: ${err.message}`;
+  }
+}
+
+async function saveTunnelKey() {
+  const input = document.getElementById('tunnel-key-input');
+  if (!input) return;
+  try {
+    const resp = await fetch(`${API}/api/admin/proxies/tunnel-key`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ publicKey: input.value }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Save failed');
+    input.value = '';
+    await loadTunnelKey();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function clearTunnelKey() {
+  if (!confirm('Remove the tunnel key? The laptop will not be able to reconnect until a new one is added.')) return;
+  try {
+    const resp = await fetch(`${API}/api/admin/proxies/tunnel-key`, { method: 'DELETE' });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Remove failed');
+    await loadTunnelKey();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
 async function loadProxies() {
+  loadTunnelKey();
   const tbody = document.getElementById('proxies-body');
   if (!tbody) return;
   tbody.innerHTML = '<tr class="empty-row"><td colspan="9">Loading…</td></tr>';
@@ -2709,6 +2767,7 @@ async function submitProxy(e) {
     port: parseInt(document.getElementById('px-port')?.value, 10),
     username: document.getElementById('px-username')?.value.trim(),
     sessid: document.getElementById('px-sessid')?.value.trim() || null,
+    fallbackOnly: !!document.getElementById('px-fallback-only')?.checked,
     sortOrder: parseInt(document.getElementById('px-sort')?.value, 10) || 0,
     enabled: document.getElementById('px-enabled')?.checked,
   };

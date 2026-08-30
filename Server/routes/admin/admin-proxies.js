@@ -14,6 +14,7 @@ const {
   invalidateProxyCache,
 } = require('../../relay/proxy-store');
 const { retentionDays } = require('../../lib/usage-log-retention');
+const tunnelKey = require('../../lib/infra/tunnel-key');
 
 const router = express.Router();
 
@@ -64,6 +65,9 @@ function validateProxyBody(body, { isCreate = false } = {}) {
   }
   if (body.enabled !== undefined) {
     data.enabled = !!body.enabled;
+  }
+  if (body.fallbackOnly !== undefined) {
+    data.fallback_only = !!body.fallbackOnly;
   }
   if (body.sortOrder !== undefined) {
     data.sort_order = parseInt(body.sortOrder, 10) || 0;
@@ -246,6 +250,30 @@ router.post('/rebuild-pool', async (_req, res) => {
 });
 
 // GET /api/admin/proxies
+// --- Home-network tunnel key -------------------------------------------------
+// Declared before '/:id' or Express matches "tunnel-key" as a proxy id.
+//
+// The tunnel container resolves keys per connection, so writing this file takes
+// effect on the next connection — no redeploy, and no shell on the server.
+
+router.get('/tunnel-key', (_req, res) => {
+  res.json({ tunnelKey: tunnelKey.getKeyInfo() });
+});
+
+router.put('/tunnel-key', express.json(), (req, res) => {
+  const result = tunnelKey.setKey(req.body?.publicKey);
+  if (!result.ok) return res.status(400).json({ error: result.error });
+  console.log('[Relay] Home-tunnel public key updated from the admin panel');
+  res.json({ tunnelKey: tunnelKey.getKeyInfo() });
+});
+
+router.delete('/tunnel-key', (_req, res) => {
+  const result = tunnelKey.clearKey();
+  if (!result.ok) return res.status(500).json({ error: result.error });
+  console.log('[Relay] Home-tunnel public key removed from the admin panel');
+  res.json({ tunnelKey: tunnelKey.getKeyInfo() });
+});
+
 router.get('/', async (_req, res) => {
   try {
     const rows = await listAllProxies();
@@ -308,6 +336,7 @@ router.post('/', express.json(), async (req, res) => {
       password: v.data.password,
       sessid: v.data.sessid,
       enabled: v.data.enabled !== undefined ? v.data.enabled : true,
+      fallback_only: !!v.data.fallback_only,
       sort_order: Number.isFinite(v.data.sort_order) ? v.data.sort_order : 0,
     });
     invalidateProxyCache();

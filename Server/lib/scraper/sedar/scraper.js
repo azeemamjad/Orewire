@@ -5,6 +5,7 @@ const path = require('path');
 const { humanDelay, humanClick, humanType, randomViewport, STEALTH_INIT } = require('../utils/human');
 const { withBrowserSession } = require('../utils/browser-session');
 const ledger = require('../utils/download-ledger');
+const { maybeTakeBreak } = require('../utils/session-rhythm');
 const { DOWNLOADS_DIR, COOKIE_FILE } = require('../paths');
 
 const BASE_URL = 'https://www.sedarplus.ca/home/';
@@ -530,6 +531,14 @@ async function downloadPage(page, companyDir, pageNum, saved, companyName, tally
 
 async function scrapeSedarOnPage(page, context, companyName, options = {}) {
   const { guardCaptcha } = options;
+
+  // Before anything else: if this session has done a few companies back to back,
+  // stop and read something else for a while. Constant-rate searching with zero
+  // other navigation is a shape the wall scores, however clean the fingerprint.
+  await maybeTakeBreak(page, {
+    sessionKey: options.sessionKey,
+    guardCaptcha,
+  });
   const downloadBase = DOWNLOADS_DIR;
   const companyDir   = path.join(downloadBase, companyName.replace(/[^\w\s-]/g, '_').trim());
   fs.mkdirSync(companyDir, { recursive: true });
@@ -585,7 +594,7 @@ async function scrapeSedar(companyName, options = {}) {
   return withBrowserSession(
     taskSlug,
     { relaySlot: options.relaySlot || 1, contextOptions: buildContextOptions() },
-    async ({ page, context, guardCaptcha }) => {
+    async ({ page, context, guardCaptcha, workerId }) => {
     if (process.env.OREWIRE_RELAY !== 'in-process') {
       await context.addInitScript(STEALTH_INIT);
       await loadCookies(context);
@@ -597,6 +606,9 @@ async function scrapeSedar(companyName, options = {}) {
       return await scrapeSedarOnPage(page, context, companyName, {
         daysBack: options.daysBack,
         guardCaptcha,
+        // The relay reuses one page per worker, so the break counter has to be
+        // keyed on the worker rather than the (new every call) scrape.
+        sessionKey: workerId || 'local',
       });
     } finally {
       await saveCookies(context);

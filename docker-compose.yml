@@ -22,7 +22,30 @@ services:
       COOKIE_FILE: ./data/cookies.json
     volumes:
       - server-data:/app/data
+      # Shared with the tunnel container: the admin panel writes the laptop's
+      # public key here, sshd reads it on each connection.
+      - tunnel-keys:/keys
     shm_size: "1gb"
+    restart: unless-stopped
+
+  # Reverse-tunnel endpoint for the laptop proxy (optional).
+  # The backend reaches it at the stable name `tunnel:8888` — no host sshd
+  # changes, and no docker gateway address that shifts when the network is
+  # recreated. Only starts if you supply a key:
+  #   TUNNEL_AUTHORIZED_KEY="$(cat ~/.ssh/orewire-tunnel.pub)" docker compose up -d
+  tunnel:
+    build:
+      context: ./Server/deploy/home-proxy/tunnel
+    container_name: orewire-tunnel
+    profiles: ["tunnel"]
+    ports:
+      - "${TUNNEL_SSH_PORT:-2222}:22"
+    environment:
+      TUNNEL_AUTHORIZED_KEY: "${TUNNEL_AUTHORIZED_KEY:-}"
+      TUNNEL_LISTEN_PORT: "8888"
+    volumes:
+      - tunnel-hostkeys:/etc/ssh/keys
+      - tunnel-keys:/keys
     restart: unless-stopped
 
   frontend:
@@ -43,3 +66,5 @@ services:
 
 volumes:
   server-data:
+  tunnel-hostkeys:
+  tunnel-keys:
