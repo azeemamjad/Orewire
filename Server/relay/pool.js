@@ -3,6 +3,7 @@ const { buildWorkerPlans, getPoolCounts, maskProxyForApi, refreshProxyCache } = 
 const { clearQueue } = require('./worker-queue');
 const { launchSession, describeEngine } = require('./engines');
 const proxyHealth = require('./proxy-health');
+const { reportResources } = require('./resources');
 const { createScreen } = require('./screen');
 const { forceKillBrowser } = require('./browser-kill');
 const { resolveRelayHeadless } = require('./env');
@@ -255,6 +256,9 @@ class RelayPool {
         + `${engineInfo.chromeChannel ? ` channel=${engineInfo.chromeChannel}` : ''}`,
       );
       const plans = buildWorkerPlans();
+      // Logged before launching: when workers die with "browser disconnected",
+      // this is almost always the reason, and it is otherwise invisible.
+      try { reportResources(plans.length); } catch { /* diagnostics only */ }
       if (!plans.length) {
         throw new Error('Relay pool size is 0 — add enabled proxies in Admin → Proxies');
       }
@@ -429,7 +433,12 @@ class RelayPool {
       w.screen = null;
       w.browserPid = null;
       w.status = STATUS.ERROR;
-      w.lastError = opts.reason || w.lastError || 'browser disconnected';
+      // Keep whatever the launch or close actually reported. "browser
+      // disconnected" is the last resort and tells the operator nothing, so only
+      // use it when there is genuinely no better information.
+      w.lastError = opts.reason || w.lastError
+        || 'browser exited unexpectedly (check the deploy log for the [Relay] Resources line — '
+           + 'out of memory is the usual cause)';
       w.busy = false;
       w.currentTask = null;
       console.log(`[Relay] Purged ${id} — Chromium killed (pid ${pid || 'unknown'})`);
