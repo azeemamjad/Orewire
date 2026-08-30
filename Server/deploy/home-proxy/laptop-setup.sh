@@ -39,7 +39,14 @@ echo "   installed"
 
 echo
 echo "== 2. Configure tinyproxy =="
-PROXY_PASS="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 28)"
+# Reuse the existing password when re-running, so the value already pasted into
+# Admin -> Proxies keeps working. FORCE_NEW_PROXY_PASSWORD=1 rotates it.
+PROXY_PASS=""
+if [[ "${FORCE_NEW_PROXY_PASSWORD:-0}" != "1" && -f /etc/tinyproxy/tinyproxy.conf ]]; then
+  PROXY_PASS="$(awk '/^[[:space:]]*BasicAuth[[:space:]]/ {print $3; exit}' /etc/tinyproxy/tinyproxy.conf || true)"
+  [[ -n "$PROXY_PASS" ]] && echo "   reusing the existing proxy password (FORCE_NEW_PROXY_PASSWORD=1 to rotate)"
+fi
+[[ -n "$PROXY_PASS" ]] || PROXY_PASS="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 28)"
 CONF=/etc/tinyproxy/tinyproxy.conf
 [[ -f "$CONF" ]] || die "$CONF not found — is tinyproxy installed?"
 cp "$CONF" "$CONF.orewire.bak.$(date +%s)"
@@ -99,18 +106,35 @@ echo "   running on 127.0.0.1:$PROXY_PORT"
 
 echo
 echo "== 3. Verify the gates actually bite =="
-code_auth="$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 \
-  -x "http://$PROXY_USER:$PROXY_PASS@127.0.0.1:$PROXY_PORT" https://www.sedarplus.ca/home/ || echo 000)"
-code_noauth="$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 \
-  -x "http://127.0.0.1:$PROXY_PORT" https://www.sedarplus.ca/home/ || echo 000)"
-code_denied="$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 \
-  -x "http://$PROXY_USER:$PROXY_PASS@127.0.0.1:$PROXY_PORT" https://example.com/ || echo 000)"
-echo "   sedarplus.ca with credentials : $code_auth   (want 200)"
-echo "   sedarplus.ca without creds    : $code_noauth   (want 407)"
-echo "   example.com  with credentials : $code_denied   (want 403)"
-[[ "$code_auth" == "200" ]] || die "proxy cannot reach SEDAR+ — check the allowlist"
-[[ "$code_noauth" == "407" ]] || die "proxy served a request WITHOUT credentials — do not continue"
-[[ "$code_denied" == "403" ]] || die "proxy reached a non-allowlisted host — do not continue"
+# For an https:// URL through a proxy, curl issues CONNECT. If the proxy refuses,
+# there is no response from the origin at all, so %{http_code} is 000 and the
+# proxy's own answer lands in %{http_connect}. Checking http_code alone reports a
+# correctly-refusing proxy as a failure.
+#
+# Note also: no `|| echo` fallback here. curl's -w still prints on failure, so a
+# fallback would concatenate and produce nonsense like "000000".
+probe() {  # $1 = url, $2 = "auth" | "noauth"  -> prints "<http_code> <http_connect>"
+  local px="http://127.0.0.1:$PROXY_PORT"
+  [ "$2" = "auth" ] && px="http://$PROXY_USER:$PROXY_PASS@127.0.0.1:$PROXY_PORT"
+  curl -s -o /dev/null --max-time 25 -x "$px" -w '%{http_code} %{http_connect}' "$1" || true
+}
+
+read -r ok_code   ok_conn   <<<"$(probe https://www.sedarplus.ca/home/ auth)"
+read -r na_code   na_conn   <<<"$(probe https://www.sedarplus.ca/home/ noauth)"
+read -r den_code  den_conn  <<<"$(probe https://example.com/ auth)"
+
+printf '   %-34s CONNECT=%-4s response=%-4s (want CONNECT 200)\n' "sedarplus.ca with credentials" "$ok_conn"  "$ok_code"
+printf '   %-34s CONNECT=%-4s response=%-4s (want CONNECT 407)\n' "sedarplus.ca without creds"   "$na_conn"  "$na_code"
+printf '   %-34s CONNECT=%-4s response=%-4s (want CONNECT 403)\n' "example.com with credentials" "$den_conn" "$den_code"
+
+# The origin may answer 200 or a redirect depending on locale/session, so accept
+# any non-error status once the tunnel is open.
+[[ "$ok_conn" == "200" && "$ok_code" =~ ^[23] ]] \
+  || die "proxy cannot reach SEDAR+ (CONNECT=$ok_conn response=$ok_code) — check the allowlist and Allow/BasicAuth lines"
+[[ "$na_conn" == "407" ]] \
+  || die "proxy did NOT demand credentials (CONNECT=$na_conn) — do not continue; check the BasicAuth line"
+[[ "$den_conn" == "403" ]] \
+  || die "proxy reached a non-allowlisted host (CONNECT=$den_conn) — do not continue; check Filter/FilterDefaultDeny"
 echo "   all three gates behave correctly"
 
 echo
