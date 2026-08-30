@@ -29,6 +29,7 @@
  */
 const fs = require('fs');
 const fsp = require('fs/promises');
+const path = require('path');
 const { getChromium, driverName } = require('./driver');
 const { resolveGeoForProxy } = require('../geo');
 
@@ -142,6 +143,44 @@ async function findPidByProfile(profileDir) {
   }
 }
 
+/**
+ * Remove a profile lock left behind by a container that no longer exists.
+ *
+ * Chrome writes `SingletonLock` (a symlink naming <hostname>-<pid>) into every
+ * user-data-dir. Now that profiles live on a persistent volume, that lock
+ * outlives the container that created it, and the next deploy gets a new
+ * hostname — so Chrome decides the profile is "in use by another computer",
+ * refuses to start, and launchPersistentContext hangs until it times out:
+ *
+ *   The profile appears to be in use by another Google Chrome process (1760)
+ *   on another computer (a8c8bf737a80).
+ *
+ * Only clears the lock when no live process is actually holding the directory,
+ * so a genuinely concurrent Chrome is never yanked out from under itself.
+ */
+async function clearStaleProfileLock(profileDir) {
+  const live = await findPidByProfile(profileDir);
+  if (live) return false;
+
+  let cleared = false;
+  for (const name of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
+    const target = path.join(profileDir, name);
+    try {
+      // lstat, not stat: SingletonLock is a symlink and its target never exists,
+      // so stat() would throw on exactly the file we need to remove.
+      fs.lstatSync(target);
+      fs.rmSync(target, { force: true });
+      cleared = true;
+    } catch {
+      /* not present */
+    }
+  }
+  if (cleared) {
+    console.log(`[Relay] Cleared a stale Chrome profile lock in ${profileDir} (left by a previous container)`);
+  }
+  return cleared;
+}
+
 /** Real inner size of the window, since `viewport: null` makes Playwright report null. */
 async function measureViewport(page, fallback) {
   try {
@@ -167,6 +206,7 @@ async function launch({ profileDir, proxy, window, headless }) {
   const geo = await resolveGeoForProxy(proxy);
 
   fs.mkdirSync(profileDir, { recursive: true });
+  await clearStaleProfileLock(profileDir);
 
   const args = [`--window-size=${window.width},${window.height}`];
   if (needsNoSandbox()) args.push('--no-sandbox');
@@ -214,4 +254,4 @@ async function launch({ profileDir, proxy, window, headless }) {
   };
 }
 
-module.exports = { launch, resolveChannel, findPidByProfile };
+module.exports = { launch, resolveChannel, findPidByProfile, clearStaleProfileLock };
