@@ -57,19 +57,25 @@ function validateProxyBody(body, { isCreate = false } = {}) {
     data.port = port;
   }
 
+  // JSON null must stay null. String(null) is the four-character text "null",
+  // which is exactly how a cleared Sessid ended up rewriting usernames into
+  // customer-USER-sessid-null — and the form then redisplayed "null", so
+  // clearing it again could never work.
+  const nullable = (v) => (v == null ? null : (String(v).trim() || null));
+
   if (body.username !== undefined) {
-    data.username = String(body.username).trim() || null;
+    data.username = nullable(body.username);
   }
   if (body.password !== undefined) {
     // Trim like the username above. A proxy password with leading or trailing
     // whitespace is never intentional, whereas pasting one out of a terminal
     // almost always brings a trailing newline — and the resulting auth failure is
     // invisible: the proxy just answers 401 and the browser reports a generic
-    // tunnel error.
-    data.password = String(body.password).trim();
+    // tunnel error. A null here means "leave it alone", never the text "null".
+    data.password = body.password == null ? '' : String(body.password).trim();
   }
   if (body.sessid !== undefined) {
-    data.sessid = String(body.sessid).trim() || null;
+    data.sessid = nullable(body.sessid);
   }
   if (body.enabled !== undefined) {
     data.enabled = !!body.enabled;

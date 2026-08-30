@@ -47,12 +47,28 @@ function relayTierToDbTier(tier) {
   return 'datacenter';
 }
 
+/**
+ * Treat the literal strings "null"/"undefined" as empty.
+ *
+ * An earlier version of the admin route ran String() over a JSON null and stored
+ * the four-character text "null". A sessid of "null" is truthy, so it rewrote
+ * usernames into customer-USER-sessid-null and every request came back 401. This
+ * heals rows already holding that value instead of requiring a re-save.
+ */
+function cleanField(v) {
+  if (v == null) return null;
+  const t = String(v).trim();
+  if (!t || t === 'null' || t === 'undefined') return null;
+  return t;
+}
+
 function rowToPlaywrightProxy(row) {
   if (!row) return getDirectProxyConfig();
   const server = `http://${row.host}:${row.port}`;
-  let username = row.username || null;
-  if (row.tier === 'residential' && username && row.sessid) {
-    username = residentialUsername(username, row.sessid);
+  let username = cleanField(row.username);
+  const sessid = cleanField(row.sessid);
+  if (row.tier === 'residential' && username && sessid) {
+    username = residentialUsername(username, sessid);
   }
   return {
     proxy_id: row.id,
