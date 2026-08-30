@@ -97,6 +97,11 @@ function formatProxyRow(row, { includePassword = false } = {}) {
     // Admin edit form reuses this value — do not mask (sessid-*** would corrupt saves).
     username: row.username || null,
     usernameDisplay: maskUsername(row.username),
+    // What actually goes on the wire. A Sessid rewrites the username into
+    // Oxylabs' customer-USER-sessid-XXX form, which is invisible in the plain
+    // `username` field and produces a 401 against any other provider.
+    effectiveUsername: maskUsername(rowToPlaywrightProxy(row).username),
+    usernameRewritten: !!(row.username && rowToPlaywrightProxy(row).username !== row.username),
     passwordSet: !!row.password,
     password: includePassword ? row.password : undefined,
     sessid: row.sessid,

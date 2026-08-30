@@ -139,7 +139,7 @@ async function probeUrl(page, url, timeoutMs) {
  * configuration, and the proxy applied at launch so it cannot silently fall
  * through to a direct connection and report a false OK.
  */
-async function testPlaywrightProxy(proxyConfig) {
+async function testPlaywrightProxy(proxyConfig, rawUsername = null) {
   const started = Date.now();
   let session;
   const directIp = await fetchDirectExitIp();
@@ -198,7 +198,7 @@ async function testPlaywrightProxy(proxyConfig) {
     let error = err.message;
     // Turn Chrome's opaque tunnel error into the proxy's own answer.
     if (/ERR_TUNNEL_CONNECTION_FAILED|ERR_PROXY_CONNECTION_FAILED/.test(error)) {
-      const probe = await rawConnectProbe(proxyConfig).catch(() => null);
+      const probe = await rawConnectProbe(proxyConfig, 'api.ipify.org', 443, rawUsername).catch(() => null);
       if (probe?.hint) error = `${error}\n\nProxy said "${probe.status}" — ${probe.hint}.`;
     }
     return {
@@ -281,7 +281,7 @@ router.post('/rebuild-pool', async (_req, res) => {
  * Note tinyproxy answers a *wrong* credential with 401 and a *missing* one with
  * 407, so both are treated as an auth failure.
  */
-function rawConnectProbe(proxyConfig, targetHost = 'api.ipify.org', targetPort = 443) {
+function rawConnectProbe(proxyConfig, targetHost = 'api.ipify.org', targetPort = 443, rawUsername = null) {
   return new Promise((resolve) => {
     if (!proxyConfig?.server) return resolve(null);
     const bare = String(proxyConfig.server).replace(/^https?:\/\//, '');
@@ -311,6 +311,14 @@ function rawConnectProbe(proxyConfig, targetHost = 'api.ipify.org', targetPort =
       if (code === 401 || code === 407) {
         hint = 'the proxy rejected the credentials — check the Username/Password on this row '
              + 'against the proxy\'s own configuration';
+        // The most common cause of "but I pasted the exact credentials": a
+        // Sessid on a residential row rewrites the username on the way out.
+        if (proxyConfig.username && proxyConfig.username !== rawUsername) {
+          hint += `. NOTE: the username actually sent was "${proxyConfig.username}", not `
+                + `"${rawUsername}" — a Sessid is set on this row, which rewrites the username `
+                + 'into Oxylabs\' customer-USER-sessid-XXX form. Clear the Sessid field for a '
+                + 'non-Oxylabs proxy';
+        }
       } else if (code === 403) {
         hint = `the proxy refused to connect to ${targetHost} — it is not on the proxy's `
              + 'destination allowlist';
@@ -571,7 +579,7 @@ router.post('/:id/test', async (req, res) => {
     const row = await getProxyById(id);
     if (!row) return res.status(404).json({ error: 'Proxy not found' });
     const proxyConfig = rowToPlaywrightProxy(row);
-    const result = await testPlaywrightProxy(proxyConfig);
+    const result = await testPlaywrightProxy(proxyConfig, row.username || null);
     res.json({ proxy: formatProxyRow(row), test: result });
   } catch (err) {
     console.error('Test proxy failed:', err?.message || err);

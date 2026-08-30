@@ -2783,7 +2783,10 @@ async function loadProxies() {
         <td>${esc(p.name)}${roleTag}</td>
         <td>${tierTag(p.tier)}</td>
         <td><code>${esc(p.host)}:${p.port}</code></td>
-        <td>${esc(p.usernameDisplay || p.username || (p.passwordSet ? '••••' : 'N/A'))}</td>
+        <td>${esc(p.usernameDisplay || p.username || (p.passwordSet ? '••••' : 'N/A'))}${
+          p.usernameRewritten
+            ? `<br><span title="A Sessid rewrites the username before it is sent" style="font-size:11px;color:var(--danger,#c00);">sent as ${esc(p.effectiveUsername || '')}</span>`
+            : ''}</td>
         <td class="${enabledCls}">${enabledTxt}</td>
         <td>${p.sessionCount ?? 0}</td>
         <td>${p.errorCount ?? 0}</td>
