@@ -61,7 +61,12 @@ function validateProxyBody(body, { isCreate = false } = {}) {
     data.username = String(body.username).trim() || null;
   }
   if (body.password !== undefined) {
-    data.password = String(body.password);
+    // Trim like the username above. A proxy password with leading or trailing
+    // whitespace is never intentional, whereas pasting one out of a terminal
+    // almost always brings a trailing newline — and the resulting auth failure is
+    // invisible: the proxy just answers 401 and the browser reports a generic
+    // tunnel error.
+    data.password = String(body.password).trim();
   }
   if (body.sessid !== undefined) {
     data.sessid = String(body.sessid).trim() || null;
@@ -190,9 +195,15 @@ async function testPlaywrightProxy(proxyConfig) {
       probe,
     };
   } catch (err) {
+    let error = err.message;
+    // Turn Chrome's opaque tunnel error into the proxy's own answer.
+    if (/ERR_TUNNEL_CONNECTION_FAILED|ERR_PROXY_CONNECTION_FAILED/.test(error)) {
+      const probe = await rawConnectProbe(proxyConfig).catch(() => null);
+      if (probe?.hint) error = `${error}\n\nProxy said "${probe.status}" — ${probe.hint}.`;
+    }
     return {
       ok: false,
-      error: err.message,
+      error,
       ms: Date.now() - started,
       url: IP_CHECK_URL,
       directIp,
@@ -259,6 +270,75 @@ router.post('/rebuild-pool', async (_req, res) => {
  * That last one is easy to get wrong silently: writing the key always appears to
  * succeed, because the directory is created if missing.
  */
+/**
+ * Ask the proxy directly what it thinks of us.
+ *
+ * Chrome collapses every CONNECT failure into ERR_TUNNEL_CONNECTION_FAILED —
+ * bad credentials, a blocked destination and a dead upstream all look the same.
+ * A raw CONNECT gets the actual status line back, which is the difference
+ * between "fix the password" and "fix the allowlist".
+ *
+ * Note tinyproxy answers a *wrong* credential with 401 and a *missing* one with
+ * 407, so both are treated as an auth failure.
+ */
+function rawConnectProbe(proxyConfig, targetHost = 'api.ipify.org', targetPort = 443) {
+  return new Promise((resolve) => {
+    if (!proxyConfig?.server) return resolve(null);
+    const bare = String(proxyConfig.server).replace(/^https?:\/\//, '');
+    const idx = bare.lastIndexOf(':');
+    const host = idx > 0 ? bare.slice(0, idx) : bare;
+    const port = idx > 0 ? parseInt(bare.slice(idx + 1), 10) : 80;
+    let settled = false;
+    const done = (v) => { if (!settled) { settled = true; try { sock.destroy(); } catch { /* ignore */ } resolve(v); } };
+
+    const sock = net.connect({ host, port });
+    sock.setTimeout(12000);
+    sock.on('connect', () => {
+      let req = `CONNECT ${targetHost}:${targetPort} HTTP/1.1\r\nHost: ${targetHost}:${targetPort}\r\n`;
+      if (proxyConfig.username) {
+        const b64 = Buffer.from(`${proxyConfig.username}:${proxyConfig.password || ''}`).toString('base64');
+        req += `Proxy-Authorization: Basic ${b64}\r\n`;
+      }
+      sock.write(`${req}\r\n`);
+    });
+    let buf = '';
+    sock.on('data', (chunk) => {
+      buf += chunk.toString('latin1');
+      if (!buf.includes('\r\n')) return;
+      const status = buf.split('\r\n')[0] || '';
+      const code = parseInt((status.match(/\s(\d{3})\s?/) || [])[1], 10) || 0;
+      let hint = null;
+      if (code === 401 || code === 407) {
+        hint = 'the proxy rejected the credentials — check the Username/Password on this row '
+             + 'against the proxy\'s own configuration';
+      } else if (code === 403) {
+        hint = `the proxy refused to connect to ${targetHost} — it is not on the proxy's `
+             + 'destination allowlist';
+      } else if (code && code !== 200) {
+        hint = `the proxy answered "${status.trim()}"`;
+      }
+      done({ code, status: status.trim(), hint });
+    });
+    sock.on('timeout', () => done({ code: 0, status: 'timeout', hint: 'the proxy did not answer' }));
+    sock.on('error', (err) => done({ code: 0, status: err.code || 'error', hint: `could not reach the proxy (${err.code || err.message})` }));
+  });
+}
+
+/** Plain TCP reachability check. */
+function tcpProbe(host, port, timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    const sock = net.connect({ host, port });
+    const done = (err) => {
+      try { sock.destroy(); } catch { /* ignore */ }
+      resolve(err ? { ok: false, code: err.code || 'ERROR' } : { ok: true, code: null });
+    };
+    sock.setTimeout(timeoutMs);
+    sock.on('connect', () => done(null));
+    sock.on('timeout', () => done({ code: 'ETIMEDOUT' }));
+    sock.on('error', done);
+  });
+}
+
 async function probeTunnelEndpoint(host, port) {
   const out = { host, port, dns: null, address: null, reachable: false, error: null };
   try {
@@ -303,14 +383,46 @@ async function probeTunnelEndpoint(host, port) {
   return out;
 }
 
+/**
+ * Is our own sshd up? This separates the two causes that otherwise look
+ * identical from the browser: the image not carrying the tunnel sshd at all
+ * (nothing listening in here), versus it running fine but the laptop never
+ * arriving (port 2222 not published, or the laptop's service failing).
+ */
+async function probeLocalSshd() {
+  const port = parseInt(process.env.TUNNEL_SSHD_PORT || '2222', 10) || 2222;
+  const r = await tcpProbe('127.0.0.1', port, 3000);
+  return { port, listening: r.ok, code: r.code, enabled: process.env.TUNNEL_SSHD !== '0' };
+}
+
 router.get('/tunnel-status', async (req, res) => {
   // The tunnel terminates on this container's loopback, so that is the default.
   const host = String(req.query.host || process.env.TUNNEL_PROXY_HOST || '127.0.0.1');
   const rawPort = parseInt(String(req.query.port || process.env.TUNNEL_PROXY_PORT || '8888'), 10);
   const port = Number.isFinite(rawPort) && rawPort > 0 && rawPort <= 65535 ? rawPort : 8888;
   const key = tunnelKey.getKeyInfo();
-  const endpoint = await probeTunnelEndpoint(host, port);
-  res.json({ tunnelKey: key, endpoint });
+  const [endpoint, sshd] = await Promise.all([
+    probeTunnelEndpoint(host, port),
+    probeLocalSshd(),
+  ]);
+
+  // Replace the generic "not connected" text once we know whether sshd is even
+  // running — otherwise the operator is left checking three things at once.
+  if (!endpoint.reachable && endpoint.error && /Nothing is listening/.test(endpoint.error)) {
+    endpoint.error = sshd.listening
+      ? `The tunnel sshd is running on port ${sshd.port} inside this container, but your laptop `
+        + 'has not connected to it. Either port 2222 is not published on this app in Dokploy, or '
+        + 'the laptop cannot reach it — run `journalctl -u orewire-tunnel -n 20` on the laptop: '
+        + '"Connection refused/timed out" means the port is not published, "Permission denied '
+        + '(publickey)" means the key above is not the one the laptop is using.'
+      : sshd.enabled
+        ? `Nothing is listening on port ${sshd.port} inside this container either — this image was `
+          + 'built without the tunnel sshd. Redeploy so the image is rebuilt from the current '
+          + 'Dockerfile, and check the deploy log for "[entrypoint] tunnel sshd listening".'
+        : 'The tunnel sshd is disabled (TUNNEL_SSHD=0 in this app\'s environment).';
+  }
+
+  res.json({ tunnelKey: key, endpoint, sshd });
 });
 
 router.get('/tunnel-key', (_req, res) => {

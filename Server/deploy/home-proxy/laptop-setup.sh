@@ -21,6 +21,11 @@ TUNNEL_PORT="${TUNNEL_PORT:-8888}"          # bound on that container's loopback
 PROXY_PORT="${PROXY_PORT:-3128}"
 PROXY_USER="${PROXY_USER:-orewire}"
 ENABLE_AT_BOOT="${ENABLE_AT_BOOT:-1}"
+# Force IPv4. If the host has AAAA records and this machine has no IPv6 route,
+# ssh tries the v6 address first and dies with "Network is unreachable" — which
+# reads like the server is down rather than a local routing gap.
+# Set SSH_FAMILY="" to let ssh choose, or "-6" to force IPv6.
+SSH_FAMILY="${SSH_FAMILY:--4}"
 RUN_AS="${RUN_AS:-${SUDO_USER:-$(logname 2>/dev/null || echo root)}}"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -138,6 +143,51 @@ printf '   %-34s CONNECT=%-4s response=%-4s (want CONNECT 403)\n' "example.com w
 echo "   all three gates behave correctly"
 
 echo
+echo "== 3b. Can this machine actually reach the tunnel port? =="
+# Worth checking before installing a service that would otherwise retry forever.
+_t0=$(date +%s%N)
+if timeout 12 bash -c "echo > /dev/tcp/$SERVER_HOST/$SSH_PORT" 2>/dev/null; then
+  echo "   ${SERVER_HOST}:${SSH_PORT} is reachable"
+else
+  _ms=$(( ($(date +%s%N) - _t0) / 1000000 ))
+  echo "   ${SERVER_HOST}:${SSH_PORT} is NOT reachable."
+  # A refused connection comes back instantly with an RST; a firewall silently
+  # drops the packets and the connect runs to timeout. Very different fixes.
+  if [ "$_ms" -ge 5000 ]; then
+    echo "   The connection was dropped, not refused (${_ms}ms) — a firewall is blocking"
+    echo "   port ${SSH_PORT}. Open it in your provider's firewall panel (and in ufw on the"
+    echo "   server if it is enabled), as well as publishing it on the app."
+  else
+    echo "   The connection was refused immediately (${_ms}ms) — the host is reachable but"
+    echo "   nothing is listening. Publish port ${SSH_PORT} on the backend app in Dokploy"
+    echo "   (Advanced -> Ports, published ${SSH_PORT} -> target ${SSH_PORT}); note that adding"
+    echo "   a Domain does NOT publish a TCP port."
+  fi
+  # A CDN-proxied hostname is the classic cause: the name resolves to the CDN,
+  # which forwards HTTP/HTTPS only and silently drops everything else.
+  cdn="$(curl -sS -I --max-time 10 "https://$SERVER_HOST/" 2>/dev/null \
+        | tr -d '\r' | awk 'tolower($1)=="server:"{print $2}')"
+  case "$(printf '%s' "$cdn" | tr 'A-Z' 'a-z')" in
+    cloudflare|*cloudflare*)
+      echo
+      echo "   >>> \"$SERVER_HOST\" is proxied through Cloudflare."
+      echo "       Cloudflare forwards HTTP/HTTPS only — it will never carry port $SSH_PORT,"
+      echo "       whatever you publish in Dokploy. Point this tunnel at the origin instead:"
+      echo "         - add a DNS-only (grey cloud) record, e.g. ssh.orewire.com -> your server IP"
+      echo "         - then re-run with SERVER_HOST=ssh.orewire.com"
+      echo "       Also publish $SSH_PORT on the app in Dokploy and open it in the server firewall."
+      ;;
+    *)
+      echo "       Publish port $SSH_PORT on the backend app in Dokploy, and open it in the"
+      echo "       server's firewall. If the name sits behind a CDN or load balancer, point"
+      echo "       SERVER_HOST at the origin host instead."
+      ;;
+  esac
+  echo
+  echo "   Continuing anyway — the service retries, so it will connect once this is fixed."
+fi
+
+echo
 echo "== 4. SSH key (used for nothing else) =="
 if [[ -f "$KEY" ]]; then
   echo "   reusing $KEY"
@@ -165,6 +215,7 @@ User=$RUN_AS
 # session forwarding nothing, and the relay sees a black hole instead of a
 # clean failure it can fail over from.
 ExecStart=/usr/bin/autossh -M 0 -N \\
+  $SSH_FAMILY \\
   -o ServerAliveInterval=30 \\
   -o ServerAliveCountMax=3 \\
   -o ExitOnForwardFailure=yes \\

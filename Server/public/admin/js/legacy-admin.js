@@ -2662,6 +2662,7 @@ async function loadTunnelKey() {
     const data = await fetch(`${API}/api/admin/proxies/tunnel-status${qs}`).then((r) => r.json());
     const t = data.tunnelKey || {};
     const ep = data.endpoint || {};
+    const sshd = data.sshd || {};
     if (!t.writable) {
       el.innerHTML = '<span style="color:var(--danger,#c00);">The key directory is not writable — '
         + 'the tunnel container\'s <code>/keys</code> volume is not mounted into this container. '
@@ -2680,6 +2681,15 @@ async function loadTunnelKey() {
       rows.push('<span style="color:var(--danger,#c00);">✗ <code>' + esc(t.path || '')
         + '</code> is not on a volume</span> — the key is in the container\'s writable layer and will '
         + 'be lost on the next deploy. Mount a persistent volume at <code>/app/data</code>.');
+    }
+
+    if (sshd.enabled === false) {
+      rows.push('<span style="color:var(--muted);">Tunnel sshd disabled (<code>TUNNEL_SSHD=0</code>).</span>');
+    } else {
+      rows.push(sshd.listening
+        ? `<span style="color:var(--ok,#0a0);">✓ Tunnel sshd running</span> on port ${sshd.port} inside this container`
+        : `<span style="color:var(--danger,#c00);">✗ Tunnel sshd not running</span> on port ${sshd.port} — this image `
+          + 'was built without it; redeploy to rebuild from the current Dockerfile');
     }
 
     rows.push(ep.reachable

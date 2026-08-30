@@ -92,8 +92,24 @@ Two settings on the **existing backend application**, then redeploy:
 
 | setting | value |
 |---|---|
-| **Ports** | publish `2222` → `2222` |
+| **Ports** | Published `2222` → Target `2222`, TCP, mode **Ingress** |
 | **Volumes** | a persistent volume mounted at `/app/data` |
+
+Use **Ingress**, not Host. Host mode binds the port directly to the container,
+which sounds like the better fit — but Swarm then cannot replace the old task
+during a deploy (it still holds the port), so every deploy needs a manual
+stop/start. With a single replica there is nothing for ingress to load-balance
+across, and the tunnel's 30s keepalives on both ends stop the routing mesh from
+dropping it as idle.
+
+Note this assumes **one replica**. Scale the backend past one and the tunnel
+terminates in whichever container the laptop reached; the others find nothing on
+`127.0.0.1:8888` and fail over to the paid proxy. Host mode does not solve that
+either — only one task could bind the port at all.
+
+Adding a **Domain** does not publish a TCP port: a Domain creates a Traefik HTTP
+router, which terminates TLS on 443 and speaks HTTP to the container. SSH is not
+HTTP, so it does nothing here.
 
 The volume is what makes the key and the SSH host key survive a redeploy. Without
 it the panel will warn you, rather than silently losing the key on the next
