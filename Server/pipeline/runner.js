@@ -119,6 +119,28 @@ const TRANSPORT_FAILURE_LIMIT = Math.max(
 );
 
 /**
+ * Pause instead of abort. When the proxy (e.g. the home-network tunnel) drops,
+ * every remaining company fails identically at the transport layer. Rather than
+ * aborting the run, the pipeline pauses for this long, then probes again — so a
+ * run resumes on its own the moment the proxy is back. 0 restores the old
+ * abort-on-failure behaviour.
+ */
+const PROXY_PAUSE_MS = Math.max(
+  0,
+  parseInt(process.env.PIPELINE_PROXY_PAUSE_MS || '300000', 10),
+);
+
+/**
+ * Total pause budget per run. Once the accumulated pause time exceeds this the
+ * run gives up and aborts (companies stay unmarked). 0 (default) means never
+ * give up: keep pausing until the proxy returns or the run is stopped.
+ */
+const PROXY_PAUSE_MAX_MS = Math.max(
+  0,
+  parseInt(process.env.PIPELINE_PROXY_PAUSE_MAX_MS || '0', 10),
+);
+
+/**
  * Hand out at most `limit` concurrent permits. A SEDAR+ download holds its
  * relay worker for the whole scrape, so without this the extra download workers
  * queue on a busy worker and die with "No available 'res' relay worker".
@@ -213,10 +235,12 @@ async function runDownloadQueue(companies, cfg) {
   };
 
   // Circuit breaker: consecutive transport failures mean the proxy/network is
-  // down, and every remaining company will fail the same way. Stop instead of
-  // converting a proxy outage into thousands of "errored" companies that then
-  // have to be found and re-queued by hand.
+  // down, and every remaining company will fail the same way. Instead of
+  // converting a proxy outage into thousands of "errored" companies (or
+  // aborting the run), the pipeline pauses and re-probes, resuming on its own
+  // once the proxy is back.
   let consecutiveTransportFailures = 0;
+  let totalProxyPauseMs = 0;
   let abortReason = null;
 
   async function drain(id) {
@@ -238,6 +262,11 @@ async function runDownloadQueue(companies, cfg) {
         // hostage — with `res slot 1/1` that would stall every other worker.
         result = await spawnWorker(company, id, cfg, relay);
         if (result.ok) break;
+        // A transport failure is a proxy problem, not a company problem — do
+        // not burn the company's human-spaced retries on a dead proxy. Break
+        // out; the breaker below re-queues the company and pauses the run
+        // instead of aborting it.
+        if (result.transport) break;
 
         const last = attempt >= COMPANY_ATTEMPTS;
         if (!result.retryable) {
@@ -259,20 +288,36 @@ async function runDownloadQueue(companies, cfg) {
         state.progress.done++;
         consecutiveTransportFailures = 0;
       } else if (result.transport) {
-        state.progress.errors++;
+        // Proxy/network-level failure — the company itself is fine, so re-queue
+        // it rather than marking it an error: it gets a fair chance the moment
+        // the proxy (home tunnel) is back.
+        queue.unshift(company);
         consecutiveTransportFailures += 1;
         if (consecutiveTransportFailures >= TRANSPORT_FAILURE_LIMIT) {
-          abortReason = result.message;
-          addLog('err',
-            `[Pipeline] ABORTING — ${consecutiveTransportFailures} consecutive companies failed `
-            + `every one of their ${COMPANY_ATTEMPTS} attempts with network/proxy errors `
-            + `("${result.message}"). ${queue.length} companies left unattempted `
-            + '(they were NOT marked as errors).');
-          addLog('err',
-            '[Pipeline] The proxy is refusing connections. Run `npm run relay:diagnose-proxies` '
-            + 'on this host — it prints the reason Chrome hides behind ERR_TUNNEL_CONNECTION_FAILED '
-            + '(auth rejected / quota exhausted / unreachable).');
-          return;
+          consecutiveTransportFailures = 0;   // fresh slate after the pause
+          totalProxyPauseMs += PROXY_PAUSE_MS;
+          const budgetExceeded = PROXY_PAUSE_MAX_MS > 0
+            && totalProxyPauseMs >= PROXY_PAUSE_MAX_MS;
+          if (PROXY_PAUSE_MS <= 0 || budgetExceeded) {
+            abortReason = result.message;
+            addLog('err',
+              `[Pipeline] ABORTING — the proxy never recovered after `
+              + `${Math.max(1, Math.round(totalProxyPauseMs / 60000))} min of pauses `
+              + `("${result.message}"). ${queue.length} companies re-queued, none marked as `
+              + 'errors. Run `npm run relay:diagnose-proxies` on this host for the reason '
+              + 'Chrome hides behind ERR_TUNNEL_CONNECTION_FAILED.');
+            return;
+          }
+          addLog('warn',
+            `[Pipeline] PAUSING ${Math.round(PROXY_PAUSE_MS / 1000)}s — the proxy (home tunnel) `
+            + `is unavailable ("${result.message}"). ${queue.length} companies re-queued; the run `
+            + 'resumes automatically when the proxy returns. Press Stop to end it now '
+            + '(tune with PIPELINE_PROXY_PAUSE_MS / PIPELINE_PROXY_PAUSE_MAX_MS).');
+          const slept = await interruptibleSleep(
+            PROXY_PAUSE_MS,
+            () => state.stopRequested || !!abortReason,
+          );
+          if (!slept) return;
         }
       } else {
         // A per-company failure (bad name, no results, parse error) says nothing
@@ -815,4 +860,4 @@ async function runAsxPipeline() {
 
 // isTransportError is exported for tests — misclassifying here either lets a
 // proxy outage burn the queue, or aborts a run over one slow page.
-module.exports = { runPipeline, runAsxPipeline, isTransportError, isRetryableError };
+module.exports = { runPipeline, runAsxPipeline, runDownloadQueue, isTransportError, isRetryableError };

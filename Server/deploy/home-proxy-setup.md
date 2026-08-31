@@ -359,6 +359,12 @@ black hole instead of a clean failure it can fail over from.
   switching to a paid proxy would spend money without fixing anything.
 - While every primary is cooling down, traffic goes to the fallback and the relay
   logs which proxy it fell back to and why.
+- If the tunnel drops **mid-run** (laptop off, network switch), the pipeline
+  pauses for `PIPELINE_PROXY_PAUSE_MS` (5 min) and probes again instead of
+  aborting: companies that failed at the transport layer are re-queued, not
+  marked as errors, so the run resumes by itself when the laptop's tunnel is
+  back. Set `PIPELINE_PROXY_PAUSE_MAX_MS` to give up after a bounded total
+  pause (0, the default, waits indefinitely).
 - Admin → Relay shows `coolingDown` per worker, so you can see at a glance whether
   paid traffic is flowing.
 

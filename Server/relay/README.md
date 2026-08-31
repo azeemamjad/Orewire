@@ -219,12 +219,15 @@ The retry wait happens *outside* the relay permit, so a sleeping worker never
 holds the single residential slot hostage.
 
 Behind that, `PIPELINE_TRANSPORT_FAILURE_LIMIT` (3) consecutive companies that
-exhaust every attempt with **network** errors aborts the run and leaves the rest
-of the queue unattempted rather than marked as errors. This exists because a
-single dead proxy once produced 1559 identical `ERR_TUNNEL_CONNECTION_FAILED`
-errors at roughly one company per second. Note the split: a 403 or bot wall is
-retried but does *not* count toward the breaker — that is the site, not the
-network.
+fail with **network** errors pause the run for `PIPELINE_PROXY_PAUSE_MS` (5 min)
+and then probe again instead of aborting it. A home tunnel dropping mid-run must
+not kill a 1500-company batch: the failed companies are re-queued (not marked as
+errors), so the run resumes on its own the moment the proxy is back, and only
+gives up after `PIPELINE_PROXY_PAUSE_MAX_MS` of accumulated pauses (0 = wait
+indefinitely). This exists because a single dead proxy once produced 1559
+identical `ERR_TUNNEL_CONNECTION_FAILED` errors at roughly one company per
+second. Note the split: a 403 or bot wall is retried but does *not* count toward
+the breaker — that is the site, not the network.
 
 ## Proxy failover
 
