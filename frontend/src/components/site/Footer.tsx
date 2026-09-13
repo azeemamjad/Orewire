@@ -8,7 +8,7 @@ const XIcon = ({ className }: { className?: string }) => (
 );
 
 const socialLinks = [
-  { href: "https://x.com/Orewirenews", label: "X", Icon: XIcon },
+  { href: "https://x.com/orewirehq", label: "X", Icon: XIcon },
   { href: "https://www.linkedin.com/company/orewire/", label: "LinkedIn", Icon: Linkedin },
   { href: "https://www.instagram.com/orewirenews", label: "Instagram", Icon: Instagram },
 ];

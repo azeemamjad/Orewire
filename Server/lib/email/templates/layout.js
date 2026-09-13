@@ -43,7 +43,7 @@ function emailConfig() {
     watchlistUrl: process.env.EMAIL_WATCHLIST_URL || `${base}/watchlist`,
     profileUrl: process.env.EMAIL_PREFERENCES_URL || `${base}/profile`,
     unsubscribeUrl: process.env.EMAIL_UNSUBSCRIBE_URL || `${base}/profile`,
-    xUrl: process.env.EMAIL_X_URL || 'https://x.com/Orewirenews',
+    xUrl: process.env.EMAIL_X_URL || 'https://x.com/orewirehq',
     linkedinUrl: process.env.EMAIL_LINKEDIN_URL || 'https://www.linkedin.com/company/orewire/',
     instagramUrl: process.env.EMAIL_INSTAGRAM_URL || 'https://www.instagram.com/orewirenews',
     siteUrl: base,
