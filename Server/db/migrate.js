@@ -883,6 +883,49 @@ async function migrate() {
   await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS last_x_oauth2_ok_at TIMESTAMPTZ`);
   await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS x_oauth2_redirect_uri TEXT`);
 
+  // Template-driven "material posts" pipeline (Admin → Social Automation → Material Posts).
+  // One row per filing considered for a templated X post. filing_id is UNIQUE so a
+  // filing can never be posted twice.
+  await safeQuery(`
+    CREATE TABLE IF NOT EXISTS social_material_posts (
+      id             SERIAL PRIMARY KEY,
+      filing_id      INTEGER NOT NULL REFERENCES filings(id) ON DELETE CASCADE,
+      run_id         INTEGER REFERENCES social_post_runs(id) ON DELETE SET NULL,
+      category       TEXT NOT NULL,
+      template_key   TEXT NOT NULL,
+      company_id     INTEGER REFERENCES companies(id) ON DELETE SET NULL,
+      company_name   TEXT,
+      ticker         TEXT,
+      exchange       TEXT,
+      status         TEXT NOT NULL DEFAULT 'generated',
+      text           TEXT,
+      char_count     INTEGER,
+      hashtags       TEXT[],
+      fields         JSONB,
+      missing_fields JSONB,
+      ai_model       TEXT,
+      ai_raw         JSONB,
+      attempts       INTEGER NOT NULL DEFAULT 0,
+      tweet_id       TEXT,
+      thread_url     TEXT,
+      error          TEXT,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      posted_at      TIMESTAMPTZ,
+      UNIQUE (filing_id)
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_social_material_status ON social_material_posts(status, created_at DESC)`);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_social_material_category ON social_material_posts(category, posted_at DESC)`);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_social_material_company ON social_material_posts(company_id, posted_at DESC)`);
+
+  // Material-post pipeline settings (drives lib/social/material-*.js)
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS material_cron TEXT DEFAULT '*/30 * * * *'`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS material_daily_cap INTEGER DEFAULT 3`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS material_min_gap_minutes INTEGER DEFAULT 60`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS material_min_verdict TEXT DEFAULT 'noteworthy'`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS material_categories JSONB DEFAULT '["drill","financing","resource","study","permitting","partnership"]'::jsonb`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS material_per_company_days INTEGER DEFAULT 7`);
+
   // Soft-delete: archived companies are hidden from public site until hard-deleted from Archive tab
   await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_companies_archived_at ON companies(archived_at) WHERE archived_at IS NOT NULL`);

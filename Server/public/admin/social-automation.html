@@ -87,6 +87,23 @@ details.legacy[open] summary::before { content: '▾ '; }
 .copy-row input { flex: 1; min-width: 0; }
 .oauth2-steps { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0 0 12px; padding-left: 18px; }
 .oauth2-steps li { margin-bottom: 4px; }
+.template-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.template-card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+.template-card.off { opacity: .55; }
+.template-head { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.template-head input { margin: 0; }
+.template-meta { font-size: 11px; color: var(--muted); margin: 6px 0 8px; }
+.template-guide { list-style: none; margin: 0 0 8px; padding: 0; }
+.template-guide li { margin-bottom: 3px; }
+.template-guide code { font-size: 11px; color: var(--muted); }
+.template-link { font-size: 12px; color: var(--muted); }
+.template-types { font-size: 11px; color: var(--muted); margin-top: 6px; }
+.bycat-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.bycat-row:last-child { border-bottom: none; }
+.bycat-row span:last-child { color: var(--muted); }
+.material-text { max-width: 340px; white-space: pre-wrap; font-size: 12px; line-height: 1.4; }
+.material-filters { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+.material-filters select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: inherit; font-size: 12px; }
 </style>
 </head>
 <body data-page="social-automation">
@@ -107,6 +124,7 @@ details.legacy[open] summary::before { content: '▾ '; }
   <div class="social-tabs" role="tablist">
     <button type="button" class="social-tab active" data-tab="automation" onclick="switchSocialTab('automation')">Automation</button>
     <button type="button" class="social-tab" data-tab="compose" onclick="switchSocialTab('compose')">Compose</button>
+    <button type="button" class="social-tab" data-tab="material" onclick="switchSocialTab('material')">Material Posts</button>
   </div>
 
   <div id="pane-automation" class="social-pane active">
@@ -252,7 +270,7 @@ details.legacy[open] summary::before { content: '▾ '; }
       </div>
       <div class="play-row">
         <button class="btn btn-primary btn-sm" type="button" id="btn-play" onclick="togglePlay()">Play</button>
-        <button class="btn btn-ghost btn-sm" type="button" onclick="runNow()">Run now</button>
+        <button class="btn btn-ghost btn-sm" type="button" onclick="runMaterialNow()">Run material post now</button>
         <button class="btn btn-ghost btn-sm" type="button" onclick="refreshAll()">Refresh</button>
       </div>
       <p class="hint" id="last-run-hint" style="margin-top:12px;"></p>
@@ -307,6 +325,113 @@ details.legacy[open] summary::before { content: '▾ '; }
       <p class="hint" id="compose-result" style="margin-top:12px;"></p>
     </section>
   </div>
+
+  <div id="pane-material" class="social-pane">
+    <div class="social-stats">
+      <div class="social-stat"><div class="label">Posted today</div><div class="value" id="m-today">—</div></div>
+      <div class="social-stat"><div class="label">Posted 7d</div><div class="value" id="m-7d">—</div></div>
+      <div class="social-stat"><div class="label">Posted 30d</div><div class="value" id="m-30d">—</div></div>
+      <div class="social-stat"><div class="label">Success 30d</div><div class="value" id="m-rate">—</div></div>
+      <div class="social-stat"><div class="label">Suppressed</div><div class="value" id="m-suppressed">—</div></div>
+      <div class="social-stat"><div class="label">Failed</div><div class="value" id="m-failed">—</div></div>
+    </div>
+
+    <section class="social-card" style="margin-bottom:20px;">
+      <h2>Templates</h2>
+      <p class="hint">
+        Fixed formats from the OreWire X template sheet. The ticker, locked emojis, link line,
+        website URL and hashtags are added by the system — the AI only fills the body.
+      </p>
+      <div id="m-templates" class="template-grid">
+        <div class="hint">Loading…</div>
+      </div>
+    </section>
+
+    <div class="social-grid">
+      <section class="social-card">
+        <h2>Pipeline</h2>
+        <p class="hint" id="m-schedule-hint">Template-driven posting. Only material filings above the verdict threshold are considered.</p>
+        <div class="check-row">
+          <input type="checkbox" id="m-enabled" />
+          <label for="m-enabled">Enabled — post automatically on the schedule</label>
+        </div>
+        <div class="check-row">
+          <input type="checkbox" id="m-dryrun" />
+          <label for="m-dryrun">Dry run — generate &amp; log only, never publish</label>
+        </div>
+        <div class="form-row">
+          <label for="m-cap">Posts per day (cap)</label>
+          <input id="m-cap" type="number" min="1" max="20" />
+        </div>
+        <div class="form-row">
+          <label for="m-gap">Minimum minutes between posts</label>
+          <input id="m-gap" type="number" min="0" max="1440" />
+        </div>
+        <div class="form-row">
+          <label for="m-verdict">Minimum verdict</label>
+          <select id="m-verdict" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:inherit;font-size:14px;">
+            <option value="noteworthy">Noteworthy only</option>
+            <option value="watch">Noteworthy + Watch</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="m-company">Days before the same company can post again</label>
+          <input id="m-company" type="number" min="1" max="90" />
+        </div>
+        <div class="form-row">
+          <label for="m-cron">Cron schedule</label>
+          <input id="m-cron" type="text" />
+        </div>
+        <div class="play-row">
+          <button class="btn btn-primary btn-sm" type="button" onclick="saveMaterialSettings()">Save</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="runMaterialNow()">Run now</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="refreshMaterial()">Refresh</button>
+        </div>
+        <p class="hint" id="m-settings-msg" style="margin-top:10px;"></p>
+      </section>
+
+      <section class="social-card">
+        <h2>By category</h2>
+        <p class="hint">All-time generated / posted activity per template.</p>
+        <div id="m-bycat"><div class="hint">Loading…</div></div>
+      </section>
+    </div>
+
+    <section class="social-card" style="margin-bottom:24px;">
+      <div class="toolbar" style="margin:0 0 12px;padding:0;">
+        <h2 style="margin:0;font-size:15px;">Generated &amp; posted</h2>
+        <div class="material-filters">
+          <select id="m-filter-status" onchange="loadMaterialPosts()">
+            <option value="">All statuses</option>
+            <option value="posted">Posted</option>
+            <option value="generated">Generated (dry run)</option>
+            <option value="suppressed">Suppressed</option>
+            <option value="failed">Failed</option>
+          </select>
+          <select id="m-filter-cat" onchange="loadMaterialPosts()"><option value="">All categories</option></select>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="loadMaterialPosts()">Refresh</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>When</th>
+              <th>Ticker</th>
+              <th>Category</th>
+              <th>Status</th>
+              <th>Post</th>
+              <th>Reason / error</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="m-posts-body">
+            <tr class="empty-row"><td colspan="7">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
 </main>
 <div id="toast"></div>
 <script src="/admin/js/admin-sidebar.js?v=20260720"></script>
@@ -342,7 +467,7 @@ async function loadStatus() {
   document.getElementById('stat-enabled').textContent = s.enabled ? 'Playing' : 'Paused';
   document.getElementById('btn-play').textContent = s.enabled ? 'Pause' : 'Play';
   document.getElementById('schedule-hint').textContent =
-    `Schedule: ${s.cron || '0 8 * * *'} (${s.timezone || 'America/Toronto'}) · ${s.items_min}–${s.items_max} items · dry_run=${!!s.dry_run}`;
+    `Template-driven material posting — configure categories, cap and schedule on the Material Posts tab · dry_run=${!!s.dry_run}`;
 
   // ── Auth mode + X API status ─────────────────────────────────────────
   const mode = x.mode === 'oauth2' ? 'oauth2' : 'oauth1';
@@ -781,6 +906,7 @@ function switchSocialTab(name) {
   document.querySelectorAll('.social-pane').forEach((pane) => {
     pane.classList.toggle('active', pane.id === 'pane-' + name);
   });
+  if (name === 'material') refreshMaterial();
 }
 
 function splitComposeTweets(raw) {
@@ -846,6 +972,216 @@ async function composePostNow() {
     btn.disabled = false;
     btn.textContent = 'Post to X';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Material Posts — template-driven pipeline (see lib/social/material-*.js)
+// ---------------------------------------------------------------------------
+const _material = { templates: null };
+const _materialLabels = {};
+
+function fmtWhen(iso) {
+  if (!iso) return '—';
+  try { return new Date(iso).toLocaleString(); } catch { return '—'; }
+}
+
+async function loadMaterialTemplates() {
+  const r = await fetch('/api/admin/social/material/templates');
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || 'Failed to load templates');
+  _material.templates = data.templates || [];
+  for (const t of _material.templates) _materialLabels[t.key] = t.short || t.label;
+
+  document.getElementById('m-templates').innerHTML = _material.templates.map((t) => `
+    <div class="template-card ${t.enabled ? '' : 'off'}">
+      <label class="template-head">
+        <input type="checkbox" ${t.enabled ? 'checked' : ''} onchange="toggleMaterialCategory('${esc(t.key)}', this.checked)" />
+        <span>${esc(t.emojis.header)}</span>
+        <strong>${esc(t.label)}</strong>
+        <span>${esc(t.emojis.hook)}</span>
+      </label>
+      <div class="template-meta">${t.posted} posted all-time</div>
+      <ul class="template-guide">${(t.bodyGuide || []).map((g) => `<li><code>${esc(g)}</code></li>`).join('')}</ul>
+      <div class="template-link">${esc(t.linkLine)}</div>
+      <div class="template-types">${t.filingTypes && t.filingTypes.length ? t.filingTypes.map(esc).join(' · ') : 'Detected from news-release wording'}</div>
+    </div>`).join('') || '<div class="hint">No templates.</div>';
+
+  const sel = document.getElementById('m-filter-cat');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">All categories</option>'
+    + _material.templates.map((t) => `<option value="${esc(t.key)}">${esc(t.short || t.label)}</option>`).join('');
+  sel.value = cur;
+}
+
+async function loadMaterialStats() {
+  const r = await fetch('/api/admin/social/material/analytics');
+  const s = await r.json();
+  if (!r.ok) throw new Error(s.error || 'Failed to load material analytics');
+  const c = s.counters || {};
+  document.getElementById('m-today').textContent = c.postedToday ?? 0;
+  document.getElementById('m-7d').textContent = c.posted7d ?? 0;
+  document.getElementById('m-30d').textContent = c.posted30d ?? 0;
+  document.getElementById('m-rate').textContent = c.successRate30d == null ? '—' : `${c.successRate30d}%`;
+  document.getElementById('m-suppressed').textContent = c.suppressed ?? 0;
+  document.getElementById('m-failed').textContent = c.failed ?? 0;
+
+  const rows = Object.entries(s.byCategory || {});
+  document.getElementById('m-bycat').innerHTML = rows.map(([key, v]) => `
+    <div class="bycat-row">
+      <span>${esc(_materialLabels[key] || key)}</span>
+      <span>${v.posted} posted · ${v.suppressed} suppressed · ${v.failed} failed</span>
+    </div>`).join('') || '<div class="hint">No activity yet.</div>';
+}
+
+async function loadMaterialPosts() {
+  const qs = new URLSearchParams({ limit: '50' });
+  const status = document.getElementById('m-filter-status').value;
+  const category = document.getElementById('m-filter-cat').value;
+  if (status) qs.set('status', status);
+  if (category) qs.set('category', category);
+
+  const r = await fetch('/api/admin/social/material/posts?' + qs.toString());
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || 'Failed to load material posts');
+
+  const body = document.getElementById('m-posts-body');
+  const posts = data.posts || [];
+  if (!posts.length) {
+    body.innerHTML = '<tr class="empty-row"><td colspan="7">Nothing yet — posts appear here as the pipeline runs.</td></tr>';
+    return;
+  }
+  body.innerHTML = posts.map((p) => {
+    const retryable = p.status === 'failed' || p.status === 'suppressed';
+    const link = p.thread_url
+      ? `<a href="${esc(p.thread_url)}" target="_blank" rel="noopener">Open</a>`
+      : (p.status === 'generated' ? '<span style="color:var(--muted)">dry</span>' : '');
+    return `<tr>
+      <td>${esc(fmtWhen(p.posted_at || p.created_at))}</td>
+      <td>${esc(p.ticker || '—')}</td>
+      <td>${esc(_materialLabels[p.category] || p.category)}</td>
+      <td>${esc(p.status)}</td>
+      <td class="material-text">${esc(p.text || '')}</td>
+      <td class="err-cell">${esc(p.error || '')}</td>
+      <td>${link}${retryable ? ` <button class="btn btn-ghost btn-sm" type="button" onclick="retryMaterial(${p.id})">Retry</button>` : ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+function fillMaterialSettings(s) {
+  if (!s) return;
+  document.getElementById('m-enabled').checked = !!s.enabled;
+  document.getElementById('m-dryrun').checked = !!s.dry_run;
+  document.getElementById('m-cap').value = s.material_daily_cap;
+  document.getElementById('m-gap').value = s.material_min_gap_minutes;
+  document.getElementById('m-verdict').value = s.material_min_verdict;
+  document.getElementById('m-company').value = s.material_per_company_days;
+  document.getElementById('m-cron').value = s.material_cron;
+  document.getElementById('m-schedule-hint').textContent =
+    `Schedule ${s.material_cron} (${s.timezone}) · cap ${s.material_daily_cap}/day · min gap ${s.material_min_gap_minutes}m`
+    + ` · ${s.material_min_verdict} · ${(s.material_categories || []).length}/6 categories · dry_run=${!!s.dry_run}`;
+}
+
+async function loadMaterialSettings() {
+  const r = await fetch('/api/admin/social/settings');
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || 'Failed to load settings');
+  fillMaterialSettings(data.settings);
+}
+
+async function refreshMaterial() {
+  try {
+    await loadMaterialTemplates();
+    await Promise.all([loadMaterialStats(), loadMaterialSettings(), loadMaterialPosts()]);
+  } catch (err) {
+    toast(err.message || 'Refresh failed', 'err');
+  }
+}
+
+async function saveMaterialSettings() {
+  const payload = {
+    enabled: document.getElementById('m-enabled').checked,
+    dry_run: document.getElementById('m-dryrun').checked,
+    material_daily_cap: Number(document.getElementById('m-cap').value),
+    material_min_gap_minutes: Number(document.getElementById('m-gap').value),
+    material_min_verdict: document.getElementById('m-verdict').value,
+    material_per_company_days: Number(document.getElementById('m-company').value),
+    material_cron: document.getElementById('m-cron').value.trim(),
+  };
+  const msg = document.getElementById('m-settings-msg');
+  try {
+    const r = await fetch('/api/admin/social/material/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Save failed');
+    fillMaterialSettings(data.settings);
+    msg.textContent = 'Saved.';
+    toast('Material pipeline settings saved', 'ok');
+  } catch (err) {
+    msg.textContent = err.message || 'Save failed';
+    toast(err.message || 'Save failed', 'err');
+  }
+}
+
+async function toggleMaterialCategory(key, enabled) {
+  const current = (_material.templates || []).filter((t) => t.enabled).map((t) => t.key);
+  const next = enabled ? [...new Set([...current, key])] : current.filter((k) => k !== key);
+  if (!next.length) {
+    toast('At least one category must stay enabled', 'err');
+    await loadMaterialTemplates();
+    return;
+  }
+  try {
+    const r = await fetch('/api/admin/social/material/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ material_categories: next }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Update failed');
+    toast(`${enabled ? 'Enabled' : 'Disabled'} ${_materialLabels[key] || key}`, 'ok');
+    await Promise.all([loadMaterialTemplates(), loadMaterialStats()]);
+  } catch (err) {
+    toast(err.message || 'Update failed', 'err');
+    await loadMaterialTemplates();
+  }
+}
+
+async function runMaterialNow() {
+  toast('Running material pipeline…', 'ok');
+  try {
+    const r = await fetch('/api/admin/social/material/run-now', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await r.json();
+    if (data.skipped) toast(`Skipped: ${data.reason}`, 'ok');
+    else if (r.ok && data.ok) toast(`${data.status}${data.ticker ? ' @' + data.ticker : ''}${data.dryRun ? ' (dry run)' : ''}`, 'ok');
+    else toast(data.reason || data.detail || data.error || 'Not posted', 'err');
+  } catch (err) {
+    toast(err.message || 'Run failed', 'err');
+  }
+  await refreshMaterial();
+}
+
+async function retryMaterial(id) {
+  toast('Retrying…', 'ok');
+  try {
+    const r = await fetch(`/api/admin/social/material/retry/${id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.ok) toast(data.reason || data.detail || data.error || 'Retry failed', 'err');
+    else toast(`${data.status}${data.ticker ? ' @' + data.ticker : ''}`, 'ok');
+  } catch (err) {
+    toast(err.message || 'Retry failed', 'err');
+  }
+  await refreshMaterial();
 }
 
 document.addEventListener('DOMContentLoaded', () => {

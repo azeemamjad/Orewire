@@ -11,7 +11,7 @@ const { startVaTasksScheduler } = require('./va-tasks');
 const { startUsageLogPruneScheduler } = require('./usage-log-prune');
 const { startSymbolHealthScheduler } = require('../market/symbol-health-scheduler');
 const { startTickerRecheckScheduler } = require('./ticker-recheck');
-const { startSocialScheduler } = require('../social/scheduler');
+const { startMaterialScheduler } = require('../social/material-scheduler');
 
 async function startPipelineSchedulers() {
   const cfg = await initPipelineConfig();
@@ -83,12 +83,14 @@ function startBackgroundSchedulers({ server, app } = {}) {
     console.error('[ticker-recheck] Scheduler failed to start:', err?.message || err);
   }
 
+  // Template-driven material posting replaced the curated daily thread
+  // (lib/social/scheduler.js is retained but no longer started).
   try {
-    startSocialScheduler().catch((err) => {
-      console.error('[social] Scheduler failed to start:', err?.message || err);
+    startMaterialScheduler().catch((err) => {
+      console.error('[material] Scheduler failed to start:', err?.message || err);
     });
   } catch (err) {
-    console.error('[social] Scheduler failed to start:', err?.message || err);
+    console.error('[material] Scheduler failed to start:', err?.message || err);
   }
 
   if (process.env.RELAY_ENABLED === 'true' && server && app) {

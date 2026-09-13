@@ -26,6 +26,20 @@ const {
   disconnectOAuth2,
   oauth2RedirectUri,
 } = require('../../lib/social/bridge-client');
+const {
+  runMaterialTick,
+  generateForFiling,
+  retryMaterialPost,
+  listMaterialPosts,
+  getMaterialStats,
+} = require('../../lib/social/material-run');
+const {
+  CATEGORY_KEYS,
+  TEMPLATES,
+  BODY_GUIDE,
+  requiredFields,
+} = require('../../lib/social/material-templates');
+const { rescheduleMaterialScheduler } = require('../../lib/social/material-scheduler');
 const { runSocialPost, getStatusSnapshot } = require('../../lib/social/run');
 const { getAnalytics } = require('../../lib/social/analytics');
 const { rescheduleSocialScheduler } = require('../../lib/social/scheduler');
@@ -437,6 +451,165 @@ router.post('/x-oauth2/disconnect', async (_req, res) => {
   } catch (err) {
     console.error('[social] oauth2 disconnect failed:', err?.message || err);
     res.status(400).json({ error: err?.message || 'Failed to disconnect' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Material posts — template-driven pipeline (Admin → Social Automation → Material Posts)
+// ---------------------------------------------------------------------------
+
+// GET /api/admin/social/material/templates
+router.get('/material/templates', async (_req, res) => {
+  try {
+    const settings = await getSettings();
+    const counts = await db.query(
+      `SELECT category, COUNT(*)::int AS posted
+         FROM social_material_posts WHERE status = 'posted' GROUP BY category`,
+    );
+    const postedByCategory = Object.fromEntries(counts.rows.map((r) => [r.category, r.posted]));
+    res.json({
+      categories: settings.material_categories,
+      templates: CATEGORY_KEYS.map((key) => ({
+        key,
+        label: TEMPLATES[key].label,
+        short: TEMPLATES[key].short,
+        emojis: TEMPLATES[key].emojis,
+        linkLine: TEMPLATES[key].linkLine,
+        tailHashtags: TEMPLATES[key].tailHashtags || [],
+        filingTypes: TEMPLATES[key].filingTypes,
+        bodyGuide: BODY_GUIDE[key] || [],
+        fields: TEMPLATES[key].fields,
+        required: requiredFields(key),
+        enabled: settings.material_categories.includes(key),
+        posted: postedByCategory[key] || 0,
+      })),
+    });
+  } catch (err) {
+    console.error('[social] material templates failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to load templates' });
+  }
+});
+
+// GET /api/admin/social/material/posts?status=&category=&limit=
+router.get('/material/posts', async (req, res) => {
+  try {
+    const posts = await listMaterialPosts({
+      status: req.query.status,
+      category: req.query.category,
+      limit: req.query.limit,
+    });
+    res.json({ posts });
+  } catch (err) {
+    console.error('[social] material posts failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to load material posts' });
+  }
+});
+
+// GET /api/admin/social/material/analytics
+router.get('/material/analytics', async (_req, res) => {
+  try {
+    res.json(await getMaterialStats());
+  } catch (err) {
+    console.error('[social] material analytics failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to load material analytics' });
+  }
+});
+
+// PUT /api/admin/social/material/settings
+router.put('/material/settings', async (req, res) => {
+  try {
+    const body = req.body || {};
+
+    if (body.material_cron !== undefined && String(body.material_cron).trim()) {
+      if (!cron.validate(String(body.material_cron).trim())) {
+        return res.status(400).json({ error: 'Invalid cron expression' });
+      }
+    }
+
+    // Enabling requires a working X credential set — same gate as the Automation tab.
+    if (body.enabled === true) {
+      const social = await getSocialStatus();
+      if (!social.configured) {
+        return res.status(400).json({
+          error: social.mode === 'oauth2'
+            ? 'Connect X OAuth 2.0 (save Client ID/Secret, then "Connect with X") before enabling'
+            : 'Save X API credentials and Test connection before enabling',
+          mode: social.mode,
+        });
+      }
+      if (social.status !== 'ok') {
+        return res.status(400).json({
+          error: 'Test connection must succeed before enabling automation',
+          status: social.status,
+          mode: social.mode,
+        });
+      }
+    }
+
+    const settings = await updateSettings({
+      enabled: body.enabled,
+      dry_run: body.dryRun ?? body.dry_run,
+      material_cron: body.material_cron,
+      material_daily_cap: body.material_daily_cap,
+      material_min_gap_minutes: body.material_min_gap_minutes,
+      material_min_verdict: body.material_min_verdict,
+      material_categories: body.material_categories,
+      material_per_company_days: body.material_per_company_days,
+    });
+
+    if (body.material_cron !== undefined) {
+      try {
+        await rescheduleMaterialScheduler();
+      } catch (err) {
+        console.warn('[social] material reschedule failed:', err?.message || err);
+      }
+    }
+
+    res.json({ settings });
+  } catch (err) {
+    console.error('[social] material settings failed:', err?.message || err);
+    res.status(400).json({ error: err?.message || 'Failed to update material settings' });
+  }
+});
+
+// POST /api/admin/social/material/run-now  { force?, publish? }
+router.post('/material/run-now', async (req, res) => {
+  try {
+    const force = !!req.body?.force;
+    const publish = req.body?.publish !== false;
+    const result = await runMaterialTick({ trigger: 'manual', force, publish });
+    if (!result.ok && !result.skipped) return res.status(400).json(result);
+    res.json(result);
+  } catch (err) {
+    console.error('[social] material run-now failed:', err?.message || err);
+    res.status(500).json({ error: err?.message || 'Material run failed' });
+  }
+});
+
+// POST /api/admin/social/material/preview  { filingId }
+router.post('/material/preview', async (req, res) => {
+  try {
+    const filingId = Number(req.body?.filingId);
+    if (!filingId) return res.status(400).json({ error: 'filingId is required' });
+    const result = await generateForFiling(filingId, { publish: false });
+    if (!result.ok) return res.status(400).json(result);
+    res.json(result);
+  } catch (err) {
+    console.error('[social] material preview failed:', err?.message || err);
+    res.status(400).json({ error: err?.message || 'Preview failed' });
+  }
+});
+
+// POST /api/admin/social/material/retry/:id
+router.post('/material/retry/:id', async (req, res) => {
+  try {
+    const publish = req.body?.publish !== false;
+    const result = await retryMaterialPost(Number(req.params.id), { publish });
+    if (!result.ok) return res.status(400).json(result);
+    res.json(result);
+  } catch (err) {
+    console.error('[social] material retry failed:', err?.message || err);
+    res.status(400).json({ error: err?.message || 'Retry failed' });
   }
 });
 
