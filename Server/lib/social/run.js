@@ -5,9 +5,7 @@ const { selectThreadItems } = require('./select');
 const { composeThread } = require('./compose');
 const {
   postThread,
-  getApiPublic,
-  isApiConfigured,
-  getApiCredentials,
+  getSocialStatus,
   getBridgePublic,
 } = require('./bridge-client');
 
@@ -109,22 +107,24 @@ async function runSocialPost(opts = {}) {
 
   const dryRun = settings.dry_run;
   if (!dryRun) {
-    let creds;
+    let social;
     try {
-      creds = await getApiCredentials();
+      social = await getSocialStatus();
     } catch (err) {
-      return { ok: false, error: err?.message || 'Invalid X API credentials' };
+      return { ok: false, error: err?.message || 'Invalid X credentials' };
     }
-    if (!isApiConfigured(creds)) {
+    if (!social.configured) {
       return {
         ok: false,
-        error: 'X API not configured — set credentials in Social Automation or env',
+        error: social.mode === 'oauth2'
+          ? 'X OAuth 2.0 is not connected — save the Client ID/Secret and click "Connect with X"'
+          : 'X API not configured — set credentials in Social Automation or env',
       };
     }
-    if (settings.x_api_status !== 'ok' && trigger === 'cron') {
+    if (social.status !== 'ok' && trigger === 'cron') {
       return {
         ok: false,
-        error: 'X API not verified — open Social Automation and Test connection',
+        error: `X credentials not verified (${social.mode}) — open Social Automation and Test connection`,
       };
     }
   }
@@ -202,7 +202,7 @@ async function getStatusSnapshot() {
   const [settings, account, xApi, bridge, lastRun] = await Promise.all([
     getSettings(),
     getAccount(),
-    getApiPublic(),
+    getSocialStatus(),
     getBridgePublic(),
     db.query(
       `SELECT id, started_at, finished_at, status, trigger, item_count, thread_url, error, dry_run

@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Local npm cache (avoids Windows Defender locking the global cache during install)
+.npm-cache/
+
 # Environment files
 .env
 .env.local

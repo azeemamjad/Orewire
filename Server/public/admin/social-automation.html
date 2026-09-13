@@ -71,6 +71,22 @@ details.legacy[open] summary::before { content: '▾ '; }
 .compose-preview { margin-top: 12px; font-size: 12px; color: var(--muted); }
 .compose-preview ol { margin: 6px 0 0; padding-left: 18px; }
 .compose-preview li { margin-bottom: 6px; white-space: pre-wrap; word-break: break-word; color: inherit; }
+.auth-mode-switch {
+  display: inline-flex; border: 1px solid var(--border); border-radius: 8px;
+  overflow: hidden; margin: 4px 0 12px;
+}
+.auth-mode-btn {
+  appearance: none; border: none; background: transparent; cursor: pointer;
+  color: var(--muted); font-size: 13px; font-weight: 600; padding: 8px 16px;
+}
+.auth-mode-btn + .auth-mode-btn { border-left: 1px solid var(--border); }
+.auth-mode-btn.active { background: var(--accent, #2563eb); color: #fff; }
+.auth-panel { display: none; }
+.auth-panel.active { display: block; }
+.copy-row { display: flex; gap: 8px; align-items: center; }
+.copy-row input { flex: 1; min-width: 0; }
+.oauth2-steps { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0 0 12px; padding-left: 18px; }
+.oauth2-steps li { margin-bottom: 4px; }
 </style>
 </head>
 <body data-page="social-automation">
@@ -100,35 +116,83 @@ details.legacy[open] summary::before { content: '▾ '; }
       <p class="hint">
         Create an app at
         <a href="https://developer.x.com/en/portal/dashboard" target="_blank" rel="noopener">developer.x.com</a>
-        with <strong>Read and Write</strong> permissions, then paste the OAuth 1.0a keys below
-        (or set <code>X_API_KEY</code> / <code>X_API_SECRET</code> / <code>X_ACCESS_TOKEN</code> /
-        <code>X_ACCESS_TOKEN_SECRET</code> in <code>.env</code>).
+        with <strong>Read and Write</strong> permissions. This deployment can post through either
+        <strong>OAuth 1.0a</strong> (API key + access token) or <strong>OAuth 2.0</strong> (Client ID + Secret, PKCE).
         Pay-per-use billing applies (~$0.015/post, ~$0.20 if the post contains a link).
       </p>
-      <form id="xapi-form" onsubmit="saveXApi(event)">
-        <div class="form-row">
-          <label for="x-api-key">API Key (Consumer Key)</label>
-          <input id="x-api-key" type="password" autocomplete="off" placeholder="Leave blank to keep existing" />
+
+      <div class="auth-mode-switch" role="tablist" aria-label="X authentication mode">
+        <button type="button" class="auth-mode-btn" data-mode="oauth1" role="tab" onclick="setAuthMode('oauth1')">OAuth 1.0a</button>
+        <button type="button" class="auth-mode-btn" data-mode="oauth2" role="tab" onclick="setAuthMode('oauth2')">OAuth 2.0</button>
+      </div>
+      <p class="hint" id="auth-mode-hint" style="margin-top:0;"></p>
+
+      <!-- ── OAuth 1.0a ─────────────────────────────────────────────── -->
+      <div id="panel-oauth1" class="auth-panel">
+        <form id="xapi-form" onsubmit="saveXApi(event)">
+          <div class="form-row">
+            <label for="x-api-key">API Key (Consumer Key)</label>
+            <input id="x-api-key" type="password" autocomplete="off" placeholder="Leave blank to keep existing" />
+          </div>
+          <div class="form-row">
+            <label for="x-api-secret">API Key Secret</label>
+            <input id="x-api-secret" type="password" autocomplete="off" placeholder="Leave blank to keep existing" />
+          </div>
+          <div class="form-row">
+            <label for="x-access-token">Access Token</label>
+            <input id="x-access-token" type="password" autocomplete="off" placeholder="Leave blank to keep existing" />
+          </div>
+          <div class="form-row">
+            <label for="x-access-secret">Access Token Secret</label>
+            <input id="x-access-secret" type="password" autocomplete="off" placeholder="Leave blank to keep existing" />
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+            <button class="btn btn-primary btn-sm" type="submit">Save credentials</button>
+          </div>
+          <p class="hint" id="o1-meta" style="margin-top:10px;"></p>
+        </form>
+      </div>
+
+      <!-- ── OAuth 2.0 (Authorization Code + PKCE) ──────────────────── -->
+      <div id="panel-oauth2" class="auth-panel">
+        <ol class="oauth2-steps">
+          <li>In the X app → <strong>User authentication settings</strong>, add the redirect URI below.</li>
+          <li>Give the app <strong>Read and write</strong> permission with scopes
+            <code>tweet.read</code>, <code>tweet.write</code>, <code>users.read</code>, <code>offline.access</code>.</li>
+          <li>Save the Client ID/Secret here, then <strong>Connect with X</strong> and authorize.</li>
+        </ol>
+        <form id="oauth2-form" onsubmit="saveOAuth2Client(event)">
+          <div class="form-row">
+            <label for="o2-client-id">Client ID</label>
+            <input id="o2-client-id" type="text" autocomplete="off" placeholder="From X app → OAuth 2.0 Keys → Client ID" />
+          </div>
+          <div class="form-row">
+            <label for="o2-client-secret">Client Secret</label>
+            <input id="o2-client-secret" type="password" autocomplete="new-password" placeholder="Leave blank to keep existing" />
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+            <button class="btn btn-primary btn-sm" type="submit">Save client</button>
+            <button class="btn btn-primary btn-sm" type="button" id="btn-oauth2-connect" onclick="connectOAuth2()">Connect with X</button>
+            <button class="btn btn-ghost btn-sm" type="button" id="btn-oauth2-disconnect" onclick="disconnectOAuth2()">Disconnect</button>
+          </div>
+          <p class="hint" id="o2-meta" style="margin-top:10px;"></p>
+        </form>
+        <div class="form-row" style="margin-top:14px;">
+          <label for="o2-redirect">Redirect URI — register this in your X app</label>
+          <div class="copy-row">
+            <input id="o2-redirect" type="text" readonly placeholder="(open this page from the backend URL)" />
+            <button class="btn btn-ghost btn-sm" type="button" onclick="copyRedirect()">Copy</button>
+          </div>
         </div>
-        <div class="form-row">
-          <label for="x-api-secret">API Key Secret</label>
-          <input id="x-api-secret" type="password" autocomplete="off" placeholder="Leave blank to keep existing" />
-        </div>
-        <div class="form-row">
-          <label for="x-access-token">Access Token</label>
-          <input id="x-access-token" type="password" autocomplete="off" placeholder="Leave blank to keep existing" />
-        </div>
-        <div class="form-row">
-          <label for="x-access-secret">Access Token Secret</label>
-          <input id="x-access-secret" type="password" autocomplete="off" placeholder="Leave blank to keep existing" />
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-          <button class="btn btn-primary btn-sm" type="submit">Save credentials</button>
-          <button class="btn btn-ghost btn-sm" type="button" onclick="testXApi()">Test connection</button>
-          <span class="status-badge" id="xapi-badge"><span class="dot"></span><span id="xapi-badge-text">—</span></span>
-        </div>
-        <p class="hint" id="xapi-meta" style="margin-top:10px;"></p>
-      </form>
+        <p class="hint">Scopes requested: <code id="o2-scopes">—</code></p>
+      </div>
+
+      <!-- ── Shared: test the active credential set ─────────────────── -->
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:14px;border-top:1px solid var(--border);padding-top:12px;">
+        <button class="btn btn-ghost btn-sm" type="button" onclick="testXApi()">Test connection</button>
+        <span class="status-badge" id="xapi-badge"><span class="dot"></span><span id="xapi-badge-text">—</span></span>
+      </div>
+      <p class="hint" id="xapi-meta" style="margin-top:10px;"></p>
 
       <details class="legacy">
         <summary>Legacy: WebBridge / password login (unused for posting)</summary>
@@ -280,17 +344,61 @@ async function loadStatus() {
   document.getElementById('schedule-hint').textContent =
     `Schedule: ${s.cron || '0 8 * * *'} (${s.timezone || 'America/Toronto'}) · ${s.items_min}–${s.items_max} items · dry_run=${!!s.dry_run}`;
 
+  // ── Auth mode + X API status ─────────────────────────────────────────
+  const mode = x.mode === 'oauth2' ? 'oauth2' : 'oauth1';
+  document.querySelectorAll('.auth-mode-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+  document.getElementById('panel-oauth1').classList.toggle('active', mode === 'oauth1');
+  document.getElementById('panel-oauth2').classList.toggle('active', mode === 'oauth2');
+  document.getElementById('auth-mode-hint').textContent = x.modeFromEnv
+    ? `Mode forced by environment (X_AUTH_MODE=${x.mode})`
+    : `Posting via ${mode === 'oauth2' ? 'OAuth 2.0 (authorization code + PKCE)' : 'OAuth 1.0a user context'}.`;
+
+  const o1 = x.oauth1 || {};
+  const o2 = x.oauth2 || {};
+
   setBadge('xapi-badge', 'xapi-badge-text', x.status || 'unknown');
   document.getElementById('stat-xapi').textContent = x.configured
     ? (x.status === 'ok' ? (x.username ? '@' + x.username : 'Connected') : (x.status || 'Set'))
     : 'Not set';
-  const xmeta = [];
+
+  const xmeta = [mode === 'oauth2' ? 'OAuth 2.0' : 'OAuth 1.0a'];
   if (x.configured) xmeta.push('Configured');
   if (x.username) xmeta.push('@' + x.username);
   if (x.lastOkAt) xmeta.push('Last OK ' + new Date(x.lastOkAt).toLocaleString());
   if (x.lastError) xmeta.push('Error: ' + x.lastError);
   if (x.fromEnv) xmeta.push('Env override');
-  document.getElementById('xapi-meta').textContent = xmeta.join(' · ') || 'Paste OAuth 1.0a keys from the X Developer Portal.';
+  document.getElementById('xapi-meta').textContent = xmeta.join(' · ');
+
+  // OAuth 1.0a panel detail
+  const o1meta = [];
+  o1meta.push(o1.configured ? 'Credentials saved' : 'Not configured');
+  if (o1.username) o1meta.push('@' + o1.username);
+  if (o1.lastOkAt) o1meta.push('Last OK ' + new Date(o1.lastOkAt).toLocaleString());
+  if (o1.lastError) o1meta.push('Error: ' + o1.lastError);
+  if (o1.fromEnv) o1meta.push('Env override');
+  document.getElementById('o1-meta').textContent = o1meta.join(' · ');
+
+  // OAuth 2.0 panel detail
+  const redirectEl = document.getElementById('o2-redirect');
+  if (redirectEl && data.oauth2RedirectUri) redirectEl.value = data.oauth2RedirectUri;
+  const clientIdEl = document.getElementById('o2-client-id');
+  if (clientIdEl && o2.clientId && document.activeElement !== clientIdEl) clientIdEl.value = o2.clientId;
+  document.getElementById('o2-scopes').textContent = o2.scopesRequested || '—';
+  setBadge('oauth2-badge', 'oauth2-badge-text', o2.connected ? (o2.status || 'ok') : 'disconnected');
+  const o2meta = [];
+  o2meta.push(o2.clientIdSet ? 'Client ID set' : 'Client ID missing');
+  o2meta.push(o2.secretSet ? 'Secret set' : 'Secret missing');
+  if (o2.connected) o2meta.push(o2.username ? '@' + o2.username : 'connected');
+  if (o2.scope) o2meta.push('granted: ' + o2.scope);
+  if (o2.expiresAt) o2meta.push('token expires ' + new Date(o2.expiresAt).toLocaleString());
+  if (o2.lastOkAt) o2meta.push('Last OK ' + new Date(o2.lastOkAt).toLocaleString());
+  if (o2.lastError) o2meta.push('Error: ' + o2.lastError);
+  if (o2.fromEnv) o2meta.push('Env override');
+  document.getElementById('o2-meta').textContent = o2meta.join(' · ');
+  document.getElementById('btn-oauth2-connect').disabled = !o2.clientIdSet;
+  document.getElementById('btn-oauth2-disconnect').disabled = !o2.connected;
 
   if (b.url) document.getElementById('bridge-url').value = b.url;
   setBadge('bridge-badge', 'bridge-badge-text', b.status || 'unknown');
@@ -402,6 +510,105 @@ async function saveXApi(e) {
   } catch (err) {
     toast(err.message || 'Save failed', 'err');
   }
+}
+
+async function setAuthMode(mode) {
+  try {
+    const r = await fetch('/api/admin/social/x-auth-mode', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Update failed');
+    toast(`Using ${mode === 'oauth2' ? 'OAuth 2.0' : 'OAuth 1.0a'}`, 'ok');
+    await loadStatus();
+  } catch (err) {
+    toast(err.message || 'Update failed', 'err');
+    await loadStatus();
+  }
+}
+
+async function saveOAuth2Client(e) {
+  e.preventDefault();
+  const clientId = document.getElementById('o2-client-id').value.trim();
+  const clientSecret = document.getElementById('o2-client-secret').value;
+  if (!clientId && !_social.xApi?.oauth2?.clientIdSet) {
+    toast('Client ID is required', 'err');
+    return;
+  }
+  try {
+    const r = await fetch('/api/admin/social/x-oauth2/client', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientId: clientId || undefined,
+        clientSecret: clientSecret || undefined,
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Save failed');
+    document.getElementById('o2-client-secret').value = '';
+    toast('OAuth 2.0 client saved — now click Connect with X', 'ok');
+    await loadStatus();
+  } catch (err) {
+    toast(err.message || 'Save failed', 'err');
+  }
+}
+
+async function connectOAuth2() {
+  toast('Starting X authorization…', 'ok');
+  try {
+    const r = await fetch('/api/admin/social/x-oauth2/authorize');
+    const data = await r.json();
+    if (!r.ok || !data.url) throw new Error(data.error || 'Could not start authorization');
+    window.location.href = data.url;
+  } catch (err) {
+    toast(err.message || 'Could not start authorization', 'err');
+  }
+}
+
+async function disconnectOAuth2() {
+  if (!confirm('Disconnect X OAuth 2.0 and delete the stored tokens?')) return;
+  try {
+    const r = await fetch('/api/admin/social/x-oauth2/disconnect', { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Disconnect failed');
+    toast('X OAuth 2.0 disconnected', 'ok');
+    await loadStatus();
+  } catch (err) {
+    toast(err.message || 'Disconnect failed', 'err');
+  }
+}
+
+function copyRedirect() {
+  const el = document.getElementById('o2-redirect');
+  if (!el?.value) { toast('Redirect URI not available', 'err'); return; }
+  const done = () => toast('Redirect URI copied', 'ok');
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(el.value).then(done).catch(() => { el.select(); done(); });
+  } else {
+    el.select();
+    done();
+  }
+}
+
+/** Show a toast for ?xoauth2=connected|error set by the OAuth callback, then clean the URL. */
+function handleOAuth2Return() {
+  const params = new URLSearchParams(window.location.search);
+  const result = params.get('xoauth2');
+  if (!result) return;
+  if (result === 'connected') {
+    const handle = params.get('handle');
+    toast(`X connected${handle ? ' (@' + handle + ')' : ''} — run Test connection`, 'ok');
+  } else if (result === 'error') {
+    toast(params.get('msg') || 'X authorization failed', 'err');
+  }
+  params.delete('xoauth2');
+  params.delete('handle');
+  params.delete('msg');
+  const qs = params.toString();
+  window.history.replaceState({}, '', window.location.pathname + (qs ? '?' + qs : ''));
 }
 
 async function testXApi() {
@@ -642,6 +849,7 @@ async function composePostNow() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  handleOAuth2Return();
   refreshAll();
   updateComposePreview();
 });

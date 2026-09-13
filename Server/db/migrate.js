@@ -868,6 +868,21 @@ async function migrate() {
   await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS last_x_api_ok_at TIMESTAMPTZ`);
   await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS x_api_username TEXT`);
 
+  // Official X API v2 OAuth 2.0 (Authorization Code + PKCE) — alternative to OAuth 1.0a.
+  // x_auth_mode selects which credential set delivery uses: 'oauth1' (default) or 'oauth2'.
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS x_auth_mode TEXT DEFAULT 'oauth1'`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS x_oauth2_client_id TEXT`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS x_oauth2_client_secret_enc TEXT`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS x_oauth2_access_token_enc TEXT`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS x_oauth2_refresh_token_enc TEXT`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS x_oauth2_expires_at TIMESTAMPTZ`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS x_oauth2_scope TEXT`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS x_oauth2_username TEXT`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS x_oauth2_status TEXT DEFAULT 'unknown'`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS last_x_oauth2_error TEXT`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS last_x_oauth2_ok_at TIMESTAMPTZ`);
+  await safeQuery(`ALTER TABLE social_automation_settings ADD COLUMN IF NOT EXISTS x_oauth2_redirect_uri TEXT`);
+
   // Soft-delete: archived companies are hidden from public site until hard-deleted from Archive tab
   await safeQuery(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`);
   await safeQuery(`CREATE INDEX IF NOT EXISTS idx_companies_archived_at ON companies(archived_at) WHERE archived_at IS NOT NULL`);

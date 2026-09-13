@@ -13,10 +13,18 @@ const {
   ping: pingBridge,
   postThread,
   saveApiCredentials,
-  getApiPublic,
+  getSocialStatus,
+  isSocialConfigured,
+  getSocialAuthMode,
+  setSocialAuthMode,
   pingXApi,
-  isApiConfigured,
-  getApiCredentials,
+  getOAuth2Public,
+  saveOAuth2Client,
+  buildOAuth2AuthorizeUrl,
+  consumeOAuth2State,
+  exchangeOAuth2Code,
+  disconnectOAuth2,
+  oauth2RedirectUri,
 } = require('../../lib/social/bridge-client');
 const { runSocialPost, getStatusSnapshot } = require('../../lib/social/run');
 const { getAnalytics } = require('../../lib/social/analytics');
@@ -39,9 +47,11 @@ function parseTweetsFromBody(body = {}) {
 }
 
 // GET /api/admin/social/status
-router.get('/status', async (_req, res) => {
+router.get('/status', async (req, res) => {
   try {
     const snap = await getStatusSnapshot();
+    // Exact URI the user must register in the X app (derived from this request's host)
+    snap.oauth2RedirectUri = oauth2RedirectUri(req);
     res.json(snap);
   } catch (err) {
     console.error('[social] status failed:', err?.message || err);
@@ -59,24 +69,22 @@ router.put('/settings', async (req, res) => {
       }
     }
 
-    // Play requires X API configured + last test OK
+    // Play requires the active X credential set configured + last test OK
     if (body.enabled === true) {
-      let creds;
-      try {
-        creds = await getApiCredentials();
-      } catch (err) {
-        return res.status(400).json({ error: err?.message || 'Invalid X API credentials' });
-      }
-      if (!isApiConfigured(creds)) {
+      const social = await getSocialStatus();
+      if (!social.configured) {
         return res.status(400).json({
-          error: 'Save X API credentials and Test connection before enabling',
+          error: social.mode === 'oauth2'
+            ? 'Connect X OAuth 2.0 (save Client ID/Secret, then "Connect with X") before enabling'
+            : 'Save X API credentials and Test connection before enabling',
+          mode: social.mode,
         });
       }
-      const xApi = await getApiPublic();
-      if (xApi.status !== 'ok') {
+      if (social.status !== 'ok') {
         return res.status(400).json({
           error: 'Test connection must succeed before enabling automation',
-          status: xApi.status,
+          status: social.status,
+          mode: social.mode,
         });
       }
     }
@@ -131,18 +139,18 @@ router.put('/x-api', async (req, res) => {
   }
 });
 
-// POST /api/admin/social/x-api/test — verify against /2/users/me
+// POST /api/admin/social/x-api/test — verify the active credential set against /2/users/me
 router.post('/x-api/test', async (_req, res) => {
   try {
     const result = await pingXApi();
-    const xApi = await getApiPublic();
+    const xApi = await getSocialStatus();
     if (!result.ok) {
       return res.status(400).json({ ok: false, error: result.error, xApi, user: null });
     }
     res.json({ ok: true, xApi, user: result.user || null });
   } catch (err) {
     console.error('[social] x-api test failed:', err?.message || err);
-    const xApi = await getApiPublic().catch(() => null);
+    const xApi = await getSocialStatus().catch(() => null);
     res.status(400).json({ ok: false, error: err?.message || 'X API test failed', xApi });
   }
 });
@@ -265,14 +273,14 @@ router.post('/compose-post', async (req, res) => {
       }
     }
 
-    let creds;
-    try {
-      creds = await getApiCredentials();
-    } catch (err) {
-      return res.status(400).json({ error: err?.message || 'Invalid X API credentials' });
-    }
-    if (!isApiConfigured(creds)) {
-      return res.status(400).json({ error: 'Configure X API credentials first' });
+    if (!(await isSocialConfigured())) {
+      const social = await getSocialStatus();
+      return res.status(400).json({
+        error: social.mode === 'oauth2'
+          ? 'Connect X OAuth 2.0 first (save Client ID/Secret, then "Connect with X")'
+          : 'Configure X API credentials first',
+        mode: social.mode,
+      });
     }
 
     const ins = await db.query(
@@ -338,6 +346,97 @@ router.get('/settings', async (_req, res) => {
     res.json({ settings: await getSettings() });
   } catch (err) {
     res.status(500).json({ error: 'Failed to load settings' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// X auth mode + OAuth 2.0 (Authorization Code + PKCE)
+// ---------------------------------------------------------------------------
+
+// GET /api/admin/social/x-auth-mode
+router.get('/x-auth-mode', async (req, res) => {
+  try {
+    res.json({
+      mode: await getSocialAuthMode(),
+      oauth2: await getOAuth2Public(),
+      redirectUri: oauth2RedirectUri(req),
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load auth mode' });
+  }
+});
+
+// PUT /api/admin/social/x-auth-mode  { mode: 'oauth1' | 'oauth2' }
+router.put('/x-auth-mode', async (req, res) => {
+  try {
+    const mode = await setSocialAuthMode(req.body?.mode);
+    res.json({ mode, xApi: await getSocialStatus() });
+  } catch (err) {
+    res.status(400).json({ error: err?.message || 'Failed to set auth mode' });
+  }
+});
+
+// PUT /api/admin/social/x-oauth2/client  { clientId, clientSecret }
+router.put('/x-oauth2/client', async (req, res) => {
+  try {
+    const { clientId, clientSecret } = req.body || {};
+    const oauth2 = await saveOAuth2Client({ clientId, clientSecret });
+    res.json({ oauth2 });
+  } catch (err) {
+    console.error('[social] save oauth2 client failed:', err?.message || err);
+    res.status(400).json({ error: err?.message || 'Failed to save OAuth 2.0 client' });
+  }
+});
+
+// GET /api/admin/social/x-oauth2/authorize — build the X authorize URL (PKCE)
+router.get('/x-oauth2/authorize', async (req, res) => {
+  try {
+    const forceLogin = String(req.query.forceLogin || '') === '1';
+    const { url, redirectUri } = await buildOAuth2AuthorizeUrl({ req, forceLogin });
+    res.json({ url, redirectUri });
+  } catch (err) {
+    console.error('[social] oauth2 authorize failed:', err?.message || err);
+    res.status(400).json({ error: err?.message || 'Failed to start OAuth 2.0 authorization' });
+  }
+});
+
+// GET /api/admin/social/x-oauth2/callback — X redirects the browser here
+router.get('/x-oauth2/callback', async (req, res) => {
+  const back = (params) =>
+    res.redirect(`/admin/social-automation.html?${new URLSearchParams(params).toString()}`);
+  try {
+    const { code, state, error, error_description: errorDescription } = req.query || {};
+    if (error) {
+      return back({ xoauth2: 'error', msg: String(errorDescription || error) });
+    }
+    if (!code || !state) {
+      return back({ xoauth2: 'error', msg: 'Missing code or state from X' });
+    }
+    const entry = consumeOAuth2State(state);
+    if (!entry) {
+      return back({ xoauth2: 'error', msg: 'Authorization expired or state mismatch — click Connect with X again' });
+    }
+    await exchangeOAuth2Code({
+      code: String(code),
+      codeVerifier: entry.codeVerifier,
+      redirectUri: entry.redirectUri,
+    });
+    const status = await getOAuth2Public();
+    return back({ xoauth2: 'connected', handle: status.username || '' });
+  } catch (err) {
+    console.error('[social] oauth2 callback failed:', err?.message || err);
+    return back({ xoauth2: 'error', msg: err?.message || 'Token exchange failed' });
+  }
+});
+
+// POST /api/admin/social/x-oauth2/disconnect
+router.post('/x-oauth2/disconnect', async (_req, res) => {
+  try {
+    const result = await disconnectOAuth2();
+    res.json({ ok: true, revoked: !!result?.revoked, oauth2: await getOAuth2Public() });
+  } catch (err) {
+    console.error('[social] oauth2 disconnect failed:', err?.message || err);
+    res.status(400).json({ error: err?.message || 'Failed to disconnect' });
   }
 });
 

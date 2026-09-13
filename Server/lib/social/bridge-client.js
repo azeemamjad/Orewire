@@ -5,7 +5,7 @@
 const db = require('../../db');
 const { encrypt, decrypt } = require('./secrets');
 const { PLATFORM } = require('./settings');
-const xApi = require('./x-api');
+const dispatch = require('./x-dispatch');
 
 const PING_TIMEOUT_MS = Number(process.env.SOCIAL_BRIDGE_PING_TIMEOUT_MS) || 15_000;
 const POST_TIMEOUT_MS = Number(process.env.SOCIAL_BRIDGE_POST_TIMEOUT_MS) || 300_000;
@@ -187,11 +187,12 @@ async function ping() {
 }
 
 /**
- * Post thread via official X API (browser / WebBridge no longer used for delivery).
+ * Post thread via the active X credential set (OAuth 1.0a or OAuth 2.0).
+ * Browser / WebBridge is no longer used for delivery.
  * @param {string[]} pages
  */
 async function postThread(pages, { dryRun = false } = {}) {
-  return xApi.postThread(pages, { dryRun });
+  return dispatch.postThread(pages, { dryRun });
 }
 
 module.exports = {
@@ -203,10 +204,27 @@ module.exports = {
   ping,
   postThread,
   normalizeBaseUrl,
-  // X API re-exports used by admin / run
-  getApiCredentials: xApi.getApiCredentials,
-  isApiConfigured: xApi.isApiConfigured,
-  getApiPublic: xApi.getApiPublic,
-  saveApiCredentials: xApi.saveApiCredentials,
-  pingXApi: xApi.ping,
+  // X delivery — mode-aware facade (see x-dispatch.js)
+  getSocialStatus: dispatch.getStatus,
+  isSocialConfigured: dispatch.isConfigured,
+  getSocialAuthMode: dispatch.getMode,
+  setSocialAuthMode: dispatch.setMode,
+  pingXApi: dispatch.ping,
+  getApiPublic: dispatch.getStatus,
+  isApiConfigured: dispatch.isConfigured,
+  // OAuth 1.0a credential helpers (unchanged behaviour)
+  getApiCredentials: dispatch.oauth1.getApiCredentials,
+  saveApiCredentials: dispatch.oauth1.saveApiCredentials,
+  // OAuth 2.0 (Authorization Code + PKCE) helpers
+  getOAuth2Public: dispatch.oauth2.getPublic,
+  saveOAuth2Client: dispatch.oauth2.saveClient,
+  buildOAuth2AuthorizeUrl: dispatch.oauth2.buildAuthorizeUrl,
+  consumeOAuth2State: dispatch.oauth2.consumeState,
+  exchangeOAuth2Code: dispatch.oauth2.exchangeCode,
+  disconnectOAuth2: async () => {
+    const result = await dispatch.oauth2.revoke();
+    await dispatch.oauth2.clearTokens();
+    return result;
+  },
+  oauth2RedirectUri: dispatch.oauth2.redirectUriFor,
 };
