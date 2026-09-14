@@ -4,6 +4,7 @@ const router = express.Router();
 const { state, addLog } = require('../../pipeline/state');
 const { load: loadConfig, save: saveConfig } = require('../../pipeline/config');
 const { describeSchedule } = require('../../pipeline/cron-utils');
+const { normalizeSkipDays } = require('../../lib/schedulers/skip-days');
 const { runPipeline, runAsxPipeline } = require('../../pipeline/runner');
 const { runProfileScrape, isRunning: profilesRunning } = require('../../scripts/scrape-profiles');
 const { runTransferAgentScrape, isRunning: taRunning, stopTransferAgentScrape } = require('../../scripts/scrape-transfer-agents');
@@ -183,6 +184,10 @@ router.post('/config', express.json(), async (req, res) => {
   if (body.profilesDelay !== undefined) updates.profilesDelay = Math.max(0, parseInt(body.profilesDelay, 10));
   if (body.seederScheduleParts !== undefined) updates.seederScheduleParts = body.seederScheduleParts;
   if (body.seederEnabled !== undefined) updates.seederEnabled = Boolean(body.seederEnabled);
+
+  // Paused days (0 = Sunday … 6 = Saturday) for the pipeline and the briefing email.
+  if (body.skipDays !== undefined) updates.skipDays = normalizeSkipDays(body.skipDays);
+  if (body.briefingSkipDays !== undefined) updates.briefingSkipDays = normalizeSkipDays(body.briefingSkipDays);
 
   try {
     const cfg = await saveConfig(updates);

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { buildCron, parseCron } = require('./cron-utils');
+const { normalizeSkipDays } = require('../lib/schedulers/skip-days');
 const { getSetting, setSetting } = require('../db/app-settings');
 
 const PIPELINE_KEY = 'pipeline';
@@ -33,6 +34,11 @@ const DEFAULTS = {
   seederSchedule: '0 1 * * *',
   seederScheduleParts: { frequency: 'daily', hour: 1, minute: 0, hours: 3, dayOfWeek: 1 },
   seederEnabled: true,
+  // Paused days, 0 = Sunday … 6 = Saturday. The filing pipeline, news, profiles and
+  // seeders do not start on these days. Default: nothing runs on Sunday.
+  skipDays: [0],
+  // The daily briefing email is not sent on these days. Default: paused on Monday.
+  briefingSkipDays: [1],
 };
 
 let cache = null;
@@ -45,6 +51,8 @@ function hydrate(cfg) {
   if (!out.newsScheduleParts) out.newsScheduleParts = parseCron(out.newsSchedule);
   if (!out.profilesScheduleParts) out.profilesScheduleParts = parseCron(out.profilesSchedule);
   if (!out.seederScheduleParts) out.seederScheduleParts = parseCron(out.seederSchedule);
+  out.skipDays = normalizeSkipDays(out.skipDays);
+  out.briefingSkipDays = normalizeSkipDays(out.briefingSkipDays);
   return out;
 }
 

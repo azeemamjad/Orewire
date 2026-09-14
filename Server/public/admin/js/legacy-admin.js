@@ -1686,6 +1686,38 @@ function mountPipelineCronBuilders() {
   mount('pl-seed-cron-mount', 'pl-seed', 'Company list seeders schedule');
 }
 
+// ── Paused-day pickers (pipeline + briefing email) ──
+const PL_DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** Checkbox row of weekdays. Checked = paused on that day. */
+function renderDayPicker(mountId, hintId, selected) {
+  const el = document.getElementById(mountId);
+  if (!el) return;
+  const paused = Array.isArray(selected) ? selected.map(Number) : [];
+  el.innerHTML = PL_DAY_NAMES.map((name, i) => `
+    <label class="config-toggle" style="margin:0;">
+      <input type="checkbox" data-day="${i}" ${paused.includes(i) ? 'checked' : ''}
+        onchange="updateDayPickerHint('${mountId}', '${hintId}')" /> ${name}
+    </label>`).join('');
+  updateDayPickerHint(mountId, hintId);
+}
+
+function readDayPicker(mountId) {
+  const el = document.getElementById(mountId);
+  if (!el) return [];
+  return [...el.querySelectorAll('input[data-day]')]
+    .filter((c) => c.checked)
+    .map((c) => Number(c.dataset.day))
+    .sort((a, b) => a - b);
+}
+
+function updateDayPickerHint(mountId, hintId) {
+  const el = document.getElementById(hintId);
+  if (!el) return;
+  const days = readDayPicker(mountId).map((i) => PL_DAY_NAMES[i]);
+  el.textContent = days.length ? `Paused: ${days.join(', ')}` : 'Runs every day';
+}
+
 function plLogsQuery(offset) {
   const src = encodeURIComponent(_plLogSource || 'all');
   return `${API}/api/pipeline/logs?offset=${offset}&source=${src}`;
@@ -1813,6 +1845,8 @@ async function pipelineLoadConfig() {
     setChk('pl-prof-enabled', cfg.profilesEnabled);
     setChk('pl-seed-cron-enabled', cfg.seederEnabled);
     set('pp-delay', cfg.profilesDelay || 2500);
+    renderDayPicker('pl-skip-days', 'pl-skip-days-hint', cfg.skipDays || []);
+    renderDayPicker('pl-briefing-skip-days', 'pl-briefing-skip-days-hint', cfg.briefingSkipDays || []);
     updateCronPreviews(cfg);
   } catch { /* ignore */ }
 }
@@ -2054,6 +2088,8 @@ async function pipelineSaveConfig() {
     profilesEnabled: document.getElementById('pl-prof-enabled')?.checked,
     profilesDelay: parseInt(document.getElementById('pp-delay')?.value) || 2500,
     seederEnabled: document.getElementById('pl-seed-cron-enabled')?.checked,
+    skipDays: readDayPicker('pl-skip-days'),
+    briefingSkipDays: readDayPicker('pl-briefing-skip-days'),
   };
   try {
     const r = await fetch(`${API}/api/pipeline/config`, {

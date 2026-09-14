@@ -63,6 +63,15 @@
 
     <!-- Panel: Schedules -->
     <div class="pl-panel active" id="pl-panel-schedules">
+      <div class="pl-card" style="margin-bottom:20px;">
+        <div class="pl-card-head">
+          <div class="pl-card-title">Paused days</div>
+        </div>
+        <p class="pl-card-desc">The pipeline does not <strong>start</strong> on the selected days — Canada filings, ASX filings, news releases, company profiles and company seeders all pause. The scheduled run is skipped, not queued.</p>
+        <div id="pl-skip-days" style="display:flex;flex-wrap:wrap;gap:14px;"></div>
+        <div class="pl-schedule-row" id="pl-skip-days-hint" style="margin-top:10px;"></div>
+      </div>
+
       <div class="pl-grid-2">
         <div class="pl-card">
           <div class="pl-card-head">
@@ -125,6 +134,15 @@
           <label class="config-toggle"><input type="checkbox" id="pl-seed-cron-enabled" onchange="pipelineCronToggle(this.checked, 'seeders')" /> Enable daily run</label>
           <div class="pl-schedule-row" style="margin-top:12px;">Status: <span id="pl-seed-cron-status">-</span></div>
         </div>
+      </div>
+
+      <div class="pl-card" style="margin-top:20px;">
+        <div class="pl-card-head">
+          <div class="pl-card-title">Briefing email</div>
+        </div>
+        <p class="pl-card-desc">The daily morning briefing is <strong>not sent</strong> on the selected days. Send time and time zone come from <code>BRIEFING_CRON</code> / <code>BRIEFING_TIMEZONE</code>.</p>
+        <div id="pl-briefing-skip-days" style="display:flex;flex-wrap:wrap;gap:14px;"></div>
+        <div class="pl-schedule-row" id="pl-briefing-skip-days-hint" style="margin-top:10px;"></div>
       </div>
 
       <div class="pl-save-bar">
