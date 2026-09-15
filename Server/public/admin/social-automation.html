@@ -111,7 +111,7 @@ details.legacy[open] summary::before { content: '▾ '; }
 <main class="main">
   <div class="page-header">
     <h1>Social Automation</h1>
-    <p>Daily X morning thread from briefing filings &amp; news — posted via the official X API.</p>
+    <p>Template-driven material posts — drill results, financings, resources, studies, permitting and deals — generated with AI and posted via the official X API.</p>
   </div>
 
   <div class="social-stats" id="social-stats">
@@ -192,6 +192,7 @@ details.legacy[open] summary::before { content: '▾ '; }
             <button class="btn btn-primary btn-sm" type="submit">Save client</button>
             <button class="btn btn-primary btn-sm" type="button" id="btn-oauth2-connect" onclick="connectOAuth2()">Connect with X</button>
             <button class="btn btn-ghost btn-sm" type="button" id="btn-oauth2-disconnect" onclick="disconnectOAuth2()">Disconnect</button>
+            <span class="status-badge" id="oauth2-badge"><span class="dot"></span><span id="oauth2-badge-text">—</span></span>
           </div>
           <p class="hint" id="o2-meta" style="margin-top:10px;"></p>
         </form>

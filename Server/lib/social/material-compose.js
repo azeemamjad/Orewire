@@ -129,27 +129,56 @@ function ungroundedNumbers(postText, source) {
 }
 
 /**
+ * Does one of `nums` appear in `text` (magnitude-tolerant), optionally near a keyword?
+ * The anchor window stops an unrelated figure from satisfying the check — without it an
+ * IRR of "20" would be "found" inside "20-year mine life".
+ */
+function numberAppearsInText(text, nums, anchor, window = 32) {
+  const wanted = new Set(nums);
+  const re = /\d[\d,]*(?:\.\d+)?/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const raw = m[0].replace(/,/g, '');
+    const n = Number(raw);
+    if (!Number.isFinite(n)) continue;
+
+    let hit = false;
+    for (const want of wanted) {
+      if (want === raw || want === String(n)) { hit = true; break; }
+      const w = Number(want);
+      if (Number.isFinite(w)
+        && [1e3, 1e6, 1e9].some((k) => String(w * k) === String(n) || String(w / k) === String(n))) {
+        hit = true;
+        break;
+      }
+    }
+    if (!hit) continue;
+    if (!anchor) return true;
+
+    const from = Math.max(0, m.index - window);
+    const to = Math.min(text.length, m.index + m[0].length + window);
+    if (anchor.test(text.slice(from, to))) return true;
+  }
+  return false;
+}
+
+/**
  * Required fields that carry a number must actually surface that number in the post —
  * otherwise the model filled the slot but wrote a body that omits the headline figure
- * (e.g. a financing post with no amount). Magnitude shifts are tolerated.
+ * (e.g. a financing post with no amount, or a study post with no IRR).
  */
 function valuesMissingFromText(fields, text, templateKey) {
   const spec = TEMPLATES[templateKey];
   if (!spec) return [];
-  const textNums = numberSet(text);
   const out = [];
   for (const f of spec.fields) {
     if (!f.required || !f.numeric) continue; // only headline figures are verified
     const value = fields?.[f.name];
     if (value == null) continue;
-    const nums = numberSet(typeof value === 'string' ? value : JSON.stringify(value));
-    if (!nums.size) continue; // purely textual field — nothing to verify
-    const found = [...nums].some((n) => {
-      if (textNums.has(n)) return true;
-      const num = Number(n);
-      return [1e3, 1e6, 1e9].some((m) => textNums.has(String(num * m)) || textNums.has(String(num / m)));
-    });
-    if (!found) out.push(f.name);
+    const nums = [...numberSet(typeof value === 'string' ? value : JSON.stringify(value))];
+    if (!nums.length) continue; // purely textual field — nothing to verify
+    const anchor = f.anchor ? new RegExp(f.anchor, 'i') : null;
+    if (!numberAppearsInText(text, nums, anchor)) out.push(f.name);
   }
   return out;
 }
@@ -307,50 +336,53 @@ async function composeMaterialPost(candidate) {
       };
     }
 
-    const { text, commodity } = render(candidate, parsed);
+    const { text: fullText, commodity } = render(candidate, parsed);
     if (commodity) fields.commodity = commodity;
 
-    // Gate 2 — numeric grounding (URL excluded: it contains the filing id)
-    const checkable = text.split('\n').filter((l) => l.trim() !== siteUrl(candidate)).join('\n');
-    const bad = ungroundedNumbers(checkable, sourceBlob(candidate));
+    // The URL is excluded from the text checks: it contains the filing id, which is not
+    // in the source analysis and would otherwise look like an invented number.
+    const stripUrl = (t) => t.split('\n').filter((l) => l.trim() !== siteUrl(candidate)).join('\n');
+
+    // Gate 2 — numeric grounding
+    const bad = ungroundedNumbers(stripUrl(fullText), sourceBlob(candidate));
     if (bad.length) {
       last = { reason: 'ungrounded_number', detail: bad.join(', ') };
       if (attempt === 2) {
         return {
           ok: false, status: 'suppressed', reason: 'ungrounded_number', detail: bad.join(', '),
-          text, fields, model: generated.model, raw: parsed, attempts,
+          text: fullText, fields, model: generated.model, raw: parsed, attempts,
         };
       }
       continue;
     }
 
-    // Gate 3 — the headline required values must actually appear in the post body
-    const notInText = valuesMissingFromText(fields, checkable, candidate.category);
+    // Gate 3 — length. Shrink BEFORE the value check so that check sees exactly the text
+    // that would be published: shrinking drops body lines, and dropping a line after
+    // validation is how a post could previously go out missing its IRR/NPV.
+    let text = fullText;
+    if (text.length > MAX_TWEET) {
+      const shrunk = shrinkToFit(candidate, parsed);
+      if (!shrunk) {
+        last = { reason: 'too_long', detail: `${fullText.length} chars` };
+        if (attempt === 2) {
+          return {
+            ok: false, status: 'suppressed', reason: 'too_long', detail: `${fullText.length} chars`,
+            text: fullText, fields, model: generated.model, raw: parsed, attempts,
+          };
+        }
+        continue;
+      }
+      text = shrunk.text;
+    }
+
+    // Gate 4 — the headline required values must actually appear in the FINAL text
+    const notInText = valuesMissingFromText(fields, stripUrl(text), candidate.category);
     if (notInText.length) {
       last = { reason: 'value_not_in_text', detail: notInText.join(', ') };
       if (attempt === 2) {
         return {
           ok: false, status: 'suppressed', reason: 'value_not_in_text',
           detail: notInText.join(', '), missing: notInText,
-          text, fields, model: generated.model, raw: parsed, attempts,
-        };
-      }
-      continue;
-    }
-
-    // Gate 4 — length
-    if (text.length > MAX_TWEET) {
-      const shrunk = shrinkToFit(candidate, parsed);
-      if (shrunk) {
-        return {
-          ok: true, status: 'generated', text: shrunk.text, fields,
-          model: generated.model, raw: parsed, attempts,
-        };
-      }
-      last = { reason: 'too_long', detail: `${text.length} chars` };
-      if (attempt === 2) {
-        return {
-          ok: false, status: 'suppressed', reason: 'too_long', detail: `${text.length} chars`,
           text, fields, model: generated.model, raw: parsed, attempts,
         };
       }
@@ -374,6 +406,7 @@ module.exports = {
   generateOnce,
   render,
   shrinkToFit,
+  numberAppearsInText,
   valuesMissingFromText,
   composeMaterialPost,
   siteUrl,

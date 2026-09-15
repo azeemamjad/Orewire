@@ -26,8 +26,11 @@ const TAIL_HASHTAGS = {
 };
 
 /**
- * @typedef {{ name: string, label: string, required: boolean, numeric?: boolean, hint: string }} FieldSpec
+ * @typedef {{ name: string, label: string, required: boolean, numeric?: boolean, anchor?: string, hint: string }} FieldSpec
  *   `numeric: true` marks a headline figure that must also surface in the post body.
+ *   `anchor` (a case-insensitive regex source) additionally requires that figure to appear
+ *   near a matching keyword — e.g. the IRR number must sit next to "IRR", so an unrelated
+ *   "20-year mine life" cannot satisfy it.
  */
 
 const TEMPLATES = {
@@ -93,9 +96,9 @@ const TEMPLATES = {
     fields: [
       { name: 'studyType', label: 'Study type', required: true, hint: '"PEA", "Pre-Feasibility Study (PFS)" or "Feasibility Study (FS)"' },
       { name: 'project', label: 'Project name', required: true, hint: 'Name of the project' },
-      { name: 'npv', label: 'After-tax NPV', required: true, numeric: true, hint: 'e.g. "$410M"' },
+      { name: 'npv', label: 'After-tax NPV', required: true, numeric: true, anchor: 'npv', hint: 'e.g. "$410M"' },
       { name: 'discountPct', label: 'Discount rate', required: false, hint: 'e.g. "5%"' },
-      { name: 'irr', label: 'After-tax IRR', required: true, numeric: true, hint: 'e.g. "38"' },
+      { name: 'irr', label: 'After-tax IRR', required: true, numeric: true, anchor: 'irr|internal rate', hint: 'e.g. "38"' },
       { name: 'payback', label: 'Payback years', required: false, hint: 'e.g. "2.1"' },
       { name: 'capex', label: 'Initial capex', required: false, hint: 'e.g. "$185M"' },
       { name: 'takeaway', label: 'One-line takeaway', required: true, hint: 'How this re-rates the project' },
@@ -233,6 +236,12 @@ const COMMODITY_TAGS = [
   { re: /\bpotash\b/i, tag: 'Potash' },
   { re: /\bantimony\b/i, tag: 'Antimony' },
   { re: /\btin\b/i, tag: 'Tin' },
+  { re: /\btungsten\b|\bwo3\b|wolfram/i, tag: 'Tungsten' },
+  { re: /\bmanganese\b/i, tag: 'Manganese' },
+  { re: /\bvanadium\b/i, tag: 'Vanadium' },
+  { re: /\bchromium\b|chromite/i, tag: 'Chromium' },
+  { re: /\bdiamond/i, tag: 'Diamonds' },
+  { re: /\bphosphate\b|apatite/i, tag: 'Phosphate' },
 ];
 
 /** Canonical commodity names the model may return. */
@@ -269,6 +278,17 @@ const COMMODITY_SYNONYMS = {
   potash: 'Potash',
   antimony: 'Antimony',
   tin: 'Tin',
+  tungsten: 'Tungsten',
+  wo3: 'Tungsten',
+  wolfram: 'Tungsten',
+  manganese: 'Manganese',
+  vanadium: 'Vanadium',
+  chromium: 'Chromium',
+  chromite: 'Chromium',
+  diamonds: 'Diamonds',
+  diamond: 'Diamonds',
+  phosphate: 'Phosphate',
+  apatite: 'Phosphate',
 };
 
 /** Validate a model-reported commodity into a safe hashtag token, else null. */

@@ -88,12 +88,17 @@ function rankScore(row) {
   return score;
 }
 
-/** How many posts each category has had in the last N days (drives rotation). */
+/**
+ * How many posts each category has had in the last N days (drives rotation).
+ * Counts dry-run generations too — if only 'posted' counted, a dry run would leave every
+ * counter at zero and the same high-scoring categories would win every single tick.
+ */
 async function categoryRecentCounts(days = 7) {
   const r = await db.query(
     `SELECT category, COUNT(*)::int AS n
        FROM social_material_posts
-      WHERE status = 'posted' AND posted_at > NOW() - ($1::int * INTERVAL '1 day')
+      WHERE status IN ('posted', 'generated')
+        AND COALESCE(posted_at, created_at) > NOW() - ($1::int * INTERVAL '1 day')
       GROUP BY category`,
     [Number(days) || 7],
   );
@@ -122,26 +127,30 @@ async function rankCandidates(rows) {
 }
 
 /**
- * Posts already produced today, in the account timezone. Counts dry-run generations too,
- * so `dry_run` cannot burn AI calls on every tick.
+ * Posts produced today, in the account timezone.
+ * While `dry_run` is on this counts generations, so a dry run cannot burn AI calls every
+ * tick. Once live it counts only real posts, so a day's dry runs do not eat the live quota.
  */
-async function countPostedToday(timezone = 'America/Toronto') {
+async function countPostedToday(timezone = 'America/Toronto', { dryRun = false } = {}) {
+  const statuses = dryRun ? ['posted', 'generated'] : ['posted'];
   const r = await db.query(
     `SELECT COUNT(*)::int AS n
        FROM social_material_posts
-      WHERE status IN ('posted', 'generated')
+      WHERE status = ANY($2)
         AND (COALESCE(posted_at, created_at) AT TIME ZONE $1)::date = (NOW() AT TIME ZONE $1)::date`,
-    [timezone],
+    [timezone, statuses],
   );
   return r.rows[0]?.n || 0;
 }
 
-/** Timestamp of the most recent successful post/generation (for the min-gap guard). */
-async function lastPostedAt() {
+/** Timestamp of the most recent post/generation (for the min-gap guard). */
+async function lastPostedAt({ dryRun = false } = {}) {
+  const statuses = dryRun ? ['posted', 'generated'] : ['posted'];
   const r = await db.query(
     `SELECT MAX(COALESCE(posted_at, created_at)) AS last
        FROM social_material_posts
-      WHERE status IN ('posted', 'generated')`,
+      WHERE status = ANY($1)`,
+    [statuses],
   );
   return r.rows[0]?.last || null;
 }
@@ -150,7 +159,8 @@ async function lastPostedAt() {
 async function checkGuards({ settings, force = false } = {}) {
   if (force) return { ok: true, forced: true };
 
-  const postedToday = await countPostedToday(settings.timezone);
+  const dryRun = !!settings.dry_run;
+  const postedToday = await countPostedToday(settings.timezone, { dryRun });
   const cap = Number(settings.material_daily_cap) || 3;
   if (postedToday >= cap) {
     return { ok: false, reason: 'daily_cap_reached', postedToday, cap };
@@ -158,7 +168,7 @@ async function checkGuards({ settings, force = false } = {}) {
 
   const gapMin = Number(settings.material_min_gap_minutes) || 0;
   if (gapMin > 0) {
-    const last = await lastPostedAt();
+    const last = await lastPostedAt({ dryRun });
     if (last) {
       const elapsedMin = (Date.now() - new Date(last).getTime()) / 60000;
       if (elapsedMin < gapMin) {
