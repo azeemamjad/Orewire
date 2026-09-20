@@ -3,9 +3,9 @@
     "id": "company-quotes",
     "label": "Company quote refresh",
     "type": "in-process",
-    "pid": 557628,
+    "pid": 59924,
     "status": "running",
-    "startedAt": 1784664000022,
+    "startedAt": 1789504200016,
     "endedAt": null,
     "meta": {
       "limit": null,
@@ -14,6 +14,37 @@
       "concurrency": 3,
       "delayMs": 300,
       "reason": "cron"
+    }
+  },
+  "ticker-recheck": {
+    "id": "ticker-recheck",
+    "label": "Ticker recheck (web + AI)",
+    "type": "in-process",
+    "pid": 59924,
+    "status": "completed",
+    "startedAt": 1789477201566,
+    "endedAt": 1789477344244,
+    "meta": {
+      "limit": null,
+      "ticker": null,
+      "dryRun": false,
+      "delay": 1500
+    }
+  },
+  "profiles": {
+    "id": "profiles",
+    "label": "Profile scrape (CSE/ASX/TMX)",
+    "type": "in-process",
+    "pid": 50248,
+    "status": "stale",
+    "startedAt": 1789333200021,
+    "endedAt": 1789338924204,
+    "meta": {
+      "limit": null,
+      "ticker": null,
+      "refreshDays": null,
+      "delay": 2500,
+      "dryRun": false
     }
   }
 }
