@@ -16,7 +16,7 @@ function NewsRow({ item }: { item: NewsItem }) {
         className="group flex items-start gap-3 px-4 py-4 hover:bg-background/60 transition-colors"
       >
         <div className="flex-1 min-w-0">
-          <div className="text-[14px] font-semibold leading-snug text-foreground group-hover:text-accent transition-colors">
+          <div className="text-[15px] font-semibold leading-snug text-foreground group-hover:text-accent transition-colors">
             {item.title}
           </div>
           <div className="mt-1.5 flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
@@ -80,7 +80,7 @@ export default function MarketNewsFeedSection({
           View all <ArrowUpRight className="w-3.5 h-3.5" />
         </Link>
       </div>
-      <div className="border border-border bg-surface">
+      <div className="card-surface">
         {isLoading ? (
           <p className="px-4 py-6 text-sm text-muted-foreground">Loading headlines…</p>
         ) : items.length === 0 ? (
