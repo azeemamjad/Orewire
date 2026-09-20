@@ -153,7 +153,7 @@ const CurrencyDetail = () => {
   };
 
   return (
-    <SiteLayout morningBrief>
+    <SiteLayout>
       <main className="mx-auto max-w-7xl px-4 py-6">
         <nav className="text-xs text-muted-foreground mb-4 font-mono">
           <Link to="/" className="hover:text-foreground">

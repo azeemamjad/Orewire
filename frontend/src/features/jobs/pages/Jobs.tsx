@@ -43,7 +43,7 @@ const Jobs = () => {
   const regular = jobs.filter((j) => !j.promoted);
 
   return (
-    <SiteLayout morningBrief searchHeroBar className="min-h-screen bg-background flex flex-col">
+    <SiteLayout searchHeroBar className="min-h-screen bg-background flex flex-col">
       <section className="border-b border-border bg-gradient-to-br from-background via-background to-muted/40">
         <div className="container-page section-y">
           <div className="flex items-end justify-between flex-wrap gap-4 mb-4">

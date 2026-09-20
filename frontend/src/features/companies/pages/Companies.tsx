@@ -169,7 +169,7 @@ const Companies = () => {
   const shown = pagination ? Math.min(pagination.page * pagination.limit, pagination.total) : companies.length;
 
   return (
-    <SiteLayout morningBrief className="min-h-screen bg-background text-foreground flex flex-col">
+    <SiteLayout className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Hero */}
       <section className="border-b border-border bg-card">
         <div className="container-page section-y">

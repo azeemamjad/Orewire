@@ -209,7 +209,7 @@ const NavSearch = () => {
   return (
     <div ref={wrapRef} className="flex-1 flex justify-center min-w-0">
       <form
-        className="relative w-full max-w-4xl group hidden md:block"
+        className="relative w-full max-w-3xl group"
         onSubmit={(e) => {
           e.preventDefault();
           if (activeIdx >= 0 && flatItems[activeIdx]?.hit) goHit(flatItems[activeIdx].hit!);
@@ -218,13 +218,9 @@ const NavSearch = () => {
         }}
       >
         <div
-          className={`absolute inset-0 -z-10 bg-accent/20 blur-md transition-opacity ${focused ? "opacity-100" : "opacity-0"}`}
+          className={`absolute inset-0 -z-10 bg-accent/15 blur-lg rounded-xl transition-opacity ${focused ? "opacity-100" : "opacity-0"}`}
         />
-        <Search
-          className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors pointer-events-none ${
-            focused ? "text-accent" : "text-foreground/70"
-          }`}
-        />
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors pointer-events-none text-foreground/70" />
         <input
           ref={inputRef}
           type="search"
@@ -248,7 +244,7 @@ const NavSearch = () => {
           aria-label="Search companies"
           aria-expanded={showPanel}
           aria-autocomplete="list"
-          className="w-full h-11 pl-11 pr-10 text-[15px] font-medium bg-background border-2 border-foreground/20 hover:border-foreground/40 placeholder:text-muted-foreground focus:bg-background focus:border-accent focus:shadow-[0_0_0_4px_hsl(var(--accent)/0.18)] outline-none transition-all rounded-md"
+          className="w-full h-11 pl-11 pr-10 text-[15px] font-medium bg-background border border-foreground/15 shadow-sm hover:border-foreground/30 placeholder:text-muted-foreground focus:bg-background focus:border-accent focus:shadow-[0_0_0_4px_hsl(var(--accent)/0.18)] outline-none transition-all rounded-xl"
         />
         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
           {query && (

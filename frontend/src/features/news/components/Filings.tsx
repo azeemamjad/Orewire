@@ -42,7 +42,7 @@ const Filings = ({ className = "" }: { className?: string }) => {
         <div className="flex items-center gap-2">
           <FileText className="w-3.5 h-3.5 text-accent" />
           <h3 className="font-display text-sm font-bold tracking-tight">Latest filings</h3>
-          <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">· Summarized</span>
+          <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">· Summarized</span>
         </div>
         <Link to="/filings" className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground hover:text-foreground">
           All →
@@ -54,7 +54,7 @@ const Filings = ({ className = "" }: { className?: string }) => {
             <Link to={`/filings/${f.id}`} className="block px-3.5 py-3">
               <div className="flex items-center gap-2 mb-1.5">
                 <span className="font-mono text-[13px] font-bold whitespace-nowrap">{f.ticker}</span>
-                <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5 whitespace-nowrap">
+                <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5 whitespace-nowrap">
                   {f.exchange}
                 </span>
                 <span className="ml-auto font-mono text-[10px] text-muted-foreground inline-flex items-center gap-1 shrink-0 whitespace-nowrap">
@@ -68,16 +68,16 @@ const Filings = ({ className = "" }: { className?: string }) => {
               <div className="flex items-center gap-1.5 mb-1.5 min-w-0">
                 {f.verdict ? (
                   <span
-                    className={`font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 font-bold rounded-full whitespace-nowrap shrink-0 ${verdictStyle[f.verdict] || verdictStyle.Routine}`}
+                    className={`font-mono text-[10px] uppercase tracking-widest px-1.5 py-0.5 font-bold rounded-full whitespace-nowrap shrink-0 ${verdictStyle[f.verdict] || verdictStyle.Routine}`}
                   >
                     {f.verdict}
                   </span>
                 ) : (
-                  <span className="invisible font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 font-bold rounded-full whitespace-nowrap shrink-0">
+                  <span className="invisible font-mono text-[10px] uppercase tracking-widest px-1.5 py-0.5 font-bold rounded-full whitespace-nowrap shrink-0">
                     Routine
                   </span>
                 )}
-                <span className="inline-flex items-center gap-1 text-[12.5px] font-bold tracking-tight text-foreground leading-snug min-w-0 truncate">
+                <span className="inline-flex items-center gap-1 text-[12px] font-bold tracking-tight text-foreground leading-snug min-w-0 truncate">
                   <FileText className="w-3 h-3 text-accent shrink-0" />
                   <span className="truncate">{f.filingType}</span>
                 </span>

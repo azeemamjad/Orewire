@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { fetchMovers, type MoverItem } from "@/lib/api";
+import MorningBrief from "@/features/home/components/MorningBrief";
 
 const REFETCH_MS = 60 * 1000; // match server movers poll (~1 min)
 
@@ -57,6 +58,7 @@ const MarketStrip = () => {
   ];
 
   return (
+    <>
     <div className="bg-[hsl(220_45%_10%)] text-[hsl(36_30%_94%)] border-b border-[hsl(36_30%_94%/0.1)] overflow-hidden">
       <div className="ticker flex items-center gap-8 py-2 whitespace-nowrap w-max">
         {[...display, ...display].map((t, i) => (
@@ -70,6 +72,8 @@ const MarketStrip = () => {
         ))}
       </div>
     </div>
+    <MorningBrief />
+    </>
   );
 };
 

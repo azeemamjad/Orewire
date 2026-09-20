@@ -183,11 +183,11 @@ const News = () => {
                               <span className="font-mono text-[13px] font-bold whitespace-nowrap">{item.ticker}</span>
                             )}
                             {item.exchange && (
-                              <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5 whitespace-nowrap">
+                              <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5 whitespace-nowrap">
                                 {item.exchange}
                               </span>
                             )}
-                            <span className={`font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 font-bold whitespace-nowrap ${severityStyle[sev]}`}>
+                            <span className={`font-mono text-[10px] uppercase tracking-widest px-1.5 py-0.5 font-bold whitespace-nowrap ${severityStyle[sev]}`}>
                               {newsSignificanceLabel(item.sentiment, item.title)}
                             </span>
                             <span className="ml-auto font-mono text-[10px] text-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
@@ -196,14 +196,14 @@ const News = () => {
                             </span>
                           </div>
                           <div className="text-[13px] font-semibold text-foreground/90 mb-1 leading-snug truncate">{item.company || " "}</div>
-                          <div className="flex items-center gap-1 text-[13.5px] font-bold tracking-tight text-foreground leading-snug mb-1.5 min-w-0">
+                          <div className="flex items-center gap-1 text-[13px] font-bold tracking-tight text-foreground leading-snug mb-1.5 min-w-0">
                             <FileText className="w-3.5 h-3.5 text-accent shrink-0" />
                             <span className="truncate">{item.title}</span>
                           </div>
-                          <p className="text-[12.5px] leading-relaxed text-foreground/70 line-clamp-2 min-h-[2.6rem]">
+                          <p className="text-[12px] leading-relaxed text-foreground/70 line-clamp-2 min-h-[2.6rem]">
                             {cleanSummary(item.summary) || item.title}
                           </p>
-                          <span className="mt-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">{filingType}</span>
+                          <span className="mt-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{filingType}</span>
                         </Link>
                       </li>
                     );

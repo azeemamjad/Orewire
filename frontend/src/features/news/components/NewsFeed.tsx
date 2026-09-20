@@ -174,7 +174,7 @@ const NewsFeed = ({ className = "" }: { className?: string }) => {
         <div className="flex items-center gap-2">
           <Newspaper className="w-3.5 h-3.5" />
           <h3 className="font-display text-sm font-bold tracking-tight">News releases</h3>
-          <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">· Summarized</span>
+          <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">· Summarized</span>
         </div>
         <Link
           to="/news"

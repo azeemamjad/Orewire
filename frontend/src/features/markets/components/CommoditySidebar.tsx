@@ -99,14 +99,14 @@ const SectionHeader = ({
     <div className="flex items-center gap-2">
       <Icon className={`w-3.5 h-3.5 ${accent ? "text-accent" : ""}`} />
       <h3 className="font-display text-sm font-bold tracking-tight">{title}</h3>
-      <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">{meta}</span>
+      <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{meta}</span>
     </div>
   </div>
 );
 
 const TableHeader = () => (
   <thead>
-    <tr className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border-b border-border">
+    <tr className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
       <th className="text-left px-3 py-1.5 font-medium">Ticker</th>
       <th className="text-right py-1.5 font-medium">Last</th>
       <th className="text-right px-3 py-1.5 font-medium">Chg</th>
@@ -171,7 +171,7 @@ const CommoditySidebar = ({ className = "" }: { className?: string }) => {
       <div className="card-surface flex flex-col flex-1 min-h-0">
         <SectionHeader icon={Flame} title="Commodities" meta="· Spot" accent />
         <div className="flex-1 overflow-auto min-h-0">
-          <table className="w-full text-[12.5px]">
+          <table className="w-full text-[12px]">
             <TableHeader />
             <tbody className="divide-y divide-border">
               {commodities.map((c) => {
@@ -182,11 +182,11 @@ const CommoditySidebar = ({ className = "" }: { className?: string }) => {
                       <Link to={`/market/commodity/${slug}`} className="block">
                         <div className="flex items-center gap-2">
                           <span className="font-mono font-bold group-hover:underline">{slug}</span>
-                          <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5">
+                          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5">
                             SPOT
                           </span>
                         </div>
-                        <div className="text-[10.5px] text-muted-foreground truncate max-w-[140px]">
+                        <div className="text-[10px] text-muted-foreground truncate max-w-[140px]">
                           {c.label} / {c.unit}
                         </div>
                       </Link>
@@ -205,7 +205,7 @@ const CommoditySidebar = ({ className = "" }: { className?: string }) => {
       <div className="card-surface flex flex-col flex-1 min-h-0">
         <SectionHeader icon={TrendingUp} title="Indexes" meta="· Mining & Markets" />
         <div className="flex-1 overflow-auto min-h-0">
-          <table className="w-full text-[12.5px]">
+          <table className="w-full text-[12px]">
             <TableHeader />
             <tbody className="divide-y divide-border">
               {indexes.map((idx) => {
@@ -216,11 +216,11 @@ const CommoditySidebar = ({ className = "" }: { className?: string }) => {
                       <Link to={`/market/index/${idx.key}`} className="block">
                         <div className="flex items-center gap-2">
                           <span className="font-mono font-bold group-hover:underline">{idx.key}</span>
-                          <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5">
+                          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5">
                             {kind}
                           </span>
                         </div>
-                        <div className="text-[10.5px] text-muted-foreground truncate max-w-[180px]">{idx.label}</div>
+                        <div className="text-[10px] text-muted-foreground truncate max-w-[180px]">{idx.label}</div>
                       </Link>
                     </td>
                     <td className="py-2 text-right font-mono font-semibold whitespace-nowrap">{fmtIndexPrice(idx.price)}</td>
@@ -237,7 +237,7 @@ const CommoditySidebar = ({ className = "" }: { className?: string }) => {
       <div className="card-surface flex flex-col flex-1 min-h-0">
         <SectionHeader icon={DollarSign} title="Currencies" meta="· FX · Spot" accent />
         <div className="flex-1 overflow-auto min-h-0">
-          <table className="w-full text-[12.5px]">
+          <table className="w-full text-[12px]">
             <TableHeader />
             <tbody className="divide-y divide-border">
               {currencies.map((c) => (
@@ -246,12 +246,12 @@ const CommoditySidebar = ({ className = "" }: { className?: string }) => {
                     <Link to={`/market/currency/${c.key}`} className="block">
                       <div className="flex items-center gap-2">
                         <span className="font-mono font-bold group-hover:underline">{c.label || c.key}</span>
-                        <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5">
+                        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5">
                           FX
                         </span>
                       </div>
                       {c.subtitle && (
-                        <div className="text-[10.5px] text-muted-foreground truncate max-w-[180px]">{c.subtitle}</div>
+                        <div className="text-[10px] text-muted-foreground truncate max-w-[180px]">{c.subtitle}</div>
                       )}
                     </Link>
                   </td>

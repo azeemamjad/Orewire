@@ -48,16 +48,16 @@ const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up:
           <TrendingDown className="w-3.5 h-3.5 text-[hsl(var(--down))]" />
         )}
         <h3 className="font-display text-sm font-bold tracking-tight">{title}</h3>
-        <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">· Today</span>
+        <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">· Today</span>
       </div>
       <Link to="/companies" className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground hover:text-foreground">
         All →
       </Link>
     </div>
     <div className="flex-1 overflow-auto min-h-0">
-    <table className="w-full text-[12.5px] table-fixed">
+    <table className="w-full text-[12px] table-fixed">
       <thead>
-        <tr className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border-b border-border">
+        <tr className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
           <th className="text-left px-3 py-1.5 font-medium w-[46%]">Ticker</th>
           <th className="text-right py-1.5 font-medium w-[22%]">Last</th>
           <th className="text-right px-3 py-1.5 font-medium w-[32%]">Chg</th>
@@ -81,11 +81,11 @@ const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up:
               <td className="px-3 py-2">
                 <div className="flex items-center gap-2">
                   <span className="font-mono font-bold group-hover:underline">{r.ticker}</span>
-                  <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5">
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5">
                     {normExLabel(r.exchange)}
                   </span>
                 </div>
-                <div className="text-[10.5px] text-muted-foreground truncate max-w-[min(100%,11rem)] sm:max-w-[14rem]" title={titleCase(r.name)}>
+                <div className="text-[10px] text-muted-foreground truncate max-w-[min(100%,11rem)] sm:max-w-[14rem]" title={titleCase(r.name)}>
                   {titleCase(r.name)}
                 </div>
               </td>

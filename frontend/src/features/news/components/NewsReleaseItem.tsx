@@ -29,7 +29,7 @@ const NewsReleaseItem = ({
       <div className="flex items-center gap-2 mb-1.5">
         <span className="font-mono text-[13px] font-bold whitespace-nowrap">{ticker}</span>
         {exchange ? (
-          <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5 whitespace-nowrap">
+          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5 whitespace-nowrap">
             {exchange}
           </span>
         ) : null}
@@ -43,11 +43,11 @@ const NewsReleaseItem = ({
       </div>
       <div className="flex items-center gap-1.5 mb-1.5 min-w-0">
         <span
-          className={`font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 font-bold whitespace-nowrap shrink-0 ${newsSeverityStyle[severity] || newsSeverityStyle.Low}`}
+          className={`font-mono text-[10px] uppercase tracking-widest px-1.5 py-0.5 font-bold whitespace-nowrap shrink-0 ${newsSeverityStyle[severity] || newsSeverityStyle.Low}`}
         >
           {severity}
         </span>
-        <span className="inline-flex items-center gap-1 text-[12.5px] font-bold tracking-tight text-foreground leading-snug min-w-0 truncate">
+        <span className="inline-flex items-center gap-1 text-[12px] font-bold tracking-tight text-foreground leading-snug min-w-0 truncate">
           <FileText className="w-3 h-3 text-accent shrink-0" />
           <span className="truncate">{filingType}</span>
         </span>

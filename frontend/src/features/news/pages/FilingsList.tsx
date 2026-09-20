@@ -166,11 +166,11 @@ const FilingsList = () => {
                         <Link to={`/filings/${item.id}`} state={listingBack} className="block px-4 py-4">
                           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                             <span className="font-mono text-[13px] font-bold whitespace-nowrap">{item.ticker}</span>
-                            <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5 whitespace-nowrap">
+                            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5 whitespace-nowrap">
                               {item.exchange}
                             </span>
                             {item.verdict && (
-                              <span className={`font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 font-bold rounded-full whitespace-nowrap ${verdictStyle[item.verdict]}`}>
+                              <span className={`font-mono text-[10px] uppercase tracking-widest px-1.5 py-0.5 font-bold rounded-full whitespace-nowrap ${verdictStyle[item.verdict]}`}>
                                 {item.verdict}
                               </span>
                             )}
@@ -180,11 +180,11 @@ const FilingsList = () => {
                             </span>
                           </div>
                           <div className="text-[13px] font-semibold text-foreground/90 mb-1 leading-snug truncate">{item.company}</div>
-                          <div className="flex items-center gap-1 text-[13.5px] font-bold tracking-tight text-foreground leading-snug mb-1.5 min-w-0">
+                          <div className="flex items-center gap-1 text-[13px] font-bold tracking-tight text-foreground leading-snug mb-1.5 min-w-0">
                             <FileText className="w-3.5 h-3.5 text-accent shrink-0" />
                             <span className="truncate">{item.filingType}</span>
                           </div>
-                          <p className="text-[12.5px] leading-relaxed text-foreground/70 line-clamp-2 min-h-[2.6rem]">
+                          <p className="text-[12px] leading-relaxed text-foreground/70 line-clamp-2 min-h-[2.6rem]">
                             <Sparkles className="inline w-3 h-3 text-accent mr-1 -mt-0.5" />
                             {item.summary}
                           </p>

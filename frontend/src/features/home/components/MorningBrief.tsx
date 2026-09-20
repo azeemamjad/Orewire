@@ -25,19 +25,19 @@ const MorningBrief = () => {
 
   return (
     <div className="bg-background border-b border-border">
-      <div className="container-page h-14 flex items-center justify-center gap-6">
+      <div className="container-page min-h-14 py-2.5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
         <div className="flex items-center gap-2.5 text-[13px] text-foreground/80 min-w-0">
-          <span className="inline-flex items-center justify-center w-6 h-6 bg-accent/15 shrink-0">
+          <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-accent/15 shrink-0">
             <Mail className="w-3.5 h-3.5 text-accent" />
           </span>
           <span className="truncate">
             <span className="font-semibold text-foreground">Morning Brief</span>
-            <span className="text-muted-foreground hidden sm:inline">, daily summary in your inbox</span>
+            <span className="text-muted-foreground hidden sm:inline">, get a daily market summary everyday to your inbox</span>
           </span>
         </div>
         <form
           onSubmit={handleSubmit}
-          className="flex items-center h-9 border border-border bg-card overflow-hidden focus-within:border-accent transition-colors"
+          className="flex items-center h-9 rounded-lg border border-border bg-card overflow-hidden focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/25 transition-colors"
         >
           <input
             type="email"
@@ -45,7 +45,7 @@ const MorningBrief = () => {
             placeholder="you@firm.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="h-full w-44 sm:w-56 bg-transparent pl-3 pr-2 text-[13px] outline-none placeholder:text-muted-foreground/70"
+            className="h-full w-36 sm:w-56 bg-transparent pl-3 pr-2 text-[13px] outline-none placeholder:text-muted-foreground/70"
           />
           <button
             type="submit"

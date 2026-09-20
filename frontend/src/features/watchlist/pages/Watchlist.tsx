@@ -171,7 +171,7 @@ const Watchlist = () => {
 
   if (loading) {
     return (
-      <SiteLayout morningBrief className="min-h-screen bg-background flex flex-col">
+      <SiteLayout className="min-h-screen bg-background flex flex-col">
         <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading...</div>
       </SiteLayout>
     );
@@ -179,7 +179,7 @@ const Watchlist = () => {
 
   if (!isAuthenticated) {
     return (
-      <SiteLayout morningBrief className="min-h-screen bg-background text-foreground flex flex-col">
+      <SiteLayout className="min-h-screen bg-background text-foreground flex flex-col">
         <main className="flex-1 flex items-center justify-center px-4 py-20">
           <div className="max-w-md w-full border border-border bg-card p-8 text-center">
             <div className="mx-auto w-12 h-12 grid place-items-center bg-muted rounded-full mb-4">
@@ -225,7 +225,7 @@ const Watchlist = () => {
   };
 
   return (
-    <SiteLayout morningBrief className="min-h-screen bg-background text-foreground flex flex-col">
+    <SiteLayout className="min-h-screen bg-background text-foreground flex flex-col">
       <section className="border-b border-border bg-card">
         <div className="container-page section-y">
           <div className="flex items-end justify-between flex-wrap gap-4">
