@@ -107,9 +107,9 @@ const SectionHeader = ({
 const TableHeader = () => (
   <thead>
     <tr className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
-      <th className="text-left px-3 py-1.5 font-medium">Ticker</th>
-      <th className="text-right py-1.5 font-medium">Last</th>
-      <th className="text-right px-3 py-1.5 font-medium">Chg</th>
+      <th className="text-left pl-4 pr-2 py-1.5 font-medium">Ticker</th>
+      <th className="text-right px-2 py-1.5 font-medium">Last</th>
+      <th className="text-right pl-2 pr-4 py-1.5 font-medium">Chg</th>
     </tr>
   </thead>
 );
@@ -117,12 +117,12 @@ const TableHeader = () => (
 const ChgCell = ({ value }: { value: number | null }) => {
   if (value == null) {
     return (
-      <td className="px-3 py-2 text-right font-mono font-bold text-muted-foreground">-</td>
+      <td className="pl-2 pr-4 py-2 text-right font-mono font-bold tabular-nums text-muted-foreground">-</td>
     );
   }
   const up = value >= 0;
   return (
-    <td className={`px-3 py-2 text-right font-mono font-bold ${up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]"}`}>
+    <td className={`pl-2 pr-4 py-2 text-right font-mono font-bold tabular-nums ${up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]"}`}>
       <span className="inline-flex items-center gap-0.5">
         {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
         {fmtPct(value)}
@@ -170,15 +170,20 @@ const CommoditySidebar = ({ className = "" }: { className?: string }) => {
       {/* Commodities */}
       <div className="card-surface flex flex-col flex-1 min-h-0">
         <SectionHeader icon={Flame} title="Commodities" meta="· Spot" accent />
-        <div className="flex-1 overflow-auto min-h-0">
-          <table className="w-full text-[12px]">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+          <table className="w-full table-fixed text-[12px]">
+            <colgroup>
+              <col />
+              <col className="w-[96px]" />
+              <col className="w-[84px]" />
+            </colgroup>
             <TableHeader />
             <tbody className="divide-y divide-border">
               {commodities.map((c) => {
                 const slug = commoditySlugFromKey(c.key);
                 return (
                   <tr key={c.key} className="hover:bg-background/60 transition-colors cursor-pointer group">
-                    <td className="px-3 py-2">
+                    <td className="pl-4 pr-2 py-2 min-w-0">
                       <Link to={`/market/commodity/${slug}`} className="block">
                         <div className="flex items-center gap-2">
                           <span className="font-mono font-bold group-hover:underline">{slug}</span>
@@ -191,7 +196,7 @@ const CommoditySidebar = ({ className = "" }: { className?: string }) => {
                         </div>
                       </Link>
                     </td>
-                    <td className="py-2 text-right font-mono font-semibold whitespace-nowrap">{fmtPrice(c.price)}</td>
+                    <td className="px-2 py-2 text-right font-mono font-semibold tabular-nums whitespace-nowrap">{fmtPrice(c.price)}</td>
                     <ChgCell value={c.change_pct} />
                   </tr>
                 );
@@ -204,15 +209,20 @@ const CommoditySidebar = ({ className = "" }: { className?: string }) => {
       {/* Indexes */}
       <div className="card-surface flex flex-col flex-1 min-h-0">
         <SectionHeader icon={TrendingUp} title="Indexes" meta="· Mining & Markets" />
-        <div className="flex-1 overflow-auto min-h-0">
-          <table className="w-full text-[12px]">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+          <table className="w-full table-fixed text-[12px]">
+            <colgroup>
+              <col />
+              <col className="w-[96px]" />
+              <col className="w-[84px]" />
+            </colgroup>
             <TableHeader />
             <tbody className="divide-y divide-border">
               {indexes.map((idx) => {
                 const kind = INDEX_KIND[idx.key] || (idx.about === "ETF" ? "ETF" : "IDX");
                 return (
                   <tr key={idx.key} className="hover:bg-background/60 transition-colors cursor-pointer group">
-                    <td className="px-3 py-2">
+                    <td className="pl-4 pr-2 py-2 min-w-0">
                       <Link to={`/market/index/${idx.key}`} className="block">
                         <div className="flex items-center gap-2">
                           <span className="font-mono font-bold group-hover:underline">{idx.key}</span>
@@ -223,7 +233,7 @@ const CommoditySidebar = ({ className = "" }: { className?: string }) => {
                         <div className="text-[10px] text-muted-foreground truncate max-w-[180px]">{idx.label}</div>
                       </Link>
                     </td>
-                    <td className="py-2 text-right font-mono font-semibold whitespace-nowrap">{fmtIndexPrice(idx.price)}</td>
+                    <td className="px-2 py-2 text-right font-mono font-semibold tabular-nums whitespace-nowrap">{fmtIndexPrice(idx.price)}</td>
                     <ChgCell value={idx.change_pct} />
                   </tr>
                 );
@@ -236,8 +246,13 @@ const CommoditySidebar = ({ className = "" }: { className?: string }) => {
       {/* Currencies */}
       <div className="card-surface flex flex-col flex-1 min-h-0">
         <SectionHeader icon={DollarSign} title="Currencies" meta="· FX · Spot" accent />
-        <div className="flex-1 overflow-auto min-h-0">
-          <table className="w-full text-[12px]">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+          <table className="w-full table-fixed text-[12px]">
+            <colgroup>
+              <col />
+              <col className="w-[96px]" />
+              <col className="w-[84px]" />
+            </colgroup>
             <TableHeader />
             <tbody className="divide-y divide-border">
               {currencies.map((c) => (

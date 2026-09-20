@@ -6,6 +6,7 @@ import { fetchCommodities, fetchCompanies, fetchCurrencies, fetchIndexes, type C
 import {
   allSuggestionHrefs,
   buildNavSearchSections,
+  buildPopularCompanies,
   CATEGORY_LABELS,
   type NavSearchHit,
   type SearchCategory,
@@ -99,11 +100,23 @@ const NavSearch = () => {
     staleTime: 5 * 60_000,
   });
 
+  // Top companies by market cap — shown while the box is focused but empty.
+  const { data: popularData } = useQuery({
+    queryKey: ["nav-search-popular"],
+    queryFn: () => fetchCompanies({ limit: 6, page: 1 }),
+    staleTime: 5 * 60_000,
+  });
+
+  const popular = useMemo(
+    () => (debounced.length >= 1 ? [] : buildPopularCompanies(popularData?.data ?? [])),
+    [debounced, popularData?.data],
+  );
+
   const { order, sections } = useMemo(() => {
     if (debounced.length < 1) {
       return {
-        order: [] as SearchCategory[],
-        sections: { companies: [], commodities: [], indexes: [], currencies: [] },
+        order: (popular.length > 0 ? ["companies"] : []) as SearchCategory[],
+        sections: { companies: popular, commodities: [], indexes: [], currencies: [] },
       };
     }
     return buildNavSearchSections(
@@ -113,7 +126,7 @@ const NavSearch = () => {
       indexesData?.items ?? [],
       currenciesData?.items ?? [],
     );
-  }, [debounced, companyData?.data, commoditiesData?.items, indexesData?.items, currenciesData?.items]);
+  }, [debounced, popular, companyData?.data, commoditiesData?.items, indexesData?.items, currenciesData?.items]);
 
   const suggestionHrefs = useMemo(() => allSuggestionHrefs(sections), [sections]);
 
@@ -204,7 +217,7 @@ const NavSearch = () => {
     }
   };
 
-  const showPanel = open && (debounced.length >= 1 || recent.length > 0);
+  const showPanel = open && (debounced.length >= 1 || hasSuggestions || recent.length > 0);
 
   return (
     <div ref={wrapRef} className="flex-1 flex justify-center min-w-0">
@@ -267,7 +280,7 @@ const NavSearch = () => {
             className="absolute z-30 left-0 right-0 top-full mt-1 bg-card border border-border shadow-xl overflow-hidden max-h-[min(70vh,420px)] overflow-y-auto"
             role="listbox"
           >
-            {debounced.length >= 1 && (
+            {(debounced.length >= 1 || hasSuggestions) && (
               <>
                 {isSearching && !hasSuggestions && (
                   <p className="px-3 py-2.5 text-xs text-muted-foreground">Searching…</p>
@@ -281,13 +294,15 @@ const NavSearch = () => {
                   if (!hits.length) return null;
                   const Icon = CATEGORY_ICONS[cat];
                   const sectionStart = categoryOffsets.offsets.get(cat) ?? 0;
+                  const label =
+                    cat === "companies" && debounced.length === 0 ? "Popular companies" : CATEGORY_LABELS[cat];
 
                   return (
                     <div key={cat}>
                       <div className="px-2.5 py-1.5 border-t border-border first:border-t-0 bg-muted/20 sticky top-0 z-10">
                         <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                           <Icon className="w-3 h-3" />
-                          {CATEGORY_LABELS[cat]}
+                          {label}
                         </span>
                       </div>
                       {hits.map((hit, hi) => {
@@ -363,7 +378,7 @@ const NavSearch = () => {
               </div>
             )}
 
-            {debounced.length === 0 && recent.length === 0 && (
+            {debounced.length === 0 && !hasSuggestions && recent.length === 0 && (
               <p className="px-3 py-2.5 text-xs text-muted-foreground">
                 Search companies, commodities, indexes, or currencies.
               </p>

@@ -54,20 +54,26 @@ const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up:
         All →
       </Link>
     </div>
-    <div className="flex-1 overflow-auto min-h-0">
-    <table className="w-full text-[12px] table-fixed">
+    <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+    <table className="w-full table-fixed text-[12px]">
+      <colgroup>
+        <col />
+        <col className="w-[76px]" />
+        <col className="w-[84px]" />
+        <col className="w-[86px] hidden 2xl:table-column" />
+      </colgroup>
       <thead>
         <tr className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
-          <th className="text-left px-3 py-1.5 font-medium w-[46%]">Ticker</th>
-          <th className="text-right py-1.5 font-medium w-[22%]">Last</th>
-          <th className="text-right px-3 py-1.5 font-medium w-[32%]">Chg</th>
-          <th className="text-right px-3 py-1.5 font-medium hidden sm:table-cell">Mkt Cap</th>
+          <th className="text-left pl-4 pr-2 py-1.5 font-medium">Ticker</th>
+          <th className="text-right px-2 py-1.5 font-medium">Last</th>
+          <th className="text-right px-2 py-1.5 font-medium">Chg</th>
+          <th className="text-right pl-2 pr-4 py-1.5 font-medium hidden 2xl:table-cell">Mkt Cap</th>
         </tr>
       </thead>
       <tbody className="divide-y divide-border">
         {rows.length === 0 ? (
           <tr>
-            <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground text-xs">
+            <td colSpan={4} className="pl-4 pr-2 py-6 text-center text-muted-foreground text-xs">
               No data yet - try again in a moment.
             </td>
           </tr>
@@ -75,27 +81,27 @@ const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up:
           rows.map((r, i) => (
             <tr
               key={`${r.exchange}-${r.ticker}-${i}`}
-              className="hover:bg-background/60 transition-colors cursor-pointer group"
+              className="hover:bg-background/60 transition-colors cursor-pointer"
               onClick={() => navigate(`/company/${companySlug(r.exchange, r.ticker)}`)}
             >
-              <td className="px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono font-bold group-hover:underline">{r.ticker}</span>
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5">
+              <td className="pl-4 pr-2 py-2 min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono font-bold">{r.ticker}</span>
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5 shrink-0">
                     {normExLabel(r.exchange)}
                   </span>
                 </div>
-                <div className="text-[10px] text-muted-foreground truncate max-w-[min(100%,11rem)] sm:max-w-[14rem]" title={titleCase(r.name)}>
+                <div className="text-[10px] text-muted-foreground truncate" title={titleCase(r.name)}>
                   {titleCase(r.name)}
                 </div>
               </td>
-              <td className="py-2 pr-1 text-right font-mono font-semibold whitespace-nowrap">${fmtPrice(r.price)}</td>
-              <td className={`py-2 pr-3 pl-1 text-right font-mono font-bold whitespace-nowrap ${up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]"}`}>
-                <span className="inline-flex items-center gap-0.5">
-                  {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}{fmtPct(r.change_pct)}
+              <td className="px-2 py-2 text-right font-mono font-semibold tabular-nums whitespace-nowrap">${fmtPrice(r.price)}</td>
+              <td className={`px-2 py-2 text-right font-mono font-bold tabular-nums whitespace-nowrap ${up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]"}`}>
+                <span className="inline-flex items-center justify-end gap-0.5">
+                  {up ? <ArrowUpRight className="w-3 h-3 shrink-0" /> : <ArrowDownRight className="w-3 h-3 shrink-0" />}{fmtPct(r.change_pct)}
                 </span>
               </td>
-              <td className="px-3 py-2 text-right font-mono text-muted-foreground hidden sm:table-cell">
+              <td className="pl-2 pr-4 py-2 text-right font-mono tabular-nums text-muted-foreground hidden 2xl:table-cell">
                 {fmtMktCap(r.market_cap)}
               </td>
             </tr>

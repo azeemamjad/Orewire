@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchCommodities, fetchCompanies, fetchCurrencies, fetchIndexes } from "@/lib/api";
-import { buildNavSearchSections, type NavSearchHit, type SearchCategory } from "@/lib/nav-search";
+import { buildNavSearchSections, buildPopularCompanies, type NavSearchHit, type SearchCategory } from "@/lib/nav-search";
 
 const EMPTY_SECTIONS: Record<SearchCategory, NavSearchHit[]> = {
   companies: [],
@@ -48,9 +48,25 @@ export function useSearchSuggestions(query: string, debounceMs = 280) {
     staleTime: 5 * 60_000,
   });
 
+  // Top companies by market cap — shown as "Popular companies" while the box is
+  // focused but empty, matching the live reference.
+  const { data: popularData } = useQuery({
+    queryKey: ["nav-search-popular"],
+    queryFn: () => fetchCompanies({ limit: 6, page: 1 }),
+    staleTime: 5 * 60_000,
+  });
+
+  const popular = useMemo(
+    () => (debounced.length >= 1 ? [] : buildPopularCompanies(popularData?.data ?? [])),
+    [debounced, popularData?.data],
+  );
+
   const { order, sections } = useMemo(() => {
     if (debounced.length < 1) {
-      return { order: [] as SearchCategory[], sections: EMPTY_SECTIONS };
+      return {
+        order: (popular.length > 0 ? ["companies"] : []) as SearchCategory[],
+        sections: { ...EMPTY_SECTIONS, companies: popular },
+      };
     }
     return buildNavSearchSections(
       debounced,
@@ -59,10 +75,11 @@ export function useSearchSuggestions(query: string, debounceMs = 280) {
       indexesData?.items ?? [],
       currenciesData?.items ?? [],
     );
-  }, [debounced, companyData?.data, commoditiesData?.items, indexesData?.items, currenciesData?.items]);
+  }, [debounced, popular, companyData?.data, commoditiesData?.items, indexesData?.items, currenciesData?.items]);
 
   const hasSuggestions = order.length > 0;
   const isSearching = debounced.length >= 1 && companiesLoading;
+  const isPopular = debounced.length < 1 && popular.length > 0;
 
-  return { debounced, order, sections, hasSuggestions, isSearching };
+  return { debounced, order, sections, hasSuggestions, isSearching, isPopular };
 }

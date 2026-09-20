@@ -149,7 +149,7 @@ const SearchHero = () => {
     else goSearch(query);
   };
 
-  const showPanel = open && (debounced.length >= 1 || recent.length > 0);
+  const showPanel = open && (debounced.length >= 1 || hasSuggestions || recent.length > 0);
 
   return (
     <div className="mb-6">
@@ -189,7 +189,7 @@ const SearchHero = () => {
             className="absolute left-0 right-0 top-full mt-1 z-50 border border-border bg-popover text-popover-foreground shadow-md overflow-hidden max-h-[min(70vh,420px)] overflow-y-auto"
             role="listbox"
           >
-            {debounced.length >= 1 && (
+            {(debounced.length >= 1 || hasSuggestions) && (
               <>
                 {isSearching && !hasSuggestions && (
                   <p className="px-3 py-2.5 text-xs text-muted-foreground">Searching…</p>
@@ -203,13 +203,15 @@ const SearchHero = () => {
                   if (!hits.length) return null;
                   const Icon = CATEGORY_ICONS[cat];
                   const sectionStart = categoryOffsets.offsets.get(cat) ?? 0;
+                  const label =
+                    cat === "companies" && debounced.length === 0 ? "Popular companies" : CATEGORY_LABELS[cat];
 
                   return (
                     <div key={cat}>
                       <div className="px-2.5 py-1.5 border-t border-border first:border-t-0 bg-muted/20 sticky top-0 z-10">
                         <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                           <Icon className="w-3 h-3" />
-                          {CATEGORY_LABELS[cat]}
+                          {label}
                         </span>
                       </div>
                       {hits.map((hit, hi) => {
@@ -285,7 +287,7 @@ const SearchHero = () => {
               </div>
             )}
 
-            {debounced.length === 0 && recent.length === 0 && (
+            {debounced.length === 0 && !hasSuggestions && recent.length === 0 && (
               <p className="px-3 py-2.5 text-xs text-muted-foreground">
                 Search companies, commodities, indexes, or currencies.
               </p>

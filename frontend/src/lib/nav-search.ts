@@ -194,3 +194,19 @@ export function allSuggestionHrefs(sections: Record<SearchCategory, NavSearchHit
   }
   return hrefs;
 }
+
+/**
+ * Popular companies (top by market cap) shown as suggestions while the search
+ * box is focused but empty — matches the live reference's "Popular companies".
+ */
+export function buildPopularCompanies(companies: Company[], limit = 6): NavSearchHit[] {
+  return companies.slice(0, limit).map((c, i) => ({
+    id: `co-${c.id}`,
+    category: "companies" as const,
+    label: c.name,
+    meta: c.ticker ? `${(c.exchange || "").toUpperCase()}:${c.ticker}` : undefined,
+    href: `/company/${companySlug(c.exchange, c.ticker)}`,
+    score: 100 - i,
+    company: c,
+  }));
+}
