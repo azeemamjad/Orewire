@@ -138,7 +138,7 @@ const Login = () => {
         <div className="container-page section-y-lg">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-start">
             <div className="order-2 lg:order-1 lg:pr-8 lg:border-r lg:border-border lg:min-h-[640px] hidden lg:block">
-              <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-muted-foreground mb-4">
+              <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-4">
                 OreWire / Terminal
               </div>
               <h1 className="font-display text-4xl md:text-5xl lg:text-6xl font-bold leading-[1.05] tracking-tight">

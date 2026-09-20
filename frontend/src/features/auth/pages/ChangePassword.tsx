@@ -88,7 +88,7 @@ const ChangePassword = () => {
     <SiteLayout className="min-h-screen bg-background text-foreground flex flex-col">
       <main className="flex-1">
         <div className="max-w-[480px] mx-auto px-6 py-10 lg:py-16">
-          <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-muted-foreground mb-3">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-3">
             OreWire / Account
           </div>
           <h1 className="font-display text-3xl font-extrabold mb-2">
