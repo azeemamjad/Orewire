@@ -201,7 +201,7 @@ const Companies = () => {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder='Try: "gold companies in Africa" or "lithium on ASX"'
-                className="pl-10 pr-10 h-12 text-base bg-background rounded-none border-foreground/20 focus-visible:ring-accent"
+                className="pl-10 pr-10 h-12 text-base bg-background rounded-md border-foreground/20 focus-visible:ring-accent"
               />
               {search && (
                 <button
@@ -216,7 +216,7 @@ const Companies = () => {
                 </button>
               )}
             </div>
-            <Button type="submit" className="h-12 px-6 rounded-none bg-accent text-accent-foreground hover:bg-accent/90 font-semibold">
+            <Button type="submit" className="h-12 px-6 rounded-md bg-accent text-accent-foreground hover:bg-accent/90 font-semibold">
               <Search className="w-4 h-4 mr-2" /> Search
             </Button>
           </form>

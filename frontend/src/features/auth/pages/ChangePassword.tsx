@@ -8,8 +8,8 @@ import { cn } from "@/lib/utils";
 import { changePassword, requestChangePasswordOtp } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 
-const fieldClass = "h-11 rounded-none border-foreground/15 bg-muted/40 focus-visible:ring-accent focus-visible:border-foreground/40";
-const labelClass = "text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-1.5 block";
+const fieldClass = "h-11 rounded-md border-foreground/15 bg-muted/40 focus-visible:ring-accent focus-visible:border-foreground/40";
+const labelClass = "text-[10px] font-mono uppercase tracking-widest text-muted-foreground mb-1.5 block";
 
 const ChangePassword = () => {
   const navigate = useNavigate();
@@ -169,7 +169,7 @@ const ChangePassword = () => {
               <button
                 type="submit"
                 disabled={submitting || !codeSent}
-                className="w-full h-12 bg-accent text-accent-foreground hover:bg-accent/90 disabled:opacity-60 font-mono text-[12px] uppercase tracking-[0.22em] font-bold inline-flex items-center justify-center gap-2 transition-colors"
+                className="w-full h-12 bg-accent text-accent-foreground hover:bg-accent/90 disabled:opacity-60 font-mono text-[12px] uppercase tracking-widest font-bold inline-flex items-center justify-center gap-2 transition-colors"
               >
                 <Lock className="w-3.5 h-3.5" />
                 {submitting ? "Please wait…" : "Update password"}

@@ -125,7 +125,7 @@ export function ListFilterHeader({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={placeholder ?? "Search by company, ticker or keyword"}
-              className="pl-10 pr-10 h-12 text-base bg-background rounded-none border-foreground/20 focus-visible:ring-accent"
+              className="pl-10 pr-10 h-12 text-base bg-background rounded-md border-foreground/20 focus-visible:ring-accent"
             />
             {query && (
               <button
@@ -139,7 +139,7 @@ export function ListFilterHeader({
           </div>
           <Button
             type="submit"
-            className="h-12 px-6 rounded-none bg-accent text-accent-foreground hover:bg-accent/90 font-semibold"
+            className="h-12 px-6 rounded-md bg-accent text-accent-foreground hover:bg-accent/90 font-semibold"
           >
             <Search className="w-4 h-4 mr-2" /> Search
           </Button>
@@ -166,7 +166,7 @@ export function ListFilterSidebar({
           <Filter className="w-4 h-4" />
           <h3 className="font-display font-bold text-lg">Filters</h3>
           {activeCount > 0 && (
-            <Badge variant="secondary" className="rounded-none text-[10px]">{activeCount}</Badge>
+            <Badge variant="secondary" className="text-[10px]">{activeCount}</Badge>
           )}
         </div>
         {activeCount > 0 && (

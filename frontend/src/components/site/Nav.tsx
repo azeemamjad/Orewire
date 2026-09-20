@@ -84,8 +84,8 @@ const Nav = ({ showSiteTopBar = true }: NavProps) => {
     exact ? location.pathname === to : location.pathname.startsWith(to);
 
   return (
-    <div className="sticky top-0 z-50">
-      <header className="relative z-[60] bg-background/90 backdrop-blur-md border-b border-border">
+    <>
+      <header className="sticky top-0 z-40 bg-background/90 backdrop-blur-md border-b border-border">
         <div className="container-page h-14 flex items-center gap-3 md:gap-4">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2.5 group shrink-0">
@@ -368,12 +368,8 @@ const Nav = ({ showSiteTopBar = true }: NavProps) => {
           </div>
         </div>
       </header>
-      {showSiteTopBar && (
-        <div className="relative z-0">
-          <SiteTopBar />
-        </div>
-      )}
-    </div>
+      {showSiteTopBar && <SiteTopBar />}
+    </>
   );
 };
 

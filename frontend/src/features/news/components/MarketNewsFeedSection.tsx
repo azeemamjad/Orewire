@@ -67,7 +67,7 @@ export default function MarketNewsFeedSection({
     <section className="mt-10">
       <div className="flex items-end justify-between flex-wrap gap-3 mb-4 border-b border-border pb-4">
         <div>
-          <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-1.5 flex items-center gap-2">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5 flex items-center gap-2">
             <Newspaper className="w-3 h-3 text-accent" />
             Market news
           </div>

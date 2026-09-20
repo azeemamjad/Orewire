@@ -192,13 +192,13 @@ const Watchlist = () => {
             <div className="flex gap-2 justify-center">
               <Link
                 to="/register?redirect=/watchlist"
-                className="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium h-10 px-4 py-2 rounded-none bg-accent text-accent-foreground hover:bg-accent/90 transition-colors"
+                className="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium h-10 px-4 py-2 rounded-md bg-accent text-accent-foreground hover:bg-accent/90 transition-colors"
               >
                 Sign up free
               </Link>
               <Link
                 to="/login?redirect=/watchlist"
-                className="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 rounded-none transition-colors"
+                className="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 rounded-md transition-colors"
               >
                 Sign in
               </Link>

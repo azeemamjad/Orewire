@@ -105,7 +105,7 @@ const CookieConsent = () => {
       <div className="pointer-events-auto max-w-[1440px] mx-auto border border-border bg-card shadow-[0_-8px_30px_rgba(0,0,0,0.12)]">
         <div className="px-5 py-4 sm:px-6 sm:py-5 flex flex-col lg:flex-row lg:items-center gap-4 lg:gap-8">
           <div className="flex-1 min-w-0">
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-1.5">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5">
               Cookies
             </div>
             <p className="text-sm text-foreground/85 leading-relaxed">

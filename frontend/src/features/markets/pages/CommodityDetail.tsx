@@ -392,7 +392,7 @@ const CommodityDetail = () => {
             <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
               <div className="flex flex-col space-y-1.5 p-6 pb-3">
                 <h3 className="font-semibold tracking-tight font-display text-lg">About {meta.fullName}</h3>
-                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground pt-1">
+                <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground pt-1">
                   Quoted in {meta.currency}
                 </p>
               </div>

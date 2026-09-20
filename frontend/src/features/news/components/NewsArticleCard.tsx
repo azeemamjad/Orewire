@@ -68,7 +68,7 @@ export function NewsArticleCard({
             {tags.map((tag) => (
               <span
                 key={tag}
-                className="font-mono text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-muted/40 border border-border text-muted-foreground"
+                className="font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 bg-muted/40 border border-border text-muted-foreground"
               >
                 {tag}
               </span>

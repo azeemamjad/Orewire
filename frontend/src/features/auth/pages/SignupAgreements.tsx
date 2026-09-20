@@ -35,7 +35,7 @@ const SignupAgreements = () => {
       <main className="flex-1">
         <div className="max-w-[480px] mx-auto px-6 py-16">
           <div className="border border-border bg-card p-6 md:p-8">
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
               Almost done
             </div>
             <h1 className="font-display text-2xl font-bold mb-2">Confirm your account</h1>
@@ -83,7 +83,7 @@ const SignupAgreements = () => {
               <button
                 type="submit"
                 disabled={submitting || !acceptedTerms}
-                className="w-full h-12 bg-accent text-accent-foreground hover:bg-accent/90 disabled:opacity-60 font-mono text-[12px] uppercase tracking-[0.22em] font-bold transition-colors"
+                className="w-full h-12 bg-accent text-accent-foreground hover:bg-accent/90 disabled:opacity-60 font-mono text-[12px] uppercase tracking-widest font-bold transition-colors"
               >
                 {submitting ? "Saving…" : "Continue"}
               </button>

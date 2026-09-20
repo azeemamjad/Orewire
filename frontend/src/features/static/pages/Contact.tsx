@@ -84,7 +84,7 @@ const Contact = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
                 <Label htmlFor="name" className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Name *</Label>
-                <Input id="name" value={form.name} onChange={update("name")} maxLength={100} className="mt-1.5 rounded-none" />
+                <Input id="name" value={form.name} onChange={update("name")} maxLength={100} className="mt-1.5 rounded-md" />
                 {errors.name && <p className="mt-1 text-xs text-destructive">{errors.name}</p>}
               </div>
               <div>
@@ -95,29 +95,29 @@ const Contact = () => {
                   value={form.email}
                   onChange={update("email")}
                   maxLength={200}
-                  className="mt-1.5 rounded-none"
+                  className="mt-1.5 rounded-md"
                 />
                 {errors.email && <p className="mt-1 text-xs text-destructive">{errors.email}</p>}
               </div>
             </div>
             <div>
               <Label htmlFor="company" className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Company</Label>
-              <Input id="company" value={form.company} onChange={update("company")} maxLength={100} className="mt-1.5 rounded-none" />
+              <Input id="company" value={form.company} onChange={update("company")} maxLength={100} className="mt-1.5 rounded-md" />
             </div>
             <div>
               <Label htmlFor="subject" className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Subject *</Label>
-              <Input id="subject" value={form.subject} onChange={update("subject")} maxLength={150} className="mt-1.5 rounded-none" />
+              <Input id="subject" value={form.subject} onChange={update("subject")} maxLength={150} className="mt-1.5 rounded-md" />
               {errors.subject && <p className="mt-1 text-xs text-destructive">{errors.subject}</p>}
             </div>
             <div>
               <Label htmlFor="message" className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Message *</Label>
-              <Textarea id="message" value={form.message} onChange={update("message")} maxLength={2000} rows={7} className="mt-1.5 rounded-none resize-y" />
+              <Textarea id="message" value={form.message} onChange={update("message")} maxLength={2000} rows={7} className="mt-1.5 rounded-md resize-y" />
               {errors.message && <p className="mt-1 text-xs text-destructive">{errors.message}</p>}
             </div>
             <Button
               type="submit"
               disabled={submitting}
-              className="h-11 px-6 rounded-none bg-accent text-accent-foreground hover:bg-accent/90 font-semibold"
+              className="h-11 px-6 rounded-md bg-accent text-accent-foreground hover:bg-accent/90 font-semibold"
             >
               <Send className="w-4 h-4 mr-2" /> {submitting ? "Sending…" : "Send message"}
             </Button>

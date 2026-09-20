@@ -16,8 +16,8 @@ const FEATURES = [
   { icon: Bell, title: "Mover alerts", body: "Insider buys, drill results, financings pushed to your feed." },
 ];
 
-const fieldClass = "h-11 rounded-none border-foreground/15 bg-muted/40 focus-visible:ring-accent focus-visible:border-foreground/40";
-const labelClass = "text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-1.5 block";
+const fieldClass = "h-11 rounded-md border-foreground/15 bg-muted/40 focus-visible:ring-accent focus-visible:border-foreground/40";
+const labelClass = "text-[10px] font-mono uppercase tracking-widest text-muted-foreground mb-1.5 block";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -177,7 +177,7 @@ const Login = () => {
                     aria-selected={mode === m}
                     onClick={() => { setMode(m); setStage("form"); setError(null); }}
                     className={cn(
-                      "h-12 font-mono text-[11px] uppercase tracking-[0.22em] font-bold border transition-colors",
+                      "h-12 font-mono text-[11px] uppercase tracking-widest font-bold border transition-colors",
                       mode === m
                         ? "bg-primary text-primary-foreground border-primary"
                         : "bg-card text-foreground/80 border-border hover:text-foreground",
@@ -195,14 +195,14 @@ const Login = () => {
                       <button
                         type="button"
                         onClick={() => { window.location.href = googleAuthStartUrl(redirectTo); }}
-                        className="w-full h-12 border border-border bg-background hover:bg-muted/40 text-foreground font-mono text-[12px] uppercase tracking-[0.18em] font-bold inline-flex items-center justify-center gap-3 transition-colors"
+                        className="w-full h-12 border border-border bg-background hover:bg-muted/40 text-foreground font-mono text-[12px] uppercase tracking-widest font-bold inline-flex items-center justify-center gap-3 transition-colors"
                       >
                         <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white text-[11px] font-bold text-[#4285F4] border border-border">G</span>
                         Continue with Google
                       </button>
                       <div className="relative py-1">
                         <div className="border-t border-border" />
-                        <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card px-3 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                        <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card px-3 text-[10px] uppercase tracking-widest text-muted-foreground">
                           Or
                         </span>
                       </div>
@@ -362,7 +362,7 @@ const Login = () => {
                   <button
                     type="submit"
                     disabled={submitting || (mode === "register" && stage === "form" && !acceptedTerms)}
-                    className="w-full h-12 bg-accent text-accent-foreground hover:bg-accent/90 disabled:opacity-60 font-mono text-[12px] uppercase tracking-[0.22em] font-bold inline-flex items-center justify-center gap-2 transition-colors"
+                    className="w-full h-12 bg-accent text-accent-foreground hover:bg-accent/90 disabled:opacity-60 font-mono text-[12px] uppercase tracking-widest font-bold inline-flex items-center justify-center gap-2 transition-colors"
                   >
                     <Lock className="w-3.5 h-3.5" />
                     {submitLabel}

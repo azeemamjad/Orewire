@@ -132,7 +132,7 @@ const NotificationsMenu = () => {
                 <DropdownMenuItem
                   key={n.id}
                   asChild
-                  className={`cursor-pointer flex flex-col items-start gap-1 px-3 py-2.5 rounded-none border-b border-border last:border-0 ${
+                  className={`cursor-pointer flex flex-col items-start gap-1 px-3 py-2.5 rounded-md border-b border-border last:border-0 ${
                     n.read ? "opacity-70" : "bg-muted/30"
                   }`}
                 >
@@ -150,7 +150,7 @@ const NotificationsMenu = () => {
               ) : (
                 <DropdownMenuItem
                   key={n.id}
-                  className={`cursor-pointer flex flex-col items-start gap-1 px-3 py-2.5 rounded-none border-b border-border last:border-0 ${
+                  className={`cursor-pointer flex flex-col items-start gap-1 px-3 py-2.5 rounded-md border-b border-border last:border-0 ${
                     n.read ? "opacity-70" : "bg-muted/30"
                   }`}
                   onSelect={() => onRead(n.id)}

@@ -48,7 +48,7 @@ const JobDashboard = () => {
         <div className="max-w-[1200px] mx-auto px-4 lg:px-6 py-8 lg:py-10">
           <div className="flex items-end justify-between flex-wrap gap-4">
             <div>
-              <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-1.5 inline-flex items-center gap-2">
+              <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5 inline-flex items-center gap-2">
                 <Briefcase className="w-3 h-3" /> Employer dashboard
               </div>
               <h1 className="font-display text-3xl lg:text-4xl font-extrabold leading-tight">Your job listings</h1>
@@ -58,7 +58,7 @@ const JobDashboard = () => {
             </div>
             <Link
               to="/jobs"
-              className="inline-flex items-center justify-center gap-2 text-sm font-medium px-4 py-2 rounded-none bg-accent text-accent-foreground hover:bg-accent/90 h-10"
+              className="inline-flex items-center justify-center gap-2 text-sm font-medium px-4 py-2 rounded-md bg-accent text-accent-foreground hover:bg-accent/90 h-10"
             >
               <FileText className="w-4 h-4" /> Post another job
             </Link>
@@ -115,7 +115,7 @@ const JobCard = ({ job, onStatusChange }: { job: JobWithApplications; onStatusCh
         <button onClick={() => setExpanded(!expanded)} className="flex-1 text-left">
           <div className="flex items-center gap-2">
             <h3 className="font-display text-lg font-bold">{job.jobTitle}</h3>
-            {isPrivate && <span className="font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 bg-muted text-muted-foreground border border-border">Private</span>}
+            {isPrivate && <span className="font-mono text-[10px] uppercase tracking-widest px-1.5 py-0.5 bg-muted text-muted-foreground border border-border">Private</span>}
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
             <span>{job.companyName}</span>
@@ -153,7 +153,7 @@ const JobCard = ({ job, onStatusChange }: { job: JobWithApplications; onStatusCh
           ) : (
             <div className="divide-y divide-border">
               {/* Header */}
-              <div className="grid grid-cols-[1fr_120px_100px_80px] gap-3 px-5 py-2 font-mono text-[9px] uppercase tracking-wider text-muted-foreground bg-muted/30">
+              <div className="grid grid-cols-[1fr_120px_100px_80px] gap-3 px-5 py-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground bg-muted/30">
                 <div>Applicant</div>
                 <div>Salary</div>
                 <div>Applied</div>
@@ -201,7 +201,7 @@ const ApplicationRow = ({ app, onStatusChange }: { app: JobApplication; onStatus
         </div>
         <div className="font-mono text-xs text-muted-foreground">{app.expectedSalary || "-"}</div>
         <div className="font-mono text-xs text-muted-foreground inline-flex items-center gap-1"><Clock className="w-3 h-3" />{app.timeAgo}</div>
-        <span className={`font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 font-bold border text-center ${statusStyle[app.status] || "bg-muted text-foreground border-border"}`}>
+        <span className={`font-mono text-[10px] uppercase tracking-widest px-1.5 py-0.5 font-bold border text-center ${statusStyle[app.status] || "bg-muted text-foreground border-border"}`}>
           {app.status}
         </span>
       </button>
@@ -247,7 +247,7 @@ const ApplicationRow = ({ app, onStatusChange }: { app: JobApplication; onStatus
                 key={s}
                 onClick={() => handleStatus(s)}
                 disabled={updating || app.status === s}
-                className={`font-mono text-[9px] uppercase tracking-widest px-2 py-1 border transition-colors disabled:opacity-40 ${
+                className={`font-mono text-[10px] uppercase tracking-widest px-2 py-1 border transition-colors disabled:opacity-40 ${
                   app.status === s
                     ? statusStyle[s] || "bg-muted text-foreground border-border"
                     : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/40"
