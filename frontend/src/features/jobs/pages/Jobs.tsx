@@ -45,10 +45,10 @@ const Jobs = () => {
   return (
     <SiteLayout morningBrief searchHeroBar className="min-h-screen bg-background flex flex-col">
       <section className="border-b border-border bg-gradient-to-br from-background via-background to-muted/40">
-        <div className="max-w-[1440px] mx-auto px-4 lg:px-6 py-8 lg:py-10">
+        <div className="container-page section-y">
           <div className="flex items-end justify-between flex-wrap gap-4 mb-4">
             <div>
-              <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-1.5 inline-flex items-center gap-2">
+              <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5 inline-flex items-center gap-2">
                 <Briefcase className="w-3 h-3" /> Mining careers · Updated daily
               </div>
               <h1 className="font-display text-3xl lg:text-4xl font-extrabold leading-tight">Jobs at listed mining companies</h1>
@@ -104,7 +104,7 @@ const Jobs = () => {
       <main className="flex-1">
         {isAuthenticated && (
           <div className="border-b border-border bg-surface">
-            <div className="max-w-[1440px] mx-auto px-4 lg:px-6 flex gap-0">
+            <div className="container-page flex gap-0">
               <button onClick={() => setTab("browse")} className={`font-mono text-[11px] uppercase tracking-widest px-4 py-3 border-b-2 transition-colors ${tab === "browse" ? "border-accent text-foreground font-bold" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
                 Browse jobs
               </button>
@@ -118,7 +118,7 @@ const Jobs = () => {
         {tab === "applied" && isAuthenticated ? (
           <MyApplicationsSection />
         ) : (
-        <div className="max-w-[1440px] mx-auto px-4 lg:px-6 py-6 lg:py-8 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="container-page section-y grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-8 space-y-4">
             {isLoading ? (
               <div className="py-16 text-center text-sm text-muted-foreground border border-border bg-surface">

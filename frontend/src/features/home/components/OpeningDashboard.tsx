@@ -6,7 +6,7 @@ import SearchHero from "@/components/site/SearchHero";
 
 const OpeningDashboard = () => (
   <section className="border-b border-border bg-background">
-    <div className="max-w-[1440px] mx-auto px-4 lg:px-6 py-6 lg:py-8">
+    <div className="container-page section-y">
       <SearchHero />
       {/* DOM order is the desktop column order (movers, news, filings, market
           data). Below lg the `order-*` classes restack them as gainers/losers,

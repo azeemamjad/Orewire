@@ -135,10 +135,10 @@ const NewsReleases = () => {
 
   return (
     <section className="border-b border-border bg-background">
-      <div className="max-w-[1200px] mx-auto px-4 lg:px-6 py-12 lg:py-16">
+      <div className="container-page section-y">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
           <div className="lg:col-span-5">
-            <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-3 flex items-center gap-2">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
               <span className="w-1.5 h-1.5 bg-noteworthy animate-pulse-dot" /> Live news releases
             </div>
             <h2 className="font-display text-3xl lg:text-5xl font-extrabold leading-[1.05] tracking-tight">

@@ -168,7 +168,7 @@ const CommoditySidebar = ({ className = "" }: { className?: string }) => {
   return (
     <div className={`flex flex-col gap-4 min-h-0 lg:h-full ${className}`}>
       {/* Commodities */}
-      <div className="border border-border bg-surface flex flex-col flex-1 min-h-0">
+      <div className="card-surface flex flex-col flex-1 min-h-0">
         <SectionHeader icon={Flame} title="Commodities" meta="· Spot" accent />
         <div className="flex-1 overflow-auto min-h-0">
           <table className="w-full text-[12.5px]">
@@ -202,7 +202,7 @@ const CommoditySidebar = ({ className = "" }: { className?: string }) => {
       </div>
 
       {/* Indexes */}
-      <div className="border border-border bg-surface flex flex-col flex-1 min-h-0">
+      <div className="card-surface flex flex-col flex-1 min-h-0">
         <SectionHeader icon={TrendingUp} title="Indexes" meta="· Mining & Markets" />
         <div className="flex-1 overflow-auto min-h-0">
           <table className="w-full text-[12.5px]">
@@ -234,7 +234,7 @@ const CommoditySidebar = ({ className = "" }: { className?: string }) => {
       </div>
 
       {/* Currencies */}
-      <div className="border border-border bg-surface flex flex-col flex-1 min-h-0">
+      <div className="card-surface flex flex-col flex-1 min-h-0">
         <SectionHeader icon={DollarSign} title="Currencies" meta="· FX · Spot" accent />
         <div className="flex-1 overflow-auto min-h-0">
           <table className="w-full text-[12.5px]">

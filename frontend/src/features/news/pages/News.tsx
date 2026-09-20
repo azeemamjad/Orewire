@@ -138,7 +138,7 @@ const News = () => {
         onSearch={applySearch}
       />
       <main className="flex-1">
-        <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-8 grid grid-cols-1 lg:grid-cols-[200px_1fr] gap-6">
+        <div className="container-page section-y grid grid-cols-1 lg:grid-cols-[200px_1fr] gap-6">
           <ListFilterSidebar filters={filters} setFilters={setFilters} />
           <section>
             {companyId && (
@@ -163,7 +163,7 @@ const News = () => {
                 <button type="button" onClick={resetAll} className="mt-3 text-sm underline">Reset</button>
               </div>
             ) : (
-              <div className="border border-border bg-surface">
+              <div className="card-surface">
                 <ul className="divide-y divide-border">
                   {pageItems.map((item, i) => {
                     const sev = getNewsSeverity(item.sentiment, item.title);

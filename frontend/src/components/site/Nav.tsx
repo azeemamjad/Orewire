@@ -1,6 +1,8 @@
 import {
+  Search as SearchIcon,
   Menu,
   LogOut,
+  User as UserIcon,
   ChevronDown,
   X,
   Home,
@@ -84,16 +86,18 @@ const Nav = ({ showSiteTopBar = true }: NavProps) => {
   return (
     <div className="sticky top-0 z-50">
       <header className="relative z-[60] bg-background/90 backdrop-blur-md border-b border-border">
-        <div className="max-w-[1440px] mx-auto px-4 lg:px-6 h-14 flex items-center gap-3 md:gap-4">
+        <div className="container-page h-14 flex items-center gap-3 md:gap-4">
+          {/* Logo */}
           <Link to="/" className="flex items-center gap-2.5 group shrink-0">
-            <div className="relative w-8 h-8 bg-foreground grid place-items-center">
+            <div className="relative w-8 h-8 rounded-lg bg-foreground grid place-items-center">
               <span className="font-display text-background text-base font-extrabold leading-none">O</span>
             </div>
-            <div className="flex items-baseline gap-1.5">
+            <div className="hidden sm:flex items-baseline gap-1.5">
               <span className="font-display text-lg font-extrabold tracking-tight">OreWire</span>
             </div>
           </Link>
 
+          {/* Primary nav */}
           <nav className="hidden lg:flex items-center gap-1 text-sm shrink-0">
             {navItems.map((item) => {
               const active = isActive(item.to, item.exact);
@@ -112,13 +116,26 @@ const Nav = ({ showSiteTopBar = true }: NavProps) => {
             })}
           </nav>
 
-          <NavSearch />
+          {/* Global search, prominent on every page */}
+          <div className="flex-1 hidden sm:flex justify-center min-w-0">
+            <NavSearch />
+          </div>
+          <div className="flex-1 sm:hidden" />
+          <Link
+            to="/companies"
+            aria-label="Search companies"
+            className="sm:hidden inline-flex items-center justify-center w-9 h-9 rounded-lg border border-border hover:bg-muted transition-colors"
+          >
+            <SearchIcon className="w-4 h-4" />
+          </Link>
 
+          {/* Right side */}
           <div className="flex items-center gap-2 shrink-0">
+            {/* Prominent Watchlist button */}
             <Link
               to="/watchlist"
               aria-label="Watchlist"
-              className={`group hidden sm:inline-flex items-center gap-2 h-9 px-3 text-[12px] font-mono uppercase tracking-[0.16em] font-bold text-[hsl(36_30%_94%)] bg-[hsl(219_45%_10%)] hover:bg-[hsl(219_45%_16%)] border border-[hsl(219_45%_10%)] transition-colors ${
+              className={`group hidden sm:inline-flex items-center gap-2 h-9 px-3.5 rounded-lg text-[12px] font-mono uppercase tracking-widest font-bold text-[hsl(36_30%_94%)] bg-[hsl(220_45%_10%)] hover:bg-[hsl(220_45%_16%)] border border-[hsl(220_45%_10%)] transition-colors ${
                 location.pathname.startsWith("/watchlist")
                   ? "ring-2 ring-accent ring-offset-1 ring-offset-background"
                   : ""
@@ -134,29 +151,41 @@ const Nav = ({ showSiteTopBar = true }: NavProps) => {
                   <PopoverTrigger asChild>
                     <button
                       aria-label="Profile menu"
-                      className="inline-flex items-center gap-2 px-2.5 h-9 text-sm border border-border hover:bg-muted transition-colors"
+                      className="inline-flex items-center gap-2 pl-1.5 pr-2 h-9 rounded-lg border border-border hover:bg-muted transition-colors"
                     >
-                      <span className="w-6 h-6 rounded-full bg-accent text-accent-foreground grid place-items-center font-mono text-[11px] font-bold">
+                      <span className="w-6 h-6 bg-accent text-accent-foreground grid place-items-center font-mono text-[11px] font-bold">
                         {initial}
                       </span>
-                      <span className="font-mono text-xs hidden md:inline uppercase tracking-[0.14em] font-bold">
-                        Profile
-                      </span>
+                      <span className="font-mono text-xs hidden md:inline max-w-[120px] truncate">@{username}</span>
                       <ChevronDown className="w-3 h-3 text-muted-foreground" />
                     </button>
                   </PopoverTrigger>
-                  <PopoverContent align="end" className="w-48 p-1">
-                    <Link to="/profile" className="block px-3 py-2.5 text-sm hover:bg-muted">
-                      Profile
-                    </Link>
-                    <Link to="/watchlist" className="block px-3 py-2.5 text-sm hover:bg-muted">
-                      Watchlist
-                    </Link>
+                  <PopoverContent align="end" sideOffset={8} className="w-64 p-0 border-border">
+                    <div className="flex items-center gap-3 px-4 py-3 bg-muted/50 border-b border-border">
+                      <span className="w-9 h-9 bg-accent text-accent-foreground grid place-items-center font-mono text-sm font-bold shrink-0">
+                        {initial}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="font-mono text-xs font-semibold truncate">@{username}</div>
+                        <div className="text-[11px] text-muted-foreground truncate">{user?.email}</div>
+                      </div>
+                    </div>
+                    <div className="py-1">
+                      <Link to="/profile" className="flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-muted transition-colors">
+                        <UserIcon className="w-4 h-4 text-muted-foreground" /> Manage profile
+                      </Link>
+                      <Link to="/watchlist" className="flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-muted transition-colors">
+                        <Star className="w-4 h-4 text-muted-foreground" /> Watchlist
+                      </Link>
+                      <Link to="/companies" className="flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-muted transition-colors">
+                        <Building2 className="w-4 h-4 text-muted-foreground" /> Companies
+                      </Link>
+                    </div>
                     <button
                       onClick={handleLogout}
-                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted inline-flex items-center gap-2 border-t border-border mt-1"
+                      className="w-full text-left px-4 py-2.5 text-sm font-medium hover:bg-muted transition-colors inline-flex items-center gap-2.5 border-t border-border"
                     >
-                      <LogOut className="w-3.5 h-3.5" /> Sign out
+                      <LogOut className="w-4 h-4 text-muted-foreground" /> Log out
                     </button>
                   </PopoverContent>
                 </Popover>
@@ -164,7 +193,7 @@ const Nav = ({ showSiteTopBar = true }: NavProps) => {
             ) : (
               <Link
                 to="/login"
-                className="inline-flex items-center bg-accent text-accent-foreground px-4 h-9 text-sm font-semibold hover:opacity-90 transition-opacity"
+                className="inline-flex items-center rounded-lg bg-accent text-accent-foreground px-4 h-9 text-sm font-semibold shadow-sm hover:opacity-90 transition-opacity"
               >
                 Login / Sign up
               </Link>
@@ -173,7 +202,7 @@ const Nav = ({ showSiteTopBar = true }: NavProps) => {
             <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
               <SheetTrigger asChild>
                 <button
-                  className="lg:hidden inline-flex items-center justify-center w-9 h-9 border border-border hover:bg-muted transition-colors"
+                  className="lg:hidden inline-flex items-center justify-center w-9 h-9 rounded-lg border border-border hover:bg-muted transition-colors"
                   aria-label="Open menu"
                 >
                   <Menu className="w-4 h-4" />
@@ -186,7 +215,7 @@ const Nav = ({ showSiteTopBar = true }: NavProps) => {
               >
                 <div className="flex items-center justify-between h-14 px-5 border-b border-border">
                   <div className="flex items-center gap-2.5">
-                    <div className="relative w-7 h-7 bg-foreground grid place-items-center">
+                    <div className="relative w-7 h-7 rounded-lg bg-foreground grid place-items-center">
                       <span className="font-display text-background text-sm font-extrabold leading-none">O</span>
                     </div>
                     <span className="font-display text-base font-extrabold tracking-tight">OreWire</span>
@@ -273,27 +302,20 @@ const Nav = ({ showSiteTopBar = true }: NavProps) => {
                   {isAuthenticated ? (
                     <>
                       <div className="flex items-center gap-3 px-1">
-                        <span className="w-9 h-9 rounded-full bg-accent text-accent-foreground grid place-items-center font-mono text-xs font-bold">
+                        <span className="w-9 h-9 bg-accent text-accent-foreground grid place-items-center font-mono text-xs font-bold">
                           {initial}
                         </span>
                         <div className="min-w-0">
-                          <div className="text-sm font-semibold">Profile</div>
-                          <div className="text-[11px] text-muted-foreground truncate">@{username}</div>
+                          <div className="font-mono text-xs font-semibold truncate">@{username}</div>
+                          <div className="text-[11px] text-muted-foreground truncate">{user?.email}</div>
                         </div>
                       </div>
                       <Link
                         to="/profile"
                         onClick={() => setMenuOpen(false)}
-                        className="w-full inline-flex items-center justify-center h-10 border border-border text-sm font-medium hover:bg-muted transition-colors"
+                        className="w-full inline-flex items-center justify-center gap-2 h-10 border border-border text-sm font-medium hover:bg-muted transition-colors"
                       >
-                        Profile
-                      </Link>
-                      <Link
-                        to="/watchlist"
-                        onClick={() => setMenuOpen(false)}
-                        className="w-full inline-flex items-center justify-center h-10 border border-border text-sm font-medium hover:bg-muted transition-colors"
-                      >
-                        Watchlist
+                        <UserIcon className="w-4 h-4" /> Manage profile
                       </Link>
                       <button
                         onClick={() => {
@@ -302,14 +324,14 @@ const Nav = ({ showSiteTopBar = true }: NavProps) => {
                         }}
                         className="w-full inline-flex items-center justify-center gap-2 h-10 border border-border text-sm font-medium hover:bg-muted transition-colors"
                       >
-                        <LogOut className="w-4 h-4" /> Sign out
+                        <LogOut className="w-4 h-4" /> Log out
                       </button>
                     </>
                   ) : (
                     <Link
                       to="/login"
                       onClick={() => setMenuOpen(false)}
-                      className="inline-flex w-full items-center justify-center h-10 bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition-opacity"
+                      className="inline-flex w-full items-center justify-center h-10 rounded-lg bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition-opacity"
                     >
                       Login / Sign up
                     </Link>

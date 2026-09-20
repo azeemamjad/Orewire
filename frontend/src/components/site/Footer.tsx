@@ -30,7 +30,7 @@ const companyLinks = [
 
 const Footer = () => (
   <footer className="bg-background border-t border-border">
-    <div className="max-w-[1200px] mx-auto px-6 lg:px-10 py-12 md:py-14">
+    <div className="container-page section-y md:py-14">
       <div className="grid grid-cols-1 md:grid-cols-12 gap-10 md:gap-12 lg:gap-16 pb-10 md:pb-12 border-b border-border">
         <div className="md:col-span-7 lg:col-span-6">
           <div className="flex items-center gap-3 mb-5">
@@ -89,13 +89,13 @@ const Footer = () => (
       </div>
     </div>
 
-    <div className="border-t border-border bg-[hsl(219_45%_10%)] text-[hsl(36_30%_94%)]">
-      <div className="max-w-[1200px] mx-auto px-6 lg:px-10 py-5 text-[11px] font-mono leading-relaxed">
+    <div className="border-t border-border bg-[hsl(220_45%_10%)] text-[hsl(36_30%_94%)]">
+      <div className="container-page py-5 text-[11px] font-mono leading-relaxed">
         <span className="uppercase tracking-widest opacity-60 mr-2">Disclaimer</span>
         This platform provides information for educational purposes only. Nothing constitutes investment advice. Always do your own due diligence.
       </div>
       <div className="border-t border-[hsl(36_30%_94%/0.1)]">
-        <div className="max-w-[1200px] mx-auto px-6 lg:px-10 py-4 flex justify-between items-center text-[11px] font-mono opacity-70">
+        <div className="container-page py-4 flex justify-between items-center text-[11px] font-mono opacity-70">
           <span>© 2026 OreWire Inc.</span>
           <span>orewire.com</span>
         </div>

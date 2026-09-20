@@ -37,7 +37,7 @@ const CommodityBar = () => {
 
   return (
     <div className="bg-surface border-b border-border">
-      <div className="max-w-[1440px] mx-auto px-4 lg:px-6 py-2.5 flex items-center gap-6 overflow-x-auto">
+      <div className="container-page py-2.5 flex items-center gap-6 overflow-x-auto">
         <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground shrink-0">Spot</span>
         {items.map((c) => {
           const up = (c.change_pct ?? 0) >= 0;

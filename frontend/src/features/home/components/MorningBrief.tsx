@@ -25,7 +25,7 @@ const MorningBrief = () => {
 
   return (
     <div className="bg-background border-b border-border">
-      <div className="max-w-[1440px] mx-auto px-4 lg:px-10 h-14 flex items-center justify-center gap-6">
+      <div className="container-page h-14 flex items-center justify-center gap-6">
         <div className="flex items-center gap-2.5 text-[13px] text-foreground/80 min-w-0">
           <span className="inline-flex items-center justify-center w-6 h-6 bg-accent/15 shrink-0">
             <Mail className="w-3.5 h-3.5 text-accent" />

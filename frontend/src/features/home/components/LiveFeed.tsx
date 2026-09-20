@@ -102,10 +102,10 @@ const LiveFeed = () => {
 
   return (
     <section id="feed" className="border-b border-border bg-surface/40">
-      <div className="max-w-[1200px] mx-auto px-4 lg:px-6 py-12 lg:py-16">
+      <div className="container-page section-y">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
           <div className="lg:col-span-5">
-            <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-3 flex items-center gap-2">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
               <Sparkles className="w-3 h-3 text-accent" /> Filing intelligence
             </div>
             <h2 className="font-display text-3xl lg:text-5xl font-extrabold leading-[1.05] tracking-tight">
@@ -128,7 +128,7 @@ const LiveFeed = () => {
         </div>
 
         <div className="mb-10">
-          <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-3">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-3">
             Filings we decode
           </div>
           <div className="flex flex-wrap gap-2">

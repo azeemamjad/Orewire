@@ -39,7 +39,7 @@ function titleCase(name: string): string {
 const MoverTable = ({ title, rows, up }: { title: string; rows: MoverItem[]; up: boolean }) => {
   const navigate = useNavigate();
   return (
-  <div className="border border-border bg-surface flex flex-col flex-1 min-h-0">
+  <div className="card-surface flex flex-col flex-1 min-h-0">
     <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border bg-muted/30">
       <div className="flex items-center gap-2">
         {up ? (
@@ -121,7 +121,7 @@ const Movers = ({ className = "" }: { className?: string }) => {
 
   if (isLoading) {
     return (
-      <div className="h-full flex items-center justify-center border border-border bg-surface p-8 text-muted-foreground text-sm">
+      <div className="h-full flex items-center justify-center card-surface p-8 text-muted-foreground text-sm">
         Loading movers...
       </div>
     );

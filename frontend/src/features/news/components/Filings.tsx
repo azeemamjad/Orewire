@@ -37,7 +37,7 @@ const Filings = ({ className = "" }: { className?: string }) => {
   const items = data && data.length > 0 ? data : placeholderFilings;
 
   return (
-    <div className={`border border-border bg-surface flex flex-col min-h-0 lg:h-full ${className}`}>
+    <div className={`card-surface flex flex-col min-h-0 lg:h-full ${className}`}>
       <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border bg-muted/30">
         <div className="flex items-center gap-2">
           <FileText className="w-3.5 h-3.5 text-accent" />

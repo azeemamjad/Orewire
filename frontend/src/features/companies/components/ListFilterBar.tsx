@@ -100,7 +100,7 @@ export function ListFilterHeader({
 }: Pick<Props, "title" | "eyebrow" | "description" | "totalCount" | "resultCount" | "query" | "setQuery" | "placeholder" | "onSearch">) {
   return (
     <section className="border-b border-border bg-card">
-      <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-8">
+      <div className="container-page section-y">
         <div className="flex items-end justify-between flex-wrap gap-4 mb-6">
           <div>
             <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-2">{eyebrow}</div>

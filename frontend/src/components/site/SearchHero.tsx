@@ -155,7 +155,7 @@ const SearchHero = () => {
     <div className="mb-6">
       <div className="flex items-end justify-between flex-wrap gap-3 mb-3">
         <div>
-          <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-1.5 flex items-center gap-2">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5 flex items-center gap-2">
             <span className="w-1.5 h-1.5 bg-[hsl(var(--up))] animate-pulse-dot" />
             Live · Mining terminal
           </div>

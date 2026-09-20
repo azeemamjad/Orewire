@@ -172,7 +172,7 @@ const Companies = () => {
     <SiteLayout morningBrief className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Hero */}
       <section className="border-b border-border bg-card">
-        <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-8">
+        <div className="container-page section-y">
           <div className="flex items-end justify-between flex-wrap gap-4 mb-6">
             <div>
               <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Database</div>
@@ -229,7 +229,7 @@ const Companies = () => {
         </div>
       </section>
 
-      <main className="max-w-[1440px] mx-auto w-full px-6 lg:px-10 py-8 grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-8">
+      <main className="container-page section-y grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-8">
         {/* Filter sidebar */}
         <aside>
           <div className="flex items-center justify-between mb-2">
@@ -255,7 +255,7 @@ const Companies = () => {
 
         {/* Table */}
         <section className="min-w-0">
-          <div className="border border-border bg-card">
+          <div className="card-surface">
             <div className={`hidden md:grid ${GRID} gap-3 px-4 py-3 border-b border-border bg-muted/40 text-[10px] font-bold uppercase tracking-widest text-muted-foreground`}>
               <div>Ticker</div>
               <div>Exch</div>

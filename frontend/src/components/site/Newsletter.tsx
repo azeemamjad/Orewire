@@ -25,8 +25,8 @@ const Newsletter = () => {
 
   return (
   <section id="cta" className="border-b border-border bg-background">
-    <div className="max-w-[900px] mx-auto px-6 lg:px-10 py-16 lg:py-20 text-center">
-      <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-3">/// Morning briefing</div>
+    <div className="container-narrow section-y text-center">
+      <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-3">/// Morning briefing</div>
       <h2 className="font-display text-3xl lg:text-5xl font-extrabold leading-tight mb-3">
         Get the morning briefing before the market opens.
       </h2>
@@ -40,7 +40,7 @@ const Newsletter = () => {
           placeholder="you@firm.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="flex-1 bg-surface border border-border px-4 h-12 text-sm outline-none focus:border-accent"
+          className="flex-1 card-surface px-4 h-12 text-sm outline-none focus:border-accent"
         />
         <button
           type="submit"
@@ -51,7 +51,7 @@ const Newsletter = () => {
         </button>
       </form>
       <p className="font-mono text-[11px] text-muted-foreground mt-4">
-        Free subscribers get the top 3 items. Upgrade for the full digest.
+        Start with the top 3 items free. Upgrade anytime for the full briefing.
       </p>
     </div>
   </section>

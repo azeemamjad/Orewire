@@ -135,7 +135,7 @@ const Login = () => {
   return (
     <SiteLayout className="min-h-screen bg-background text-foreground flex flex-col">
       <main className="flex-1">
-        <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-10 lg:py-16">
+        <div className="container-page section-y-lg">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-start">
             <div className="order-2 lg:order-1 lg:pr-8 lg:border-r lg:border-border lg:min-h-[640px] hidden lg:block">
               <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-muted-foreground mb-4">

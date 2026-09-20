@@ -18,16 +18,16 @@ const placeholderNews: NewsItem[] = [
   { title: "Junior gold ETF GDXJ posts best monthly gain since 2020", summary: "", source: "Bloomberg", link: "https://www.bloomberg.com/markets/commodities", pubDate: "", timeAgo: "8h ago", commodity: "Gold", sentiment: "bullish" },
 ];
 
-const NewsRow = ({ item, className = "" }: { item: NewsItem; className?: string }) => (
-  <div className={`h-full ${className}`}>
+const NewsRow = ({ item }: { item: NewsItem }) => (
+  <li className="flex-1 flex">
     <a
       href={item.link}
       target="_blank"
       rel="noopener noreferrer"
-      className="group flex h-full min-h-[5.5rem] items-start gap-3 px-4 py-4 w-full hover:bg-background/60 transition-colors"
+      className="group flex items-start gap-3 px-4 py-4 w-full hover:bg-background/60 transition-colors"
     >
-      <div className="flex-1 min-w-0 flex h-full flex-col justify-between gap-2">
-        <div className="text-[14px] font-semibold leading-snug text-foreground group-hover:text-accent transition-colors line-clamp-2">
+      <div className="flex-1 min-w-0 flex flex-col justify-between gap-2">
+        <div className="text-[13px] font-semibold leading-snug text-foreground group-hover:text-accent transition-colors line-clamp-2">
           {item.title}
         </div>
         <div className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
@@ -41,14 +41,14 @@ const NewsRow = ({ item, className = "" }: { item: NewsItem; className?: string 
           {item.commodity && (
             <>
               <span>·</span>
-              <span className="uppercase tracking-wider">{item.commodity}</span>
+              <span className="uppercase tracking-wider truncate">{item.commodity}</span>
             </>
           )}
         </div>
       </div>
       <ExternalLink className="w-3.5 h-3.5 text-muted-foreground group-hover:text-accent shrink-0 mt-1" />
     </a>
-  </div>
+  </li>
 );
 
 const MarketNews = () => {
@@ -60,13 +60,15 @@ const MarketNews = () => {
   });
 
   const items = data?.items && data.items.length > 0 ? data.items.slice(0, 10) : placeholderNews;
+  const left = items.slice(0, 5);
+  const right = items.slice(5, 10);
 
   return (
     <section id="market-news" className="border-b border-border bg-background">
-      <div className="max-w-[1440px] mx-auto px-4 lg:px-6 py-10 lg:py-12">
+      <div className="container-page section-y">
         <div className="flex items-end justify-between flex-wrap gap-3 mb-5">
           <div>
-            <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-1.5 flex items-center gap-2">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5 flex items-center gap-2">
               <Newspaper className="w-3 h-3 text-accent" /> Global market news
             </div>
             <h2 className="font-display text-2xl lg:text-3xl font-extrabold tracking-tight">Latest Market News</h2>
@@ -79,17 +81,13 @@ const MarketNews = () => {
           </Link>
         </div>
 
-        <div className="border border-border bg-surface grid grid-cols-1 md:grid-cols-2">
-          {items.map((item, index) => (
-            <NewsRow
-              key={`${item.link || "news"}-${index}`}
-              item={item}
-              className={`border-b border-border md:odd:border-r ${
-                index === items.length - 1 ? "max-md:border-b-0" : ""
-              } ${
-                index >= items.length - (items.length % 2 === 0 ? 2 : 1) ? "md:border-b-0" : ""
-              }`}
-            />
+        <div className="card-surface grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
+          {[left, right].map((col, idx) => (
+            <ul key={idx} className="divide-y divide-border flex flex-col">
+              {col.map((item, index) => (
+                <NewsRow key={`${item.link || "news"}-${index}`} item={item} />
+              ))}
+            </ul>
           ))}
         </div>
 

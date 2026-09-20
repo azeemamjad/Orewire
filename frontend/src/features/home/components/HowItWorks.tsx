@@ -20,8 +20,8 @@ const steps = [
 
 const HowItWorks = () => (
   <section id="how" className="border-b border-border bg-secondary">
-    <div className="max-w-[1200px] mx-auto px-6 lg:px-10 py-16 lg:py-20">
-      <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-2">/// How it works</div>
+    <div className="container-page section-y">
+      <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">/// How it works</div>
       <h2 className="font-display text-3xl lg:text-5xl font-extrabold mb-4 leading-[1.05] tracking-tight">
         From filing straight to your inbox.
       </h2>

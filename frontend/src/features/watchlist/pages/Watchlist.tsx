@@ -227,7 +227,7 @@ const Watchlist = () => {
   return (
     <SiteLayout morningBrief className="min-h-screen bg-background text-foreground flex flex-col">
       <section className="border-b border-border bg-card">
-        <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-8">
+        <div className="container-page section-y">
           <div className="flex items-end justify-between flex-wrap gap-4">
             <div>
               <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Your list</div>
@@ -248,7 +248,7 @@ const Watchlist = () => {
       </section>
 
       <main className="flex-1">
-        <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-8 space-y-6">
+        <div className="container-page section-y space-y-6">
           {/* Search */}
           <div className="bg-card border border-border">
             <div className="relative">
