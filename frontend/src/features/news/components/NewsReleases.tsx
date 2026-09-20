@@ -153,11 +153,8 @@ const NewsReleases = () => {
               corporate changes, each one buried in jargon, footnotes and 8-page PDFs.
             </p>
             <p>
-              Every release is summarized into <strong className="text-foreground">one plain-English line</strong> with a
-              significance verdict the moment it is published.{" "}
-              <span className="font-semibold text-foreground">Noteworthy</span> if it moves the thesis,{" "}
-              <span className="font-semibold text-foreground">Watch</span> if it is worth tracking,{" "}
-              <span className="font-semibold text-foreground">Routine</span> if you can skip it.
+              Every release is summarized into one plain-English line with a significance verdict the moment it is
+              published. Noteworthy if it moves the thesis, Watch if it is worth tracking, Routine if you can skip it.
             </p>
           </div>
         </div>

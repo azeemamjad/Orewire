@@ -19,12 +19,12 @@ const placeholderNews: NewsItem[] = [
 ];
 
 const NewsRow = ({ item }: { item: NewsItem }) => (
-  <li className="flex-1 flex">
+  <li className="h-[6rem]">
     <a
       href={item.link}
       target="_blank"
       rel="noopener noreferrer"
-      className="group flex items-start gap-3 px-4 py-4 w-full hover:bg-background/60 transition-colors"
+      className="group flex h-full items-start gap-3 px-4 py-4 w-full hover:bg-background/60 transition-colors"
     >
       <div className="flex-1 min-w-0 flex flex-col justify-between gap-2">
         <div className="text-[13px] font-semibold leading-snug text-foreground group-hover:text-accent transition-colors line-clamp-2">
