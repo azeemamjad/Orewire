@@ -4,13 +4,13 @@ const Privacy = () => (
   <SiteLayout className="min-h-screen flex flex-col bg-background text-foreground">
     <main className="flex-1">
       <section className="border-b border-border bg-card">
-        <div className="max-w-[900px] mx-auto px-6 lg:px-10 py-10 text-left">
+        <div className="container-narrow section-y text-left">
           <h1 className="font-display text-4xl md:text-5xl font-bold leading-tight">Privacy Policy</h1>
           <p className="text-muted-foreground mt-2 text-sm italic">Last updated: June 2026</p>
         </div>
       </section>
 
-      <article className="max-w-[900px] mx-auto px-6 lg:px-10 py-10 prose prose-sm md:prose-base prose-neutral dark:prose-invert max-w-none">
+      <article className="container-narrow section-y prose prose-sm md:prose-base prose-neutral dark:prose-invert max-w-none">
         <p>
           This Privacy Policy describes how OreWire (&quot;we&quot;, &quot;us&quot;, or &quot;our&quot;) collects, uses, and protects your personal information when you use the OreWire platform at orewire.com, including the website, the morning briefing, watchlist alerts, and related services (the &quot;Platform&quot;).
         </p>

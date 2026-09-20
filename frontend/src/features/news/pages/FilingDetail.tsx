@@ -48,7 +48,7 @@ const FilingDetail = () => {
           <Link to={back.href} className="inline-flex items-center gap-1.5 text-[12px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground mb-6">
             <ArrowLeft className="w-3.5 h-3.5" /> {back.label}
           </Link>
-          <div className="border border-border bg-surface p-6 text-sm text-muted-foreground">Filing not found.</div>
+          <div className="card-surface p-6 text-sm text-muted-foreground">Filing not found.</div>
         </main>
       </SiteLayout>
     );
@@ -61,7 +61,7 @@ const FilingDetail = () => {
           <ArrowLeft className="w-3.5 h-3.5" /> {back.label}
         </Link>
 
-        <div className="border border-border bg-surface p-5 lg:p-6 mb-6">
+        <div className="card-surface p-5 lg:p-6 mb-6">
           <div className="flex items-center gap-2.5 flex-wrap mb-4">
             <span className="font-mono text-[18px] font-extrabold tracking-tight leading-none">{filing.ticker}</span>
             <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1.5 py-0.5">

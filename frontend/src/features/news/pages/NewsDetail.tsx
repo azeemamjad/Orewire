@@ -92,7 +92,7 @@ const NewsDetail = () => {
           <Link to={back.href} className="inline-flex items-center gap-1.5 text-[12px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground mb-6">
             <ArrowLeft className="w-3.5 h-3.5" /> {back.label}
           </Link>
-          <div className="border border-border bg-surface p-6 text-sm text-muted-foreground">News item not found.</div>
+          <div className="card-surface p-6 text-sm text-muted-foreground">News item not found.</div>
         </main>
       </SiteLayout>
     );
@@ -109,7 +109,7 @@ const NewsDetail = () => {
           <ArrowLeft className="w-3.5 h-3.5" /> {back.label}
         </Link>
 
-        <div className="border border-border bg-surface p-5 lg:p-6 mb-6">
+        <div className="card-surface p-5 lg:p-6 mb-6">
           <div className="flex items-center gap-3 flex-wrap mb-4">
             <span className={`px-2.5 py-1 text-[10px] font-mono uppercase tracking-widest font-bold ${severityStyle[sevLabel]}`}>{sevLabel}</span>
             <span className="font-mono text-[10px] uppercase tracking-widest border border-border px-1.5 py-1">{filingType}</span>

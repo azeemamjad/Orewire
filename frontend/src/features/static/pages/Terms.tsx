@@ -4,13 +4,13 @@ const Terms = () => (
   <SiteLayout className="min-h-screen flex flex-col bg-background text-foreground">
     <main className="flex-1">
       <section className="border-b border-border bg-card">
-        <div className="max-w-[900px] mx-auto px-6 lg:px-10 py-10 text-left">
+        <div className="container-narrow section-y text-left">
           <h1 className="font-display text-4xl md:text-5xl font-bold leading-tight">Terms of Use</h1>
           <p className="text-muted-foreground mt-2 text-sm italic">Last updated: June 2026</p>
         </div>
       </section>
 
-      <article className="max-w-[900px] mx-auto px-6 lg:px-10 py-10 prose prose-sm md:prose-base prose-neutral dark:prose-invert max-w-none">
+      <article className="container-narrow section-y prose prose-sm md:prose-base prose-neutral dark:prose-invert max-w-none">
         <p>
           Welcome to OreWire (the &quot;Platform&quot;), operated by OreWire (&quot;we&quot;, &quot;us&quot;, or &quot;our&quot;). By accessing or using OreWire, including the website at orewire.com, the morning briefing, watchlist alerts, and any related services, you agree to be bound by these Terms of Use. If you do not agree, do not use the Platform.
         </p>
