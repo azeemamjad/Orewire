@@ -13,11 +13,10 @@ import {
 
 const REFETCH_MS = 30 * 60 * 1000;
 
+// Commodity prices always show 2 decimals (matches the live reference).
 function fmtPrice(n: number | null): string {
   if (n == null) return "-";
-  if (n >= 1000) return "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
-  if (n >= 100) return "$" + n.toFixed(1);
-  return "$" + n.toFixed(2);
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function fmtPct(n: number | null): string {
@@ -192,11 +191,14 @@ const CommoditySidebar = ({ className = "" }: { className?: string }) => {
                           </span>
                         </div>
                         <div className="text-[10px] text-muted-foreground truncate max-w-[140px]">
-                          {c.label} / {c.unit}
+                          {c.label}
                         </div>
                       </Link>
                     </td>
-                    <td className="px-2 py-2 text-right font-mono font-semibold tabular-nums whitespace-nowrap">{fmtPrice(c.price)}</td>
+                    <td className="px-2 py-2 text-right font-mono font-semibold tabular-nums whitespace-nowrap">
+                      {fmtPrice(c.price)}
+                      {c.unit && <span className="text-muted-foreground font-normal text-[10px]"> /{c.unit}</span>}
+                    </td>
                     <ChgCell value={c.change_pct} />
                   </tr>
                 );

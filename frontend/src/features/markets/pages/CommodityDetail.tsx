@@ -31,7 +31,7 @@ import SymbolPicker from "@/features/markets/components/SymbolPicker";
 import { useInstrumentSymbols } from "@/hooks/use-instrument-symbols";
 import { useLiveQuote } from "@/hooks/use-live-quote";
 import { formatEmpty } from "@/lib/display";
-import { formatLiveLastLabel, formatPrice4, liveQuoteUpdatedAtMs } from "@/lib/live-quote-display";
+import { formatLiveLastLabel, liveQuoteUpdatedAtMs } from "@/lib/live-quote-display";
 import {
   canonicalCommoditySlug,
   commodityApiKeyFromSlug,
@@ -261,7 +261,9 @@ const CommodityDetail = () => {
   const prevClose =
     price != null && changeAbs != null ? +(price - changeAbs).toFixed(4) : null;
 
-  const fmtPrice = (n: number) => formatPrice4(n);
+  // Commodity prices show 2 decimals throughout (matches the live reference).
+  const fmtPrice = (n: number) =>
+    n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const px = (n: number | null | undefined) => (n != null ? `${priceCcy}${fmtPrice(n)}` : formatEmpty(null));
 
   if (legacyRedirect) {
