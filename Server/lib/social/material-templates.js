@@ -382,15 +382,27 @@ function buildText({ templateKey, ticker, title, body = [], commodity, url }) {
     .replace(/\s+/g, ' ')
     .trim();
 
+  // X rejects any post carrying more than one cashtag (`$SYMBOL`). The headline
+  // above already carries it, so strip a repeat from the body if one appears.
+  const stripSym = (line) => {
+    if (!sym) return line;
+    const escaped = sym.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return line
+      .replace(new RegExp(`${escaped}(?![A-Za-z0-9])`, 'gi'), '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
   const lines = [head];
   for (const raw of body) {
-    const line = String(raw ?? '').trim();
+    const line = stripSym(String(raw ?? '').trim());
     if (line) lines.push(line);
   }
   lines.push(t.linkLine);
   lines.push(url);
 
-  const tagLine = [sym, '#Mining', commodity ? `#${commodity}` : null, ...(t.tailHashtags || [])]
+  // Hashtags only — the cashtag must not be repeated here (one cashtag per post).
+  const tagLine = ['#Mining', commodity ? `#${commodity}` : null, ...(t.tailHashtags || [])]
     .filter(Boolean)
     .join(' ');
   lines.push(tagLine);
