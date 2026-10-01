@@ -57,6 +57,13 @@ app.use('/api', apiRouter);
 app.use('/api/admin', adminApiRouter);
 app.use('/api/relay', auth.requireAdminApi, require('./relay/routes'));
 
+// ── SEO / AEO / GEO surface ────────────────────────────────────────────────
+// Crawler-rendered company, filing and news pages, plus /robots.txt,
+// /sitemap.xml, /sitemaps/*.xml and /llms.txt. Mounted at the root so the paths
+// match exactly what a crawler requests. Frontend nginx proxies crawler user
+// agents here for the content routes. See Server/lib/seo/.
+app.use(require('./routes/seo'));
+
 // ── Admin panel auth (cookie session) ──────────────────────────────────────
 // Login page is the only /admin path that is open without a cookie.
 app.get('/admin/login', (_req, res) => {

@@ -30,6 +30,7 @@ import { useAuth } from "@/hooks/use-auth";
 import SymbolPicker from "@/features/markets/components/SymbolPicker";
 import { useInstrumentSymbols } from "@/hooks/use-instrument-symbols";
 import { useLiveQuote } from "@/hooks/use-live-quote";
+import { useSeo } from "@/lib/seo";
 import { formatEmpty } from "@/lib/display";
 import { formatLiveLastLabel, liveQuoteUpdatedAtMs } from "@/lib/live-quote-display";
 import {
@@ -214,6 +215,27 @@ const CommodityDetail = () => {
     currency: "USD / unit",
     about: `Spot price for ${key}.`,
   };
+
+  // These pages render real content but previously inherited the SPA shell's
+  // homepage title and description, so a commodity page presented itself as the
+  // home page.
+  //
+  // The canonical uses the CANONICAL slug rather than whatever was requested, so a
+  // legacy short slug (SLVR, COPR, LITH) consolidates onto the canonical URL
+  // instead of competing with it — the same treatment legacy company ticker URLs
+  // get. `key` is already the canonical slug; `apiKey` is the lowercase API key.
+  //
+  // The description is composed rather than taken from `meta.about` so its length
+  // is bounded by construction and no truncation helper is needed.
+  useSeo(
+    {
+      title: `${meta.fullName} price, chart and mining exposure | OreWire`,
+      description: `Live ${meta.name} price and chart, plus the mining and resource companies on the TSX, TSX-V, CSE and ASX with exposure to ${meta.name}.`,
+      canonicalPath: `/market/commodity/${key}`,
+    },
+    [key],
+  );
+
   const [inWatchlist, setInWatchlist] = useState(false);
 
   const { symbols, selectedTvSymbol, setSelectedTvSymbol } = useInstrumentSymbols("commodity", apiKey);

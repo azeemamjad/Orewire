@@ -407,7 +407,9 @@ router.post('/:id/migrate', express.json(), async (req, res) => {
   }
 });
 
-// GET /api/companies/:idOrSlug  — accepts numeric ID or "EXCHANGE-TICKER" slug (e.g. "TSXV-SCZ")
+// GET /api/companies/:idOrSlug  — accepts a numeric ID, "EXCHANGE-TICKER"
+// (e.g. "TSXV-SCZ"), a bare ticker, or a slugified company name
+// (e.g. "carson-river-ventures-corp"). The name form is the canonical public URL.
 router.get('/:idOrSlug', async (req, res) => {
   try {
   const param = req.params.idOrSlug;
@@ -434,6 +436,44 @@ router.get('/:idOrSlug', async (req, res) => {
       result = await db.query(
         'SELECT * FROM companies WHERE UPPER(ticker) = $1 LIMIT 1',
         [param.toUpperCase()]
+      );
+    }
+
+    // A ticker the company has since changed. instrument_symbols keeps every
+    // listing ever recorded, so an old /company/TSXV-OLD link still resolves and
+    // the SEO route can 301 it to the current name-based canonical. Without this
+    // the two resolvers disagree, and the SPA 404s where the crawler redirects.
+    if (result.rows.length === 0) {
+      const dash = param.indexOf('-');
+      const symExchange = dash > 0 ? normalizeExchange(param.slice(0, dash)) : null;
+      const symTicker = dash > 0 ? param.slice(dash + 1) : param;
+      result = await db.query(
+        `SELECT c.* FROM instrument_symbols s
+           JOIN companies c ON c.id = s.entity_id AND s.entity_type = 'company'
+          WHERE c.archived_at IS NULL
+            AND UPPER(s.ticker) = $1
+            AND ($2::text IS NULL OR UPPER(s.exchange) = $2)
+          ORDER BY s.is_default DESC, c.market_cap DESC NULLS LAST
+          LIMIT 1`,
+        [String(symTicker).toUpperCase(), symExchange ? String(symExchange).toUpperCase() : null]
+      );
+    }
+
+    // Final fallback: slugified company name. Must match the slug rule in
+    // lib/seo/util.js slugify() exactly, or name based company URLs 404 here.
+    // The character class is a literal list, not the range `a-z`, because
+    // Postgres interprets ranges by collation and could keep an accented letter
+    // that JavaScript strips. See slugSql() in lib/seo/util.js.
+    // Archived rows are excluded so a live company wins over a retired one that
+    // happens to share a name slug.
+    if (result.rows.length === 0) {
+      result = await db.query(
+        `SELECT * FROM companies
+          WHERE archived_at IS NULL
+            AND TRIM(BOTH '-' FROM REGEXP_REPLACE(LOWER(name), '[^abcdefghijklmnopqrstuvwxyz0123456789]+', '-', 'g')) = $1
+          ORDER BY market_cap DESC NULLS LAST, id ASC
+          LIMIT 1`,
+        [String(param).toLowerCase()]
       );
     }
   }

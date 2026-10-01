@@ -5,6 +5,7 @@ import { ArrowUpRight, Clock, Sparkles } from "lucide-react";
 import { fetchNewsFeed, type NewsItem, type Verdict } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 import { newsDisplayTime } from "@/components/site/news-release-utils";
+import { newsSlug } from "@/lib/seo";
 
 const REFETCH_MS = 30 * 60 * 1000;
 
@@ -39,10 +40,6 @@ function getFilingType(title: string): string {
   if (t.includes("assay")) return "Assay Results";
   if (t.includes("acquisition") || t.includes("merger")) return "M&A";
   return "News Release";
-}
-
-function newsSlug(item: NewsItem): string {
-  return encodeURIComponent(item.link || item.title);
 }
 
 // Some RSS summaries arrive as raw/escaped HTML (embedded <a href>); decode the

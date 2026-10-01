@@ -25,7 +25,10 @@
     "relay:install-browsers": "patchright install chromium && patchright install chrome",
     "relay:test-engine": "node scripts/test-relay-engine.js",
     "relay:measure-bandwidth": "node scripts/measure-bandwidth.js",
-    "relay:diagnose-proxies": "node scripts/diagnose-proxies.js"
+    "relay:diagnose-proxies": "node scripts/diagnose-proxies.js",
+    "seo:indexnow": "node scripts/submit-indexnow.js",
+    "seo:audit": "node scripts/audit-seo-urls.js",
+    "seo:check": "node scripts/check-seo.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.0",

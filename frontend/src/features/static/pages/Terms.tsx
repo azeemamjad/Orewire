@@ -1,6 +1,21 @@
 import SiteLayout from "@/layouts/SiteLayout";
+import { useSeo } from "@/lib/seo";
 
-const Terms = () => (
+// Static trust page. It renders real content but previously inherited the SPA
+// shell's homepage title and description, so it presented itself as the home page.
+// The body was an implicit-return arrow; it is a block now only to hold the hook.
+const Terms = () => {
+  useSeo(
+    {
+      title: "Terms of Use | OreWire",
+      description:
+        "The terms governing use of OreWire: what the platform does, how its AI generated filing summaries and extracted figures should be treated, and the limits of the information published.",
+      canonicalPath: "/terms",
+    },
+    [],
+  );
+
+  return (
   <SiteLayout className="min-h-screen flex flex-col bg-background text-foreground">
     <main className="flex-1">
       <section className="border-b border-border bg-card">
@@ -144,6 +159,7 @@ const Terms = () => (
       </article>
     </main>
   </SiteLayout>
-);
+  );
+};
 
 export default Terms;

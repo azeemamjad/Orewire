@@ -7,6 +7,16 @@ import Disclaimer from "@/components/site/Disclaimer";
 import { fetchNewsFeed, fetchNewsItem, type NewsItem } from "@/lib/api";
 import { detailBackLink } from "@/lib/detail-navigation";
 import { getNewsFilingType, getNewsSeverity, severityStyle } from "@/lib/news-severity";
+import {
+  newsSlug,
+  newsPath,
+  useSeo,
+  truncate,
+  organizationLd,
+  websiteLd,
+  newsArticleLd,
+  hasSubstantiveSummary,
+} from "@/lib/seo";
 
 function formatFullDate(dateStr: string): string {
   if (!dateStr) return "Unknown time";
@@ -72,8 +82,43 @@ const NewsDetail = () => {
 
   const item = useMemo<NewsItem | null | undefined>(() => {
     if (directItem) return directItem;
-    return items.find((n) => (n.link || n.title) === decoded);
-  }, [directItem, items, decoded]);
+    // Fallback scan covers both slug shapes: the legacy link-or-title value and
+    // the canonical `<title-slug>-<id>` form.
+    return items.find((n) => (n.link || n.title) === decoded || newsSlug(n) === slug);
+  }, [directItem, items, decoded, slug]);
+
+  // Per-page head. The canonical uses the `<title-slug>-<id>` form so the page
+  // is citable, and the article markup makes it quotable by answer engines.
+  useSeo({
+    title: item ? `${item.title} | OreWire` : "Mining and Resource News | OreWire",
+    description: item
+      ? truncate(item.summary || item.description || item.title, 155)
+      : "Mining and resource company news releases with summaries on OreWire.",
+    canonicalPath: item ? newsPath(item) : "/news",
+    // ~131,000 news rows carry no real summary. Their pages stay reachable and
+    // keep their outgoing links, but must not enter the index: that many empty
+    // pages would suppress the company profiles this work is for.
+    robots: hasSubstantiveSummary(item)
+      ? "index, follow, max-image-preview:large, max-snippet:-1"
+      : "noindex, follow",
+    ogType: "article",
+    jsonLd: item
+      ? [
+          organizationLd(),
+          websiteLd(),
+          newsArticleLd({
+            id: item.id ?? 0,
+            title: item.title,
+            pub_date: item.pubDate,
+            summary: item.summary,
+            description: item.description,
+            source: item.source,
+            link: item.link,
+            company_name: item.company,
+          }),
+        ]
+      : [organizationLd(), websiteLd()],
+  });
 
   const isLoading = directLoading || (!directItem && feedLoading);
 

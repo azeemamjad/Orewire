@@ -12,6 +12,7 @@ import {
   type ListFilters,
 } from "@/components/site/ListFilterBar";
 import { fetchFilingsPage, type Filing, type Verdict } from "@/lib/api";
+import { useSeo, organizationLd, websiteLd, breadcrumbLd } from "@/lib/seo";
 import {
   apiCommodityFromFilters,
   apiExchangeFromFilters,
@@ -74,6 +75,32 @@ const FilingsList = () => {
     staleTime: 30 * 60 * 1000,
     refetchInterval: 60_000,
     placeholderData: keepPreviousData,
+  });
+
+  // The static shell's canonical points at the homepage, so without this the SPA
+  // claims every route is `/`. Crawlers are normally proxied to the rendered
+  // HTML instead, but this closes the gap for any that reach the SPA, and keeps
+  // the SPA's directive identical to the crawler renderer's.
+  useSeo({
+    title:
+      page > 1
+        ? `Decoded Mining Filings (page ${page}) | OreWire`
+        : "Decoded Mining and Resource Filings | OreWire",
+    description:
+      "Browse mining and resource regulatory filings decoded and graded by OreWire, with plain-English summaries of what was filed.",
+    canonicalPath: page > 1 ? `/filings?page=${page}` : "/filings",
+    robots:
+      page > 1
+        ? "noindex, follow"
+        : "index, follow, max-image-preview:large, max-snippet:-1",
+    jsonLd: [
+      organizationLd(),
+      websiteLd(),
+      breadcrumbLd([
+        { name: "Home", path: "/" },
+        { name: "Filings", path: "/filings" },
+      ]),
+    ],
   });
 
   const items = useMemo(() => {

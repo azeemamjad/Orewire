@@ -19,7 +19,26 @@ RUN npm run build
 
 FROM nginx:1.27-alpine
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# nginx.conf is a template: the official entrypoint runs envsubst over
+# /etc/nginx/templates/*.template into /etc/nginx/conf.d/ at container start,
+# substituting ${BACKEND_UPSTREAM} and ${EXTRA_CRAWLER_UA_PATTERN}. Both are
+# RUNTIME values, unlike the VITE_* build args above: changing either needs a
+# restart, not a rebuild.
+#
+# BACKEND_UPSTREAM — the backend that renders crawler HTML and serves the
+# sitemaps. The public backend host is a safe default; a private service URL is
+# faster. If it is wrong or unreachable, the site still looks fine in a browser
+# while being invisible to crawlers.
+#
+# EXTRA_CRAWLER_UA_PATTERN — a never-matching regex by default, so the
+# extra-crawler map always has a valid mask. An empty value would leave a bare
+# `""` mask, and a malformed map stops nginx from starting. Override it to serve
+# rendered HTML to a crawler that is not in nginx.conf's list.
+ENV BACKEND_UPSTREAM=http://backend.orewire.com \
+    EXTRA_CRAWLER_UA_PATTERN=~*orewire-never-matches
+
+COPY nginx.conf /etc/nginx/templates/default.conf.template
+COPY orewire-proxy-headers.inc /etc/nginx/conf.d/orewire-proxy-headers.inc
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 8080

@@ -265,7 +265,17 @@ async function findNewsItem({ id, link }) {
   }
   if (link) {
     for (const table of [TABLE_RELEASES, TABLE_MARKET]) {
-      const result = await db.query(`SELECT * FROM ${table} WHERE link = $1 LIMIT 1`, [link]);
+      // Match the external link, the exact title, or the title slug. The SPA
+      // slug has historically been `link || title`, and the canonical SEO slug
+      // is `<title-slug>-<id>`, so all three shapes have to resolve.
+      const result = await db.query(
+        `SELECT * FROM ${table}
+          WHERE link = $1
+             OR title = $1
+             OR TRIM(BOTH '-' FROM REGEXP_REPLACE(LOWER(title), '[^abcdefghijklmnopqrstuvwxyz0123456789]+', '-', 'g')) = $1
+          LIMIT 1`,
+        [link],
+      );
       if (result.rows.length) {
         const row = result.rows[0];
         if (table === TABLE_MARKET) {

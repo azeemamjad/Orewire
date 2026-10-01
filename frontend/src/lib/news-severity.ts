@@ -1,4 +1,5 @@
 import type { NewsItem } from "@/lib/api";
+import { newsPath } from "@/lib/seo";
 
 export type NewsSeverity = "Critical" | "High" | "Medium" | "Low";
 
@@ -63,7 +64,7 @@ export function cleanNewsSummary(text: string | null | undefined): string {
 }
 
 export function newsItemHref(item: NewsItem): string {
-  return `/news/${encodeURIComponent(item.link || item.title)}`;
+  return newsPath(item);
 }
 
 export function isCompanyLinkedNews(item: NewsItem): boolean {

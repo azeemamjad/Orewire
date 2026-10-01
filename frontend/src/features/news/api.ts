@@ -1,4 +1,5 @@
 import { API_BASE } from '@/lib/api-client';
+import { parseNewsSlug } from '@/lib/seo';
 
 export type Verdict = 'Noteworthy' | 'Watch' | 'Routine' | 'Extraction failed' | 'Company mismatch';
 export type Exchange = 'TSX' | 'TSX-V' | 'CSE' | 'ASX';
@@ -320,10 +321,29 @@ export async function fetchNewsFeed(params?: {
   };
 }
 
+/**
+ * Resolve a `/news/:slug` value.
+ *
+ * The canonical slug ends in `-<id>`, so the id is tried first: it is an exact
+ * primary key lookup rather than a scan. Older shared links carry the encoded
+ * external URL or the bare title, and still resolve by link.
+ */
 export async function fetchNewsItem(slug: string): Promise<NewsItem | null> {
   if (!slug) return null;
+  const { id, legacy } = parseNewsSlug(slug);
+
+  if (id) {
+    const byId = await fetchNewsItemByParam('id', String(id));
+    if (byId) return byId;
+  }
+
+  return fetchNewsItemByParam('link', legacy);
+}
+
+async function fetchNewsItemByParam(key: 'id' | 'link', value: string): Promise<NewsItem | null> {
+  if (!value) return null;
   const params = new URLSearchParams();
-  params.set('link', slug);
+  params.set(key, value);
   const res = await fetch(`${API_BASE}/news/item?${params.toString()}`);
   if (!res.ok) return null;
   const data = await res.json();

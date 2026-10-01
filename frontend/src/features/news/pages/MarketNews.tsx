@@ -11,6 +11,7 @@ import {
   type ListFilters,
 } from "@/components/site/ListFilterBar";
 import { fetchNewsFeed, type NewsItem } from "@/lib/api";
+import { useSeo, organizationLd, websiteLd, breadcrumbLd } from "@/lib/seo";
 import { googleNewsRssUrl } from "@/components/site/MarketNewsKeywordSection";
 import { newsDisplayTime } from "@/components/site/news-release-utils";
 import { apiCommodityFromFilters, matchesMultiFilters } from "@/lib/list-filter-api";
@@ -46,6 +47,30 @@ const MarketNewsPage = () => {
       }),
     staleTime: REFETCH_MS,
     refetchInterval: REFETCH_MS,
+  });
+
+  // See the note in FilingsList: without this the SPA canonical claims `/` for
+  // every route, and it must match the crawler renderer's directive exactly.
+  useSeo({
+    title:
+      page > 1
+        ? `Commodity and Market News (page ${page}) | OreWire`
+        : "Commodity and Market News for Mining Investors | OreWire",
+    description:
+      "Commodity, metals and market headlines relevant to mining and resource investors, curated by OreWire.",
+    canonicalPath: page > 1 ? `/market-news?page=${page}` : "/market-news",
+    robots:
+      page > 1
+        ? "noindex, follow"
+        : "index, follow, max-image-preview:large, max-snippet:-1",
+    jsonLd: [
+      organizationLd(),
+      websiteLd(),
+      breadcrumbLd([
+        { name: "Home", path: "/" },
+        { name: "Market news", path: "/market-news" },
+      ]),
+    ],
   });
 
   const items = useMemo(() => {

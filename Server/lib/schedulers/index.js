@@ -12,6 +12,7 @@ const { startUsageLogPruneScheduler } = require('./usage-log-prune');
 const { startSymbolHealthScheduler } = require('../market/symbol-health-scheduler');
 const { startTickerRecheckScheduler } = require('./ticker-recheck');
 const { startMaterialScheduler } = require('../social/material-scheduler');
+const { startIndexNowScheduler } = require('./seo-indexnow');
 
 async function startPipelineSchedulers() {
   const cfg = await initPipelineConfig();
@@ -81,6 +82,14 @@ function startBackgroundSchedulers({ server, app } = {}) {
     startTickerRecheckScheduler();
   } catch (err) {
     console.error('[ticker-recheck] Scheduler failed to start:', err?.message || err);
+  }
+
+  // Freshness ping to IndexNow (Bing and therefore Copilot). No-op unless
+  // INDEXNOW_KEY is configured. See lib/seo/indexnow.js.
+  try {
+    startIndexNowScheduler();
+  } catch (err) {
+    console.error('[seo-indexnow] Scheduler failed to start:', err?.message || err);
   }
 
   // Template-driven material posting replaced the curated daily thread

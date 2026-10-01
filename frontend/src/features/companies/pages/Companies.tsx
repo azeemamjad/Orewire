@@ -17,6 +17,7 @@ import {
   type Company,
 } from "@/lib/api";
 import { parseCompanySearchQuery, parsedExchangeToMarket } from "@/lib/company-search-parse";
+import { companyPath, useSeo, organizationLd, websiteLd, breadcrumbLd } from "@/lib/seo";
 import { companyListQuoteKey, useCompanyListQuotes } from "@/hooks/use-company-list-quotes";
 import type { LiveTvQuote } from "@/features/markets/instrument-symbols";
 
@@ -73,13 +74,25 @@ function fmtVol(n: number | null | undefined): string {
 const GRID = "grid-cols-[64px_52px_minmax(140px,1fr)_repeat(5,90px)_44px]";
 const COL = "grid grid-cols-1 md:grid-cols-[64px_52px_minmax(140px,1fr)_repeat(5,90px)_44px]";
 
+/**
+ * Map the exchange values used by crawler hub links onto the values this filter
+ * uses. Hub pages link to `/companies?exchange=TSXV`, while the in-app control
+ * and its URL use `/companies?market=TSX-V`, so both spellings must work.
+ */
+function normalizeMarketParam(value: string | null): string | null {
+  if (!value) return null;
+  const upper = value.toUpperCase();
+  if (upper === "TSXV" || upper === "TSX-V") return "TSX-V";
+  return upper;
+}
+
 const Companies = () => {
   const [searchParams] = useSearchParams();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState(() => searchParams.get("search") || "");
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get("search") || "");
   const [sel, setSel] = useState<Selected>(() => ({
-    market: searchParams.get("market") || null,
+    market: normalizeMarketParam(searchParams.get("market") || searchParams.get("exchange")),
     commodity: searchParams.get("commodity") || null,
     continent: searchParams.get("continent") || null,
     country: searchParams.get("country") || null,
@@ -92,6 +105,65 @@ const Companies = () => {
     }, 300);
     return () => clearTimeout(t);
   }, [search]);
+
+  // Head for the index and its commodity / exchange hub pages. The canonical
+  // deliberately matches the one the crawler renderer emits, including the
+  // `exchange=TSXV` spelling, so the two views cannot compete with each other.
+  const seoCanonicalPath = useMemo(() => {
+    // Built by hand, in the crawler renderer's exact parameter order and with the
+    // same encoding. Two details matter:
+    //
+    //  * Sequential `if`s, not an else-if chain. A URL can legitimately carry more
+    //    than one hub parameter, and with an else-if chain the SPA dropped all but
+    //    the first while the renderer kept them all — 40 of 54 fixture
+    //    combinations produced different canonicals for the same URL.
+    //  * `encodeURIComponent`, not `URLSearchParams`, which encodes a space as
+    //    `+` where the sitemap uses `%20`. `Rare Earths`, `North America` and
+    //    `South America` are hub values containing a space.
+    const parts: string[] = [];
+    if (sel.commodity) parts.push(`commodity=${encodeURIComponent(sel.commodity)}`);
+    if (sel.market) parts.push(`exchange=${encodeURIComponent(sel.market === "TSX-V" ? "TSXV" : sel.market)}`);
+    if (sel.continent) parts.push(`continent=${encodeURIComponent(sel.continent)}`);
+    if (page > 1) parts.push(`page=${page}`);
+    return parts.length ? `/companies?${parts.join("&")}` : "/companies";
+  }, [sel.commodity, sel.continent, sel.market, page]);
+
+  const seoTitle = sel.commodity
+    ? `${sel.commodity} Mining and Exploration Companies | OreWire`
+    : sel.continent
+      ? `Mining and Resource Companies in ${sel.continent} | OreWire`
+      : sel.market
+        ? `Mining and Resource Companies on the ${sel.market} | OreWire`
+        : page > 1
+          ? `Mining and Resource Companies (page ${page}) | OreWire`
+          : "Mining and Resource Companies on TSX, TSX-V, CSE and ASX | OreWire";
+
+  const seoDescription = sel.commodity
+    ? `Browse ${sel.commodity.toLowerCase()} mining and exploration companies tracked by OreWire, with stock prices, decoded regulatory filings and news release summaries.`
+    : sel.continent
+      ? `Browse mining and resource companies operating in ${sel.continent} on OreWire, with stock prices, decoded regulatory filings and news release summaries.`
+      : "Browse mining and resource companies tracked by OreWire, with stock prices, decoded regulatory filings and news release summaries.";
+
+  useSeo({
+    title: seoTitle,
+    description: seoDescription,
+    canonicalPath: seoCanonicalPath,
+    // Page one is the page worth ranking; the rest are thin slices of the same
+    // list. Must match the crawler renderer's directive or the two views would
+    // disagree about the same URL.
+    robots:
+      page > 1
+        ? "noindex, follow"
+        : "index, follow, max-image-preview:large, max-snippet:-1",
+    jsonLd: [
+      organizationLd(),
+      websiteLd(),
+      breadcrumbLd([
+        { name: "Home", path: "/" },
+        { name: "Companies", path: "/companies" },
+      ]),
+    ],
+  });
 
   const { data: filterOptions } = useQuery({
     queryKey: ["company-filters"],
@@ -400,7 +472,7 @@ const CompanyRow = ({ c, quote }: { c: Company; quote: LiveTvQuote | null }) => 
 
   return (
     <Link
-      to={`/company/${companySlug(c.exchange, c.ticker)}`}
+      to={companyPath(c.name, companySlug(c.exchange, c.ticker))}
       className={`group ${COL} gap-y-1 gap-x-3 px-4 py-3.5 border-b border-border last:border-b-0 hover:bg-muted/40 transition-colors items-center`}
     >
       {/* Ticker */}

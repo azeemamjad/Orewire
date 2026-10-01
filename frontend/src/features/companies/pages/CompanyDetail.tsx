@@ -35,6 +35,17 @@ import { newsDisplayTime } from "@/components/site/news-release-utils";
 import CompanySnapshotCard from "@/components/site/CompanySnapshotCard";
 import { splitRegistryLine, formatEmpty } from "@/lib/display";
 import { companyBackState } from "@/lib/detail-navigation";
+import {
+  useSeo,
+  organizationLd,
+  websiteLd,
+  corporationLd,
+  breadcrumbLd,
+  faqLd,
+  companyPath,
+  truncate,
+  newsPath,
+} from "@/lib/seo";
 import SymbolPicker from "@/features/markets/components/SymbolPicker";
 import { useInstrumentSymbols } from "@/hooks/use-instrument-symbols";
 import { useLiveQuote } from "@/hooks/use-live-quote";
@@ -54,6 +65,108 @@ function timeAgo(dateStr: string): string {
 
 function emailToHandle(email: string): string {
   return "@" + email.split("@")[0];
+}
+
+/**
+ * Head configuration for a company profile.
+ *
+ * The title leads with the exact company name because that is the query this
+ * page has to win, and the canonical points at the name based URL rather than
+ * the ticker URL so the two forms do not compete with each other.
+ */
+function buildCompanySeo(
+  company:
+    | {
+        name?: string | null;
+        ticker?: string | null;
+        exchange?: string | null;
+        description?: string | null;
+        sector?: string | null;
+        headquarters?: string | null;
+        website?: string | null;
+        commodities?: string[];
+      }
+    | undefined,
+  slug?: string,
+) {
+  if (!company?.name) {
+    return {
+      title: "Mining and Resource Company Profiles | OreWire",
+      description:
+        "Stock prices, decoded filings and news release summaries for mining and resource companies on the TSX, TSX-V, CSE and ASX.",
+      canonicalPath: slug ? `/company/${slug}` : "/companies",
+      jsonLd: [organizationLd(), websiteLd()],
+    };
+  }
+
+  const listed =
+    company.exchange && company.ticker ? `${company.exchange}:${company.ticker}` : company.ticker || "";
+  const canonicalPath = companyPath(company.name, slug);
+  const commodities = Array.isArray(company.commodities) ? company.commodities : [];
+
+  const description = truncate(
+    company.description ||
+      `${company.name}${listed ? ` (${listed})` : ""} company profile on OreWire: market capitalisation, share data, decoded regulatory filings, management and news release summaries${
+        commodities.length ? ` for ${commodities.join(", ")}` : ""
+      }.`,
+    155,
+  );
+
+  // Answer engine fodder: short, direct, quotable question and answer pairs.
+  const faqs: { question: string; answer: string }[] = [
+    {
+      question: `What is ${company.name}'s stock ticker?`,
+      answer: `${company.name} trades under the ticker ${company.ticker || "n/a"}${
+        company.exchange ? ` on the ${company.exchange}` : ""
+      }.`,
+    },
+  ];
+  if (company.exchange) {
+    faqs.push({
+      question: `What stock exchange is ${company.name} listed on?`,
+      answer: `${company.name} is listed on the ${company.exchange}${
+        listed ? ` under the symbol ${listed}` : ""
+      }.`,
+    });
+  }
+  if (company.sector || company.description) {
+    faqs.push({
+      question: `What does ${company.name} do?`,
+      answer: truncate(
+        company.description || `${company.name} is a ${company.sector} company tracked by OreWire.`,
+        320,
+      ),
+    });
+  }
+
+  const jsonLd: Record<string, unknown>[] = [
+    organizationLd(),
+    websiteLd(),
+    corporationLd({
+      name: company.name,
+      ticker: company.ticker,
+      exchange: company.exchange,
+      description: company.description,
+      sector: company.sector,
+      headquarters: company.headquarters,
+      website: company.website,
+    }),
+    breadcrumbLd([
+      { name: "Home", path: "/" },
+      { name: "Companies", path: "/companies" },
+      { name: company.name, path: canonicalPath },
+    ]),
+  ];
+  const faq = faqLd(faqs);
+  if (faq) jsonLd.push(faq);
+
+  return {
+    title: `${company.name}${listed ? ` (${listed})` : ""} Filings, News & Company Profile | OreWire`,
+    description,
+    canonicalPath,
+    ogType: "website" as const,
+    jsonLd,
+  };
 }
 
 const CompanyDetail = () => {
@@ -88,6 +201,8 @@ const CompanyDetail = () => {
       checkWatchlist("company", String(companyId)).then(setInWatchlist);
     }
   }, [companyId]);
+
+  useSeo(buildCompanySeo(data, slug));
 
   if (isLoading || !data) {
     return (
@@ -896,7 +1011,7 @@ const CompanyNewsColumn = ({
   const renderCard = (n: NewsItem, i: number) => (
     <FeedCard
       key={`${n.link}-${i}`}
-      to={`/news/${encodeURIComponent(n.link || n.title)}`}
+      to={newsPath(n)}
       linkState={backState}
       verdict={severityToVerdict(getNewsSeverity(n.sentiment, n.title))}
       exLabel={exLabel}

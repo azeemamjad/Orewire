@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Mail, Send } from "lucide-react";
 import { z } from "zod";
 import SiteLayout from "@/layouts/SiteLayout";
+import { useSeo } from "@/lib/seo";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,19 @@ const Contact = () => {
   const [form, setForm] = useState({ name: "", email: "", company: "", subject: "", message: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+
+  // This page is listed in staticEntries() and so is submitted to Google — but with
+  // no metadata of its own it was serving the SPA shell's homepage title and
+  // description, i.e. advertising a contact page as the home page.
+  useSeo(
+    {
+      title: "Contact OreWire | Mining and Resource Intelligence",
+      description:
+        "Get in touch with OreWire about mining filings coverage, company data corrections, partnerships, or anything else about the platform.",
+      canonicalPath: "/contact",
+    },
+    [],
+  );
 
   const update = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));

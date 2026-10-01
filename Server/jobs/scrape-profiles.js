@@ -12,6 +12,7 @@
 require('dotenv').config();
 const db = require('../db');
 const exch = require('../pipeline/exchanges');
+const { repairMojibake } = require('../lib/text/repair-mojibake');
 const { addLog } = require('../pipeline/state');
 const {
   isJobRunning, syncJob, startJob, endJob,
@@ -64,6 +65,13 @@ async function fetchCompaniesToScrape({ limit, ticker, refreshDays }) {
 }
 
 async function saveProfile(companyId, source, profile) {
+  const p = profile || {};
+
+  // Repair Latin-1-as-UTF-8 damage before storing, so the SPA and the crawler
+  // both render the correct text. Absent and empty both become null so the
+  // COALESCE below still leaves existing data alone.
+  const field = (v) => (v == null || v === '' ? null : repairMojibake(v));
+
   // COALESCE(new, existing): exchange data wins where present, but a field the
   // venue leaves blank never wipes data we already hold.
   await db.query(
@@ -80,12 +88,12 @@ async function saveProfile(companyId, source, profile) {
      WHERE id = $1`,
     [
       companyId,
-      profile?.description || null,
-      profile?.website || null,
-      profile?.headquarters || null,
-      profile?.transfer_agent || null,
-      profile?.phone || null,
-      profile?.shares_outstanding ?? null,
+      field(p.description),
+      field(p.website),
+      field(p.headquarters),
+      field(p.transfer_agent),
+      field(p.phone),
+      p.shares_outstanding ?? null,
       source || null,
     ]
   );

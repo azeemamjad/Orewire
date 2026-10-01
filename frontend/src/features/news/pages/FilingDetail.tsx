@@ -5,6 +5,13 @@ import SiteLayout from "@/layouts/SiteLayout";
 import Disclaimer from "@/components/site/Disclaimer";
 import { companySlug, fetchFiling, filingDocumentUrl, type Verdict } from "@/lib/api";
 import { detailBackLink } from "@/lib/detail-navigation";
+import {
+  useSeo,
+  organizationLd,
+  websiteLd,
+  breadcrumbLd,
+  truncate,
+} from "@/lib/seo";
 
 const verdictStyle: Record<Verdict, string> = {
   Noteworthy: "bg-[hsl(var(--noteworthy))] text-[hsl(var(--noteworthy-foreground))]",
@@ -31,6 +38,32 @@ const FilingDetail = () => {
     enabled: !!id,
     staleTime: 30 * 60 * 1000,
     retry: false,
+  });
+
+  // See the note in FilingsList: the shell's canonical is the homepage, so every
+  // route needs its own. Must match the crawler renderer's directive.
+  useSeo({
+    title: filing
+      ? `${filing.company} — ${filing.filingType || "Filing"} | OreWire`
+      : "Decoded Mining and Resource Filings | OreWire",
+    description: filing
+      ? truncate(
+          filing.summary ||
+            `${filing.filingType || "Regulatory filing"} filed by ${filing.company} and decoded by OreWire.`,
+          155,
+        )
+      : "Mining and resource regulatory filings decoded and graded by OreWire.",
+    canonicalPath: filing ? `/filings/${filing.id}` : "/filings",
+    ogType: "article",
+    jsonLd: [
+      organizationLd(),
+      websiteLd(),
+      breadcrumbLd([
+        { name: "Home", path: "/" },
+        { name: "Filings", path: "/filings" },
+        { name: `Filing ${filing?.id ?? ""}`, path: filing ? `/filings/${filing.id}` : "/filings" },
+      ]),
+    ],
   });
 
   if (isLoading) {

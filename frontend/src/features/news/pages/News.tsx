@@ -21,11 +21,12 @@ import {
   matchesMultiFilters,
   newsSignificanceLabel,
 } from "@/lib/list-filter-api";
+import { newsSlug, useSeo, organizationLd, websiteLd, breadcrumbLd } from "@/lib/seo";
 
 const PAGE_SIZE = 10;
 
 function toNewsSlug(item: NewsItem): string {
-  return encodeURIComponent(item.link || item.title);
+  return newsSlug(item);
 }
 
 function cleanSummary(text: string | null | undefined): string {
@@ -83,6 +84,30 @@ const News = () => {
         search: appliedSearch || undefined,
       }),
     staleTime: 30 * 60 * 1000,
+  });
+
+  // See the note in FilingsList: without this the SPA canonical claims `/` for
+  // every route, and it must match the crawler renderer's directive exactly.
+  useSeo({
+    title:
+      page > 1
+        ? `Mining and Resource News Releases (page ${page}) | OreWire`
+        : "Mining and Resource News Releases | OreWire",
+    description:
+      "Mining and resource company news releases, each summarised in plain English by OreWire.",
+    canonicalPath: page > 1 ? `/news?page=${page}` : "/news",
+    robots:
+      page > 1
+        ? "noindex, follow"
+        : "index, follow, max-image-preview:large, max-snippet:-1",
+    jsonLd: [
+      organizationLd(),
+      websiteLd(),
+      breadcrumbLd([
+        { name: "Home", path: "/" },
+        { name: "News", path: "/news" },
+      ]),
+    ],
   });
 
   const pageItems = useMemo(() => {

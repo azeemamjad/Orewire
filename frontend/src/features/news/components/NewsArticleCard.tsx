@@ -1,5 +1,6 @@
 import { ChevronRight, Clock, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
+import { newsSlug } from "@/lib/seo";
 import { getNewsSeverity, getNewsTags, severityStyle, type NewsSeverity } from "@/lib/news-severity";
 
 export type Severity = NewsSeverity;
@@ -16,7 +17,10 @@ export interface NewsArticleCardProps {
 }
 
 function buildDetailSlug(link: string | null | undefined, title: string): string {
-  return encodeURIComponent(link || title);
+  // No id is available on this component, so this falls back to the legacy
+  // link-or-title slug. Prefer newsPath() from "@/lib/seo" wherever an id is
+  // available, because the canonical form is `<title-slug>-<id>`.
+  return newsSlug({ title, link });
 }
 
 export function NewsArticleCard({

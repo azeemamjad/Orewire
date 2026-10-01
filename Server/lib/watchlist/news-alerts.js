@@ -10,6 +10,7 @@ const {
   tableForSource,
 } = require('../news/db');
 const { blockedMarketSourcesClause } = require('../news/blocked-sources');
+const { newsUrl } = require('../seo/util');
 
 const SEND_DELAY_MS = Number(process.env.WATCHLIST_NEWS_SEND_DELAY_MS || 150);
 const pendingKeys = new Set();
@@ -81,7 +82,9 @@ function buildEmailPayload(news) {
     companyName: news.company_name,
     ticker: news.ticker || news.news_ticker,
     exchange: news.exchange,
-    summaryUrl: `${base}/news/${encodeURIComponent(link)}`,
+    // Canonical news URL, so links in alerts match the indexed page and the
+    // sitemap instead of the old URL-encoded external link.
+    summaryUrl: `${base}${newsUrl(news)}`,
     originalUrl: link.startsWith('http') ? link : `${base}/news`,
   };
 }

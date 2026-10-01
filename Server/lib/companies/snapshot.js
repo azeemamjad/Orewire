@@ -457,6 +457,20 @@ function formatResponse(row, stale = false) {
   };
 }
 
+/**
+ * Cached snapshot only, already sanitised.
+ *
+ * Never triggers generation: the SEO renderer runs on the crawler path, where a
+ * model call would be an unbounded latency and cost risk. Returns null when no
+ * snapshot has been generated yet, and the caller simply omits the section.
+ */
+async function getCachedSnapshotView(companyId) {
+  if (!companyId) return null;
+  const row = await getCachedSnapshot(companyId);
+  if (!row) return null;
+  return formatResponse(row, false);
+}
+
 async function regenerateCompanySnapshot(companyId) {
   const ctx = await gatherSnapshotContext(companyId);
   if (!ctx) return null;
@@ -554,6 +568,7 @@ module.exports = {
   gatherSnapshotContext,
   getCompanySnapshot,
   getCompanySnapshotView,
+  getCachedSnapshotView,
   scheduleSnapshotRegeneration,
   buildSnapshotPrompt,
   parseSnapshotText,
