@@ -377,19 +377,28 @@ function buildText({ templateKey, ticker, title, body = [], commodity, url, comp
 
   const sym = ticker ? `$${String(ticker).toUpperCase().replace(/^\$/, '')}` : '';
 
-  // The company name sits between the cashtag and the title, so a reader who does not
-  // know the symbol can tell who the post is about without opening the link. It belongs
-  // to the same code-owned opener as the ticker and the emojis — which means the model
-  // has to budget for it, so the user prompt shows the opener with the name in place.
-  const titleText = String(title || t.defaultTitle).trim();
+  // The company name leads the opener and the cashtag follows it, so a reader who does
+  // not know the symbol can tell who the post is about without opening the link. Both
+  // belong to the same code-owned opener as the emojis — which means the model has to
+  // budget for them, so the user prompt shows the opener with the name already in place.
   const company = String(companyName || '').trim();
-  // The prompt forbids repeating the name, but a model that disobeys would produce
-  // "…$CRIV Carson River Ventures Corp. Carson River Ventures Closes…". Only add it when
-  // the title does not already contain the name verbatim.
-  const nameToAdd =
-    company && !titleText.toLowerCase().includes(company.toLowerCase()) ? company : '';
 
-  const head = [t.emojis.header, sym, nameToAdd, titleText, t.emojis.hook]
+  // The prompt forbids the model from writing the name, but not every model obeys. If it
+  // appears in the title, strip it there and let the leading slot carry it — otherwise the
+  // opener renders as "$CRIV Carson River…", the reverse of the intended order.
+  // Matching the FULL name rather than a word from it is what keeps this from mangling a
+  // title that merely mentions the company.
+  let titleText = String(title || t.defaultTitle).trim();
+  if (company) {
+    const escaped = company.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    titleText = titleText
+      .replace(new RegExp(escaped, 'gi'), '')
+      .replace(/\s+/g, ' ')
+      .replace(/^[\s.,;:—–-]+/, '')
+      .trim();
+  }
+
+  const head = [t.emojis.header, company, sym, titleText || t.defaultTitle, t.emojis.hook]
     .filter(Boolean)
     .join(' ')
     .replace(/\s+/g, ' ')
