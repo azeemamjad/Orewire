@@ -6,6 +6,7 @@ import {
   ArrowUpRight, CheckCircle2, Zap, Eye, BarChart3, Users, X,
 } from "lucide-react";
 import SiteLayout from "@/layouts/SiteLayout";
+import { useSeo } from "@/lib/seo";
 import { fetchJobs, postJob, applyToJob, fetchMyApplications, login as apiLogin, register as apiRegister, type JobListing, type MyApplication } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 import { FileText } from "lucide-react";
@@ -38,6 +39,18 @@ const Jobs = () => {
   });
 
   const jobs = liveJobs ?? [];
+
+  // Every route sets its own title: index.html's <title> is only read on first load, so
+  // an unwired route otherwise inherited the previously visited page's title.
+  useSeo(
+    {
+      title: "Mining and Resource Jobs | OreWire",
+      description:
+        "Browse mining and resource jobs across exploration, production, geology, engineering and corporate roles, and post openings to reach OreWire's audience of mining investors and professionals.",
+      canonicalPath: "/jobs",
+    },
+    [],
+  );
 
   const promoted = jobs.filter((j) => j.promoted);
   const regular = jobs.filter((j) => !j.promoted);

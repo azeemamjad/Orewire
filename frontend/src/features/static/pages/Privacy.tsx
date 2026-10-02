@@ -1,6 +1,21 @@
 import SiteLayout from "@/layouts/SiteLayout";
+import { useSeo } from "@/lib/seo";
 
-const Privacy = () => (
+const Privacy = () => {
+  // Without its own title this route inherited whatever the previously visited page had
+  // set, because index.html's <title> is only read on first load. The body was an
+  // implicit-return arrow; it is a block now only to hold the hook.
+  useSeo(
+    {
+      title: "Privacy Policy | OreWire",
+      description:
+        "How OreWire handles personal data: what is collected, how it is used, how long it is kept, and the choices available to you.",
+      canonicalPath: "/privacy",
+    },
+    [],
+  );
+
+  return (
   <SiteLayout className="min-h-screen flex flex-col bg-background text-foreground">
     <main className="flex-1">
       <section className="border-b border-border bg-card">
@@ -124,6 +139,7 @@ const Privacy = () => (
       </article>
     </main>
   </SiteLayout>
-);
+  );
+};
 
 export default Privacy;

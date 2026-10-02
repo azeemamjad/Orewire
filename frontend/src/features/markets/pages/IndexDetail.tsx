@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import SiteLayout from "@/layouts/SiteLayout";
+import { useSeo } from "@/lib/seo";
 import SetAlertButton from "@/components/site/SetAlertButton";
 import MarketDetailLayout from "@/layouts/MarketDetailLayout";
 import MarketNewsKeywordSection from "@/components/site/MarketNewsKeywordSection";
@@ -117,6 +118,18 @@ const IndexDetail = () => {
 
   const fmt = (n: number) => formatPrice4(n);
   const fmtOpt = (n: number | null) => (n != null ? fmt(n) : formatEmpty(null));
+
+  // Every detail page must set its own title — see the note in CurrencyDetail.tsx.
+  // `label` falls back to `key`, so this is a real string even before the data loads,
+  // and the hook re-runs when the fetched label arrives.
+  useSeo(
+    {
+      title: `${label} index value and chart | OreWire`,
+      description: `Live ${label} index level, chart and daily range, with mining and resource company filings, news and stock data for TSX, TSX-V, CSE and ASX issuers.`,
+      canonicalPath: `/market/index/${key}`,
+    },
+    [key, label],
+  );
 
   const [inWatchlist, setInWatchlist] = useState(false);
   useEffect(() => {

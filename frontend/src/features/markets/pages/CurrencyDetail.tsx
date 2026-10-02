@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import SiteLayout from "@/layouts/SiteLayout";
+import { useSeo } from "@/lib/seo";
 import SetAlertButton from "@/components/site/SetAlertButton";
 import MarketDetailLayout from "@/layouts/MarketDetailLayout";
 import MarketNewsKeywordSection from "@/components/site/MarketNewsKeywordSection";
@@ -132,6 +133,19 @@ const CurrencyDetail = () => {
   const dayHigh = liveQuote?.high ?? null;
   const dayLow = liveQuote?.low ?? null;
   const fmt4 = (n: number | null) => (n != null ? formatPrice4(n) : formatEmpty(null));
+
+  // Every detail page must set its own title. Without this the route kept whatever
+  // title the previously visited page had set: index.html's <title> is only read on
+  // first load, so a client-side navigation to an unwired route leaves the previous
+  // page's title in the tab, in the history entry and in any client-rendered crawl.
+  useSeo(
+    {
+      title: `${meta.fullName} exchange rate and chart | OreWire`,
+      description: `Live ${meta.name} exchange rate, chart and daily range, with mining and resource company filings, news and stock data for TSX, TSX-V, CSE and ASX issuers.`,
+      canonicalPath: `/market/currency/${key}`,
+    },
+    [key],
+  );
 
   const [inWatchlist, setInWatchlist] = useState(false);
   useEffect(() => {
