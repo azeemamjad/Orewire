@@ -371,12 +371,25 @@ function promptSpec(templateKey) {
  * Assemble the final tweet. Code owns emojis, link line, URL and hashtags.
  * @returns {string}
  */
-function buildText({ templateKey, ticker, title, body = [], commodity, url }) {
+function buildText({ templateKey, ticker, title, body = [], commodity, url, companyName }) {
   const t = TEMPLATES[templateKey];
   if (!t) throw new Error(`Unknown template: ${templateKey}`);
 
   const sym = ticker ? `$${String(ticker).toUpperCase().replace(/^\$/, '')}` : '';
-  const head = [t.emojis.header, sym, String(title || t.defaultTitle).trim(), t.emojis.hook]
+
+  // The company name sits between the cashtag and the title, so a reader who does not
+  // know the symbol can tell who the post is about without opening the link. It belongs
+  // to the same code-owned opener as the ticker and the emojis — which means the model
+  // has to budget for it, so the user prompt shows the opener with the name in place.
+  const titleText = String(title || t.defaultTitle).trim();
+  const company = String(companyName || '').trim();
+  // The prompt forbids repeating the name, but a model that disobeys would produce
+  // "…$CRIV Carson River Ventures Corp. Carson River Ventures Closes…". Only add it when
+  // the title does not already contain the name verbatim.
+  const nameToAdd =
+    company && !titleText.toLowerCase().includes(company.toLowerCase()) ? company : '';
+
+  const head = [t.emojis.header, sym, nameToAdd, titleText, t.emojis.hook]
     .filter(Boolean)
     .join(' ')
     .replace(/\s+/g, ' ')

@@ -46,7 +46,7 @@ const TITLE_GUIDE = {
 
 const SYSTEM_PROMPT = `You write ONE X (Twitter) post for OreWire, a mining-filings intelligence account covering TSX, TSX-V, CSE and ASX companies.
 
-You are filling a FIXED template. The system already adds the ticker, the locked emojis, the link line, the URL and the hashtags — you must NOT include any of those.
+You are filling a FIXED template. The system already adds the ticker and the COMPANY NAME, the locked emojis, the link line, the URL and the hashtags — you must NOT include any of those.
 
 HARD RULES:
 - Respond with ONLY valid JSON. No prose, no markdown fences.
@@ -189,12 +189,13 @@ function buildUserPrompt(candidate, { shorten = false, extra = '' } = {}) {
   const guide = BODY_GUIDE[cat] || [];
   const req = requiredFields(cat);
   const source = sourceBlob(candidate);
+  const company = (candidate.company_display || candidate.company_name || '').trim();
 
   return `CATEGORY: ${spec.label}
 
 1) "title" — a SHORT completion of the fixed opener. The system prints:
-   "<emoji> $${candidate.ticker} <your title> <emoji>"
-   So do NOT repeat the ticker and do NOT add emojis. ${TITLE_GUIDE[cat] || ''}
+   "<emoji> $${candidate.ticker}${company ? ` ${company}` : ''} <your title> <emoji>"
+   So do NOT repeat the ticker or the company name, and do NOT add emojis. ${TITLE_GUIDE[cat] || ''}
 
 2) "body" — an array of 1-${Math.max(1, guide.length)} short lines following this shape exactly
    (omit any line whose values are unavailable rather than guessing):
@@ -252,6 +253,7 @@ function render(candidate, parsed, { bodyOverride } = {}) {
     body,
     commodity,
     url: siteUrl(candidate),
+    companyName: candidate.company_display || candidate.company_name,
   });
   return { text, commodity };
 }
