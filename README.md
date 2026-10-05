@@ -52,11 +52,21 @@ data/            runtime data (downloads and session cookies, per docker-compose
 docker-compose.yml
 ```
 
-**Stack.** Backend: Node 22, Express, PostgreSQL (`pg`), node-cron, Anthropic SDK,
-S3-compatible object storage, Playwright/Patchright/Camoufox for browser scraping.
-Frontend: Vite, React 18, TypeScript, Tailwind, shadcn/Radix, TanStack Query,
-React Router, Vitest. Postgres and object storage are **external** — they are not
-part of the compose stack.
+**Stack.** Backend: Express on Node, PostgreSQL (`pg`), node-cron, Anthropic SDK,
+S3-compatible object storage, and Playwright / Patchright / Camoufox for browser
+scraping. Frontend: Vite 6, React 18, TypeScript 5, Tailwind 3, shadcn/ui on Radix,
+TanStack Query 5, React Router 6, Vitest 3. Postgres and object storage are
+**external** — they are not part of the compose stack.
+
+**Runtime versions.** Local development and the frontend build stage use **Node 22**
+(`frontend/Dockerfile` builds `FROM node:22-alpine`). The backend container builds
+`FROM mcr.microsoft.com/playwright:v1.61.1-jammy` so the browsers and their system
+libraries are present, and takes whichever Node that image bundles — the Dockerfile
+does not pin one. The frontend image serves the built assets from `nginx:1.27-alpine`.
+
+Neither `package.json` declares `engines`, and there is no `.nvmrc` or
+`.node-version`, so nothing in the repository pins a Node version. React and React
+DOM are held at **18.3.1** by the lockfile.
 
 ---
 
