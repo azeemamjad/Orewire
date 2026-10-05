@@ -156,6 +156,14 @@ That layer also provides `robots.txt`, `llms.txt`, a paginated sitemap index
 (`/sitemap.xml` → `/sitemaps/*.xml`), IndexNow pings, JSON-LD (`@graph`, `FAQPage`,
 `Dataset`, `BreadcrumbList`, `NewsArticle`) and per-route canonicals.
 
+**Deployment status — half shipped.** The backend renderer is deployed:
+`/seo/status` answers and reports 2,396 companies, 649 news releases (after the
+thin-summary filter) and 88,347 filings. The **frontend half is not deployed yet** —
+nginx is still running the previous configuration, so `/llms.txt` and `/sitemap.xml`
+still return the SPA shell, and that shell is still what a crawler receives. Until
+the frontend ships, none of the rendering described here is in front of a crawler.
+See [`docs/deploy-seo.md`](docs/deploy-seo.md).
+
 Before any deploy:
 
 ```bash
