@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
-const { state, addLog, requestStop, runsSnapshot } = require('../../pipeline/state');
+const { state, addLog, requestStop, runsSnapshot, runs } = require('../../pipeline/state');
 const { load: loadConfig, save: saveConfig } = require('../../pipeline/config');
 const { describeSchedule } = require('../../pipeline/cron-utils');
 const { normalizeSkipDays } = require('../../lib/schedulers/skip-days');
@@ -50,16 +50,18 @@ router.get('/status', (req, res) => {
 });
 
 router.post('/start', (req, res) => {
-  if (state.status === 'running') {
-    return res.status(409).json({ error: 'Pipeline already running' });
+  // Per-pipeline, not the shared flag: ASX running must not block Canada and
+  // vice versa. They use different transports, so neither is a conflict.
+  if (runs.canada.status === 'running') {
+    return res.status(409).json({ error: 'Canada pipeline already running' });
   }
   runPipeline();
   res.json({ ok: true, message: 'Pipeline started' });
 });
 
 router.post('/asx/start', (req, res) => {
-  if (state.status === 'running') {
-    return res.status(409).json({ error: 'Pipeline already running' });
+  if (runs.asx.status === 'running') {
+    return res.status(409).json({ error: 'ASX pipeline already running' });
   }
   runAsxPipeline();
   res.json({ ok: true, message: 'ASX pipeline started' });
