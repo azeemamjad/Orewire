@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
-const { state, addLog } = require('../../pipeline/state');
+const { state, addLog, requestStop, runsSnapshot } = require('../../pipeline/state');
 const { load: loadConfig, save: saveConfig } = require('../../pipeline/config');
 const { describeSchedule } = require('../../pipeline/cron-utils');
 const { normalizeSkipDays } = require('../../lib/schedulers/skip-days');
@@ -43,6 +43,9 @@ router.get('/status', (req, res) => {
     seederScheduleDescription: describeSchedule(cfg.seederScheduleParts),
     newsRunning: isNewsPipelineRunning(),
     logCount: state.logs.length,
+    // Canada and ASX run independently now, so the flat fields above report
+    // whichever is running and this carries the full picture for both.
+    runs: runsSnapshot(),
   });
 });
 
@@ -125,12 +128,15 @@ router.post('/transfer-agents/stop', (_req, res) => {
 });
 
 router.post('/stop', (req, res) => {
-  if (state.status !== 'running') {
+  // Ask every running pipeline to stop rather than whichever one the shared flag
+  // pointed at. With Canada and ASX able to run together, a single stop has to
+  // reach both or one keeps going with no way to stop it from the UI.
+  const asked = requestStop();
+  if (!asked) {
     return res.status(409).json({ error: 'Pipeline is not running' });
   }
-  state.stopRequested = true;
-  addLog('warn', '[Pipeline] Stop requested by user');
-  res.json({ ok: true, message: 'Stop signal sent — finishing current workers' });
+  addLog('warn', `[Pipeline] Stop requested by user (${asked} running pipeline(s))`);
+  res.json({ ok: true, message: 'Stop signal sent — finishing current workers', runs: asked });
 });
 
 router.get('/log-sources', (_req, res) => {

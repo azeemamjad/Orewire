@@ -3,7 +3,7 @@ const path       = require('path');
 const fs         = require('fs');
 const db         = require('../db');
 const { CANADA_COMPANIES_QUERY, ASX_COMPANIES_QUERY } = require('./regions');
-const { state, addLog } = require('./state');
+const { state, addLog, withPipelineState } = require('./state');
 const { load: loadConfig } = require('./config');
 const { upsertInsiderData } = require('../db/insiders');
 const { DOWNLOADS_DIR } = require('../lib/scraper/paths');
@@ -684,6 +684,9 @@ function waitForAnalysis() {
 // ---------------------------------------------------------------------------
 
 async function runPipeline() {
+  // Scoped so `state` below means the Canada run specifically. Without this the
+  // guard was shared with ASX and whichever started second was silently dropped.
+  return withPipelineState('canada', async () => {
   if (state.status === 'running') {
     addLog('warn', '[Canada Pipeline] Already running — ignoring start request');
     return;
@@ -761,6 +764,7 @@ async function runPipeline() {
     state.currentPhase = null;
     state.stoppedAt    = new Date().toISOString();
   }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -778,6 +782,8 @@ function asxRunConfig(cfg) {
 }
 
 async function runAsxPipeline() {
+  // Its own run slot, so a long Canada run no longer swallows the ASX cron.
+  return withPipelineState('asx', async () => {
   if (state.status === 'running') {
     addLog('warn', '[ASX Pipeline] Already running — ignoring start request');
     return;
@@ -856,6 +862,7 @@ async function runAsxPipeline() {
     state.currentPhase = null;
     state.stoppedAt    = new Date().toISOString();
   }
+  });
 }
 
 // isTransportError is exported for tests — misclassifying here either lets a
