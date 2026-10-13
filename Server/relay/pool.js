@@ -78,11 +78,26 @@ class RelayPool {
       // context.browser() for launchPersistentContext — so health is judged from
       // the context and page. `cdp` is deliberately not required: Camoufox
       // workers are Firefox and never have one.
-      return !!(
-        w &&
-        w.context && !w._closed &&
-        w.page && !w.page.isClosed()
-      );
+      if (!(w && w.context && !w._closed && w.page && !w.page.isClosed())) return false;
+
+      // A page sitting on Chrome's own error document is unusable no matter how
+      // healthy the context looks. Without this a navigation that fails hard leaves
+      // a worker that reports healthy, so nothing downstream ever calls
+      // respawnWorker() — the acquire loop claims it, the scrape fails, the proxy
+      // records a transport failure, and the next task is handed the same browser.
+      //
+      // Chrome renders that document in two forms and both must match: the
+      // `chrome-error://chromewebdata/` scheme, and an https URL on a `chrome-error`
+      // host. The second is the one that actually shows up in a failed navigation
+      // ("navigating to https://chrome-error//chromewebdata/"), so matching only the
+      // scheme would miss the common case. Neither can false-positive on a worker
+      // sitting on its configured start URL, which is `about:blank` by default.
+      const url = String(w.page.url() || '');
+      if (url.startsWith('chrome-error://') || /^https?:\/\/chrome-error(\/|:|$)/i.test(url)) {
+        return false;
+      }
+
+      return true;
     } catch {
       return false;
     }

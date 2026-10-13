@@ -87,7 +87,11 @@ function candidateWorkerIds(tier, slotIndex) {
   // Every proxy in the tier is marked fallback-only: treat them as primaries
   // rather than refusing to run at all.
   if (!primary.length) return { primary: rotate(fallback, slotIndex), fallback: [] };
-  return { primary: rotate(primary, slotIndex), fallback };
+  // The server's own IP is the last resort when every proxy worker in the tier is
+  // unusable. With a single residential proxy this is the only other browser there
+  // is: without it, one stuck or captcha-blocked worker *is* the whole tier, and a
+  // run sits waiting on a browser nobody is watching.
+  return { primary: rotate(primary, slotIndex), fallback: [...fallback, DIRECT_WORKER_ID] };
 }
 
 // The "manager": hand back a healthy, idle worker in the tier. Dead/missing
@@ -105,9 +109,18 @@ async function acquireManagedWorker(tier, slotIndex, taskSlug, opts = {}) {
     if (opts.shouldStop?.()) throw new TaskStoppedError();
 
     // Primaries that have been failing at the transport layer are skipped for a
-    // cooldown. Only when *every* primary is cooling down do we let the paid
-    // fallback in — a busy primary is never a reason to spend.
-    const livePrimary = primary.filter((id) => !proxyHealth.isCoolingDown(id));
+    // cooldown. Only when *every* primary is unusable do we let the paid fallback
+    // in — a busy primary is never a reason to spend.
+    //
+    // A worker parked on a captcha counts as unusable: it is waiting for a human
+    // who may not be there, and leaving the tier blocked on it is exactly how a run
+    // stalls with nothing running. Busy workers deliberately still count as live —
+    // waiting for one to finish is correct, and impatience should not cost money.
+    const livePrimary = primary.filter(
+      (id) =>
+        !proxyHealth.isCoolingDown(id) &&
+        pool.getWorker(id)?.status !== STATUS.NEEDS_HUMAN,
+    );
     let ids = livePrimary;
     if (!livePrimary.length && fallback.length) {
       ids = fallback;
