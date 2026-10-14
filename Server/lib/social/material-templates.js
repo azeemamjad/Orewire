@@ -398,7 +398,15 @@ function buildText({ templateKey, ticker, title, body = [], commodity, url, comp
       .trim();
   }
 
-  const head = [t.emojis.header, company, sym, titleText || t.defaultTitle, t.emojis.hook]
+  // The opener leads with the company name, not an emoji and not the symbol alone.
+  // `$STRM` tells a reader nothing unless they already know the ticker, which is
+  // exactly the reader a cashtag is supposed to reach; and a leading emoji pushed
+  // the one word that identifies the company off the front of the line.
+  //
+  // The template's `header` emoji is deliberately unused now — kept in the config
+  // so it can be restored — and the trailing hook emoji still gives the opener
+  // visual shape, so posts do not read as flat text.
+  const head = [company, sym, titleText || t.defaultTitle, t.emojis.hook]
     .filter(Boolean)
     .join(' ')
     .replace(/\s+/g, ' ')
