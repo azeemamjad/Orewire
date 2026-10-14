@@ -14,7 +14,43 @@ const PORT = process.env.PORT || 3000;
 // Behind nginx / Cloudflare — needed for correct wss:// and view link host
 app.set('trust proxy', 1);
 
-app.use(cors());
+// CORS. This was `cors()` with no options, which allows every origin — so the
+// Lovable preview frontend already reaches the API and nothing had to be added for
+// it. That is also why there is no "trusted origins" list to append to.
+//
+// Set CORS_ORIGINS (comma-separated) to switch to an allow-list. Left unset the
+// previous permissive behaviour is kept exactly, so this cannot break anything that
+// works today.
+//
+// The allow-list alone is not enough for a Lovable frontend: each branch preview
+// gets its own hostname (orewire-prev.lovable.app today, another tomorrow), so any
+// *.lovable.app host is accepted while the list is active.
+const corsOrigins = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+if (!corsOrigins.length) {
+  app.use(cors());
+} else {
+  app.use(
+    cors({
+      origin(origin, cb) {
+        // Same-origin requests and server-to-server calls send no Origin at all.
+        if (!origin) return cb(null, true);
+        if (corsOrigins.includes(origin)) return cb(null, true);
+        try {
+          if (new URL(origin).hostname.endsWith('.lovable.app')) return cb(null, true);
+        } catch {
+          /* malformed Origin — fall through and refuse */
+        }
+        // Refuse by omitting the CORS headers rather than raising, so the request
+        // is not turned into a 500.
+        return cb(null, false);
+      },
+    }),
+  );
+}
 app.use(express.json());
 
 // Auth JSON API is always open (login/register/check/logout endpoints)
