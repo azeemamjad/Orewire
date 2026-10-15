@@ -1,6 +1,46 @@
 import { API_BASE, authFetch } from '@/lib/api-client';
 import { getAuthToken, getRefreshToken } from '@/features/auth/api';
 
+/**
+ * Watchlist caps — the export's `WATCHLIST_LIMIT` (20) and
+ * `GUEST_WATCHLIST_LIMIT` (10) from orewire2 src/hooks/useSignupModal.tsx.
+ *
+ * 20 is enforced server-side in Server/routes/api/watchlist.js; the constant
+ * here exists for the `{n}/{limit}` header count and for the fallback copy if a
+ * response ever omits the limit. 10 is enforced locally by
+ * src/features/watchlist/guest-watchlist.ts.
+ */
+export const WATCHLIST_LIMIT = 20;
+export const GUEST_WATCHLIST_LIMIT = 10;
+/** Machine-readable code the add endpoint returns when the cap is reached. */
+export const WATCHLIST_LIMIT_CODE = 'watchlist_limit_reached';
+
+/** The server's human copy for a capped add, reproduced if a reply omits it. */
+export function watchlistFullMessage(limit: number = WATCHLIST_LIMIT): string {
+  return `Your watchlist is full (${limit}). Remove a company to add another.`;
+}
+
+/** The guest equivalent — the export's `Your free watchlist is full (10). Sign up to add more.` */
+export function guestWatchlistFullMessage(limit: number = GUEST_WATCHLIST_LIMIT): string {
+  return `Your free watchlist is full (${limit}). Sign up to add more.`;
+}
+
+/**
+ * Thrown by `addToWatchlist` when the server refuses an add because the
+ * signed-in watchlist is at the cap. `message` is the server's copy verbatim,
+ * so callers toast it unchanged.
+ */
+export class WatchlistLimitError extends Error {
+  readonly code = WATCHLIST_LIMIT_CODE;
+  readonly limit: number;
+
+  constructor(message: string, limit: number) {
+    super(message);
+    this.name = 'WatchlistLimitError';
+    this.limit = limit;
+  }
+}
+
 export interface WatchlistItem {
   id: number;
   itemType: string;
@@ -70,7 +110,23 @@ export async function addToWatchlist(itemType: string, itemKey: string, companyI
     method: 'POST',
     body: JSON.stringify({ itemType, itemKey, companyId }),
   });
-  if (!res.ok) throw new Error('Failed to add to watchlist');
+  if (res.ok) return;
+
+  /* The cap rejection is a 409 carrying `{ error, code, limit }` (see
+     Server/routes/api/watchlist.js). Surface it as its own error type so the
+     UI can toast the server's copy instead of a generic failure. */
+  let payload: { error?: unknown; code?: unknown; limit?: unknown } | null = null;
+  try {
+    payload = await res.json();
+  } catch {
+    /* non-JSON error body */
+  }
+  if (payload?.code === WATCHLIST_LIMIT_CODE) {
+    const limit = typeof payload.limit === 'number' ? payload.limit : WATCHLIST_LIMIT;
+    const message = typeof payload.error === 'string' && payload.error ? payload.error : watchlistFullMessage(limit);
+    throw new WatchlistLimitError(message, limit);
+  }
+  throw new Error('Failed to add to watchlist');
 }
 
 export async function removeFromWatchlist(itemType: string, itemKey: string): Promise<void> {

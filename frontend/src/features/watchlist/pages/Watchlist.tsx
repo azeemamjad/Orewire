@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, Lock, Plus, Search, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, Plus, Search, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import SiteLayout from "@/layouts/SiteLayout";
 import {
   fetchCompanies,
@@ -13,10 +14,21 @@ import {
   removeFromWatchlist,
   reorderWatchlist,
   companySlug,
+  guestWatchlistFullMessage,
+  WatchlistLimitError,
+  GUEST_WATCHLIST_LIMIT,
+  WATCHLIST_LIMIT,
   type Company,
   type WatchlistItem,
 } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
+import { useSignupModal } from "@/hooks/use-signup-modal";
+import {
+  addGuestWatchlist,
+  removeGuestWatchlist,
+  reorderGuestWatchlist,
+  useGuestWatchlist,
+} from "@/features/watchlist/guest-watchlist";
 import { formatTickerLabel, normalizeExchange } from "@/components/site/FeedRow";
 
 import { API_BASE } from '@/lib/api-client';
@@ -39,6 +51,17 @@ import {
  *  up/down arrows on the change cells, the dashed empty-state card and the
  *  two-column add-company result grid.
  *
+ *  TAKEN (behaviour): the two watchlist caps. The header reports `{n}/{limit}`
+ *  and the add path refuses past it, with the export's copy:
+ *    - signed in — 20 companies, enforced server-side by
+ *      Server/routes/api/watchlist.js, which answers 409
+ *      `{ error, code: "watchlist_limit_reached", limit }` and is toasted here
+ *      as "Your watchlist is full (20). Remove a company to add another."
+ *    - signed out — 10 companies in localStorage
+ *      (@/features/watchlist/guest-watchlist), with the export's guest copy
+ *      "Your free watchlist is full (10). Sign up to add more." and the queued
+ *      company replayed after sign-in by @/hooks/use-signup-modal.
+ *
  *  NOT TAKEN:
  *   - Supabase. The export reads/writes `watchlist_items` through
  *     `supabase.from(...)` and pulls quotes from a bundled `@/data/companies`
@@ -51,16 +74,11 @@ import {
  *     note on `CardRow`.
  *   - The invented figures in the export's copy ("14,238 filings", "2,417
  *     juniors", "+38% median 90-day move", "47 min"). No hard-coded number is
- *     copied; every value rendered below comes from the API.
- *   - The `{n}/{limit}` counter, because this app has no watchlist limit.
- *     `/api/watchlist` neither enforces nor returns one, and neither
- *     `WATCHLIST_LIMIT` nor an equivalent constant exists in the frontend — the
- *     export's 20 was dropped deliberately when its Supabase writes were
- *     removed (see the header of src/hooks/use-signup-modal.tsx). Printing
- *     "7/20" would advertise a cap that nothing applies, so the header reports
- *     the real counts instead. The product brief's 20-company limit, and its
- *     "Your watchlist is full (20). Remove a company to add another." message,
- *     are therefore NOT implemented — not on this page and not on the server.
+ *     copied; every value rendered below comes from the API (10 and 20 are the
+ *     caps this page actually applies, not marketing figures).
+ *   - The signed-out sign-in gate. The export let a visitor keep a local list,
+ *     so the gate is replaced by the guest list rather than sitting in front of
+ *     it. Everything else about the page is unchanged.
  *
  * House conventions the earlier ports established are applied here: every list
  * is a `card-surface` container with `divide-y divide-border` rows (never
@@ -359,16 +377,30 @@ const CardList = ({ children }: { children: React.ReactNode }) => (
 
 const Watchlist = () => {
   const { isAuthenticated, loading } = useAuth();
+  const { openSignup } = useSignupModal();
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [showResults, setShowResults] = useState(false);
 
+  // Guests keep their list in localStorage; the server list is only fetched
+  // for a session. Both are `WatchlistItem[]`, so every row below is shared.
+  const guestItems = useGuestWatchlist();
+
   // Unchanged: same query keys, same endpoints, same params.
-  const { data: items = [], refetch } = useQuery({
+  const { data: serverItems = [], refetch } = useQuery({
     queryKey: ["watchlist"],
     queryFn: fetchWatchlist,
     enabled: isAuthenticated && !loading,
   });
+
+  const items: WatchlistItem[] = isAuthenticated ? serverItems : guestItems;
+  const limit = isAuthenticated ? WATCHLIST_LIMIT : GUEST_WATCHLIST_LIMIT;
+
+  /* The guest list is already reactive, so only the server list needs a refetch
+     — and refetch() would bypass `enabled` and 401 for a signed-out visitor. */
+  const refresh = () => {
+    if (isAuthenticated) refetch();
+  };
 
   const { data: commodityData } = useQuery({
     queryKey: ["commodities"],
@@ -416,11 +448,12 @@ const Watchlist = () => {
     return () => clearTimeout(t);
   }, [search]);
 
-  // Unchanged: same search endpoint and the same limit/page params.
+  // Unchanged: same search endpoint and the same limit/page params. Enabled for
+  // guests too — the search is how a signed-out visitor fills a local list.
   const { data: searchData } = useQuery({
     queryKey: ["watchlist-search", debounced],
     queryFn: () => fetchCompanies({ search: debounced, limit: 8, page: 1 }),
-    enabled: debounced.length > 0 && isAuthenticated,
+    enabled: debounced.length > 0,
   });
 
   const results = useMemo<Company[]>(() => searchData?.data ?? [], [searchData]);
@@ -438,59 +471,72 @@ const Watchlist = () => {
     );
   }
 
-  /* Signed-out gate: markup and behaviour are unchanged (the buttons still link
-     to /register and /login with the same `redirect`), only the surface now uses
-     the shared `card-surface` treatment so it matches the rest of the site. */
-  if (!isAuthenticated) {
-    return (
-      <SiteLayout className="min-h-screen bg-background text-foreground flex flex-col">
-        <main className="flex-1 flex items-center justify-center px-4 py-20">
-          <div className="card-surface max-w-md w-full p-8 text-center">
-            <div className="mx-auto w-12 h-12 grid place-items-center bg-muted rounded-full mb-4">
-              <Lock className="w-5 h-5" />
-            </div>
-            <h1 className="font-display text-2xl tracking-tight mb-2">Sign in to use your watchlist</h1>
-            <p className="text-sm text-muted-foreground mb-6">
-              Create a free account to save companies and access full filings &amp; insider data.
-            </p>
-            <div className="flex gap-2 justify-center">
-              <Link
-                to="/register?redirect=/watchlist"
-                className="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-semibold h-10 px-4 py-2 rounded-md bg-accent text-accent-foreground hover:bg-accent/90 transition-colors"
-              >
-                Sign up free
-              </Link>
-              <Link
-                to="/login?redirect=/watchlist"
-                className="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium border border-border bg-background hover:bg-muted h-10 px-4 py-2 rounded-md transition-colors"
-              >
-                Sign in
-              </Link>
-            </div>
-          </div>
-        </main>
-      </SiteLayout>
-    );
-  }
-
+  /* The signed-out gate is gone: a visitor without a session now gets the
+     export's local guest list (GUEST_WATCHLIST_LIMIT companies, saved on the
+     device) instead of a wall, and only the counters and the sign-up nudge
+     below differ between the two modes. */
   const handleAddCompany = async (c: Company) => {
-    if (items.some(i => i.itemType === "company" && i.itemKey === String(c.id))) return;
+    const itemKey = String(c.id);
+    const already = items.some(i => i.itemType === "company" && i.itemKey === itemKey);
+    const label = formatTickerLabel(c.ticker, c.exchange) || c.name;
+
+    /* Guest: keep it on the device, up to GUEST_WATCHLIST_LIMIT. At the cap the
+       export queues the company for after sign-in (its `openSignup({ action })`)
+       and says why — the queued add is replayed by @/hooks/use-signup-modal. */
+    if (!isAuthenticated) {
+      const result = addGuestWatchlist({
+        companyId: c.id,
+        companyName: c.name,
+        ticker: c.ticker,
+        exchange: c.exchange,
+        marketCap: c.market_cap,
+        commodities: c.commodities,
+        continents: c.continents,
+        country: c.country,
+      });
+      if (result === "full") {
+        openSignup({ context: "watchlist", ticker: label });
+        toast.message(guestWatchlistFullMessage(GUEST_WATCHLIST_LIMIT));
+        return;
+      }
+      if (result === "duplicate" || already) return;
+      toast.success(`${label} added to your watchlist`);
+      setSearch("");
+      return;
+    }
+
+    if (already) return;
     try {
-      await addToWatchlist("company", String(c.id), c.id);
-      refetch();
-    } catch { /* skip */ }
+      await addToWatchlist("company", itemKey, c.id);
+      refresh();
+      toast.success(`${label} added to your watchlist`);
+      setSearch("");
+    } catch (err) {
+      /* The server's cap rejection carries the export's exact copy. */
+      toast.error(
+        err instanceof WatchlistLimitError
+          ? err.message
+          : `Could not add ${label} to your watchlist`,
+      );
+    }
   };
 
   const handleRemove = async (itemType: string, itemKey: string) => {
+    if (!isAuthenticated) {
+      removeGuestWatchlist(itemKey);
+      return;
+    }
     try {
       await removeFromWatchlist(itemType, itemKey);
-      refetch();
+      refresh();
     } catch { /* skip */ }
   };
 
   return (
     <SiteLayout className="min-h-screen bg-background text-foreground flex flex-col">
-      {/* Header — the export's eyebrow / display headline / muted standfirst. */}
+      {/* Header — the export's eyebrow / display headline / muted standfirst,
+          plus its `{n}/{limit}` counter and, for guests, its "saved on this
+          device" line and "Sign up free to add more companies" link. */}
       <section className="border-b border-border bg-card">
         <div className="container-page section-y">
           <div className="flex items-end justify-between flex-wrap gap-4">
@@ -498,14 +544,29 @@ const Watchlist = () => {
               <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Your list</div>
               <h1 className="font-display text-4xl md:text-5xl font-bold leading-tight">Watchlist</h1>
               <p className="text-muted-foreground mt-2 max-w-xl">
-                Track the juniors, indexes, commodities and currencies you care about.
+                {isAuthenticated
+                  ? "Track the juniors, indexes, commodities and currencies you care about. Synced to your account."
+                  : `Free for up to ${limit} companies, saved on this device.`}
               </p>
               <p className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground mt-3">
-                {companyItems.length} {companyItems.length === 1 ? "company" : "companies"}
-                <span className="mx-1.5">·</span>{indexItems.length} indexes
-                <span className="mx-1.5">·</span>{commodityItems.length} commodities
-                <span className="mx-1.5">·</span>{currencyItems.length} currencies
+                <span className={companyItems.length >= limit ? "text-down" : undefined}>
+                  {companyItems.length}/{limit}
+                </span>{" "}
+                companies
+                {isAuthenticated && (
+                  <>
+                    <span className="mx-1.5">·</span>{indexItems.length} indexes
+                    <span className="mx-1.5">·</span>{commodityItems.length} commodities
+                    <span className="mx-1.5">·</span>{currencyItems.length} currencies
+                  </>
+                )}
               </p>
+              {!isAuthenticated && (
+                <p className="text-sm text-muted-foreground mt-2">
+                  <Link to="/register?redirect=/watchlist" className="underline text-foreground">Sign up free</Link>{" "}
+                  to add more companies and get email alerts.
+                </p>
+              )}
             </div>
             <button
               onClick={() => { setShowResults(true); setTimeout(() => document.getElementById("watchlist-search-input")?.focus(), 50); }}
@@ -558,7 +619,12 @@ const Watchlist = () => {
           {companyItems.length > 0 && (
             <section className="space-y-3">
               <SectionLabel>Companies</SectionLabel>
-              <CompaniesList items={companyItems} onRemove={handleRemove} refetch={refetch} />
+              <CompaniesList
+                items={companyItems}
+                onRemove={handleRemove}
+                refetch={refresh}
+                onReorder={isAuthenticated ? undefined : (rows) => reorderGuestWatchlist(rows.map((r) => r.itemKey))}
+              />
             </section>
           )}
 
@@ -570,7 +636,7 @@ const Watchlist = () => {
                 nameHeader="Name"
                 priceHeader="Spot price"
                 onRemove={handleRemove}
-                refetch={refetch}
+                refetch={refresh}
                 rows={commodityItems.map((it) => {
                   const slug = it.itemKey.toUpperCase();
                   const apiKey = commodityApiKeyFromSlug(slug);
@@ -603,7 +669,7 @@ const Watchlist = () => {
                 nameHeader="Index"
                 priceHeader="Level"
                 onRemove={handleRemove}
-                refetch={refetch}
+                refetch={refresh}
                 rows={indexItems.map((it) => {
                   const slug = it.itemKey.toUpperCase();
                   const data = indexByKey.get(slug);
@@ -635,7 +701,7 @@ const Watchlist = () => {
                 nameHeader="Pair"
                 priceHeader="Rate"
                 onRemove={handleRemove}
-                refetch={refetch}
+                refetch={refresh}
                 rows={currencyItems.map((it) => {
                   const slug = it.itemKey.toUpperCase();
                   const data = currencyByKey.get(slug);
@@ -665,8 +731,18 @@ const Watchlist = () => {
             <div className="border border-dashed border-border bg-card/50 p-12 text-center">
               <p className="font-display text-lg font-bold mb-2">Your watchlist is empty</p>
               <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                Search for a company above, or use <span className="font-semibold text-foreground">Watchlist</span> on
-                any company, index, commodity or currency page.
+                {isAuthenticated ? (
+                  <>
+                    Search for a company above, or use <span className="font-semibold text-foreground">Watchlist</span> on
+                    any company, index, commodity or currency page.
+                  </>
+                ) : (
+                  <>
+                    Search for a company above, or use <span className="font-semibold text-foreground">Watchlist</span> on
+                    any company page. Your first {GUEST_WATCHLIST_LIMIT} companies are saved on this device — no account
+                    needed.
+                  </>
+                )}
               </p>
             </div>
           )}
@@ -690,10 +766,13 @@ const CompaniesList = ({
   items,
   onRemove,
   refetch,
+  onReorder,
 }: {
   items: WatchlistItem[];
   onRemove: (itemType: string, itemKey: string) => void;
   refetch: () => void;
+  /** Replaces the server reorder call — the guest list reorders locally. */
+  onReorder?: (rows: WatchlistItem[]) => void | Promise<void>;
 }) => {
   const [rows, setRows] = useState<WatchlistItem[]>(items);
 
@@ -709,7 +788,8 @@ const CompaniesList = ({
     [next[index], next[target]] = [next[target], next[index]];
     setRows(next); // optimistic
     try {
-      await reorderWatchlist(next.map((r) => r.id));
+      if (onReorder) await onReorder(next);
+      else await reorderWatchlist(next.map((r) => r.id));
       refetch();
     } catch {
       setRows(prev); // revert on failure

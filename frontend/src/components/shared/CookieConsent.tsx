@@ -15,6 +15,13 @@ import {
  * - Guest choice → localStorage
  * - Logged-in choice → localStorage + DB
  * - Accept while logged out, then login → synced to DB, banner not shown again
+ *
+ * The card uses the house `card-surface` treatment (`bg-surface`, `border-border`,
+ * `rounded-lg`, and the `--shadow` tokens) like every other ported surface, so it
+ * no longer reads as the one square-cornered box on the site. The shadow is the
+ * `--shadow-lg` token mirrored upwards, because the card is pinned to the bottom
+ * edge and has to cast its depth up over the page. Buttons match the shared
+ * button radius (`rounded-md`, cva `buttonVariants`).
  */
 const CookieConsent = () => {
   const { isAuthenticated, loading, user } = useAuth();
@@ -102,7 +109,7 @@ const CookieConsent = () => {
       aria-label="Cookie consent"
       className="fixed inset-x-0 bottom-0 z-[100] p-4 sm:p-5 pointer-events-none"
     >
-      <div className="pointer-events-auto max-w-[1440px] mx-auto border border-border bg-card shadow-[0_-8px_30px_rgba(0,0,0,0.12)]">
+      <div className="pointer-events-auto max-w-[1440px] mx-auto card-surface shadow-[0_-12px_32px_-8px_hsl(220_45%_9%/0.16)]">
         <div className="px-5 py-4 sm:px-6 sm:py-5 flex flex-col lg:flex-row lg:items-center gap-4 lg:gap-8">
           <div className="flex-1 min-w-0">
             <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5">
@@ -121,14 +128,14 @@ const CookieConsent = () => {
             <button
               type="button"
               onClick={() => choose("necessary")}
-              className="h-10 px-4 border border-border bg-background hover:bg-muted text-sm font-medium transition-colors"
+              className="h-10 px-4 rounded-md border border-border bg-background hover:bg-muted text-sm font-medium transition-colors"
             >
               Necessary only
             </button>
             <button
               type="button"
               onClick={() => choose("accepted")}
-              className="h-10 px-5 bg-accent text-accent-foreground hover:opacity-90 text-sm font-semibold transition-opacity"
+              className="h-10 px-5 rounded-md bg-accent text-accent-foreground hover:opacity-90 text-sm font-semibold transition-opacity"
             >
               Accept all
             </button>

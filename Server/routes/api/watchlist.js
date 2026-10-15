@@ -16,6 +16,20 @@ function companyPath(exchange, ticker) {
 
 const ALERT_JOIN = `w.user_id = $1 AND w.alerts_enabled = TRUE`;
 
+/**
+ * Watchlist size cap for signed-in users — the export's WATCHLIST_LIMIT
+ * (orewire2 src/hooks/useSignupModal.tsx, `export const WATCHLIST_LIMIT = 20`).
+ *
+ * The cap is scoped to `item_type = 'company'`, matching the export: its list
+ * held only companies and its message is "Remove a company to add another".
+ * Commodities / indexes / currencies are not what that copy is about, so they
+ * stay uncapped exactly as before.
+ */
+const WATCHLIST_LIMIT = 20;
+const WATCHLIST_LIMIT_CODE = 'watchlist_limit_reached';
+const watchlistLimitMessage = () =>
+  `Your watchlist is full (${WATCHLIST_LIMIT}). Remove a company to add another.`;
+
 // GET /api/watchlist/alerts?since=ISO — in-app alerts for Set-alert items only
 router.get('/alerts', requireUser, async (req, res) => {
   try {
@@ -278,13 +292,44 @@ router.post('/', requireUser, async (req, res) => {
     const { itemType, itemKey, companyId } = req.body || {};
     if (!itemType || !itemKey) return res.status(400).json({ error: 'itemType and itemKey required' });
 
-    await db.query(`
+    // The cap is enforced inside the INSERT, not by a SELECT that a concurrent
+    // request could invalidate. The statement writes when:
+    //   - the row is not a company, so the company cap does not apply to it and
+    //     commodities / indexes / currencies behave exactly as before; or
+    //   - the row is already on the list, so re-adding stays a no-op instead of
+    //     being reported as "full"; or
+    //   - the caller is under the company cap.
+    const inserted = await db.query(`
       INSERT INTO watchlist (user_id, item_type, item_key, company_id, alerts_enabled)
-      VALUES ($1, $2, $3, $4, FALSE)
+      SELECT $1::int, $2::text, $3::text, $4::int, FALSE
+       WHERE $2::text <> 'company'
+          OR EXISTS (
+               SELECT 1 FROM watchlist
+                WHERE user_id = $1::int AND item_type = $2::text AND item_key = $3::text
+             )
+          OR (SELECT COUNT(*) FROM watchlist
+               WHERE user_id = $1::int AND item_type = 'company') < $5::int
       ON CONFLICT (user_id, item_type, item_key) DO NOTHING
-    `, [req.user.id, itemType, itemKey, companyId || null]);
+      RETURNING id
+    `, [req.user.id, itemType, itemKey, companyId || null, WATCHLIST_LIMIT]);
 
-    res.status(201).json({ ok: true });
+    if (inserted.rows.length === 0) {
+      // Nothing written: the item was already on the list (fine) or the cap
+      // blocked it. Only the second one is an error.
+      const existing = await db.query(
+        `SELECT 1 FROM watchlist WHERE user_id = $1 AND item_type = $2 AND item_key = $3`,
+        [req.user.id, itemType, itemKey],
+      );
+      if (existing.rows.length === 0) {
+        return res.status(409).json({
+          error: watchlistLimitMessage(),
+          code: WATCHLIST_LIMIT_CODE,
+          limit: WATCHLIST_LIMIT,
+        });
+      }
+    }
+
+    res.status(201).json({ ok: true, limit: WATCHLIST_LIMIT });
   } catch (err) {
     console.error('Watchlist add failed:', err?.message || err);
     res.status(500).json({ error: 'Failed to add' });
