@@ -1,16 +1,73 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
-import { ChevronDown, ChevronUp, Plus, Search, Trash2, ArrowUpRight, ArrowDownRight, Lock } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, Lock, Plus, Search, Trash2 } from "lucide-react";
 import SiteLayout from "@/layouts/SiteLayout";
-import { fetchCompanies, fetchCommodities, fetchCurrencies, fetchIndexes, fetchWatchlist, addToWatchlist, removeFromWatchlist, reorderWatchlist, companySlug, type Company, type WatchlistItem } from "@/lib/api";
+import {
+  fetchCompanies,
+  fetchCommodities,
+  fetchCurrencies,
+  fetchIndexes,
+  fetchWatchlist,
+  addToWatchlist,
+  removeFromWatchlist,
+  reorderWatchlist,
+  companySlug,
+  type Company,
+  type WatchlistItem,
+} from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
+import { formatTickerLabel, normalizeExchange } from "@/components/site/FeedRow";
 
 import { API_BASE } from '@/lib/api-client';
 import {
   commodityApiKeyFromSlug,
   COMMODITY_SLUG_LABELS,
 } from "@/lib/commodity-slugs";
+
+/**
+ * Watchlist — restyled to the Lovable export's watchlist page
+ * (src/pages/Watchlist.tsx), keeping OreWire's own data layer untouched.
+ *
+ * What was taken from the export, and what was not:
+ *
+ *  TAKEN (visual): the dense row grid
+ *    [order] TICKER EXCH COMPANY PRICE CHG$ CHG% VOLUME CAP TAGS [del]
+ *  with the export's exact type treatment — mono tabular figures for every
+ *  number, `font-display` bold company name, `text-[10px]` uppercase mono
+ *  exchange, boxed commodity/geo tags, a muted uppercase column header, mono
+ *  up/down arrows on the change cells, the dashed empty-state card and the
+ *  two-column add-company result grid.
+ *
+ *  NOT TAKEN:
+ *   - Supabase. The export reads/writes `watchlist_items` through
+ *     `supabase.from(...)` and pulls quotes from a bundled `@/data/companies`
+ *     module. This page keeps `fetchWatchlist` / `addToWatchlist` /
+ *     `removeFromWatchlist` / `reorderWatchlist` and the per-row
+ *     `/market/quote/:exch/:ticker` query exactly as they were.
+ *   - The alerts column. The export's `WatchItem` carries `alerts_enabled` and
+ *     it renders an email-alert toggle in every row; our `WatchlistItem` type
+ *     has no such field, so there is nothing to bind a toggle to here. See the
+ *     note on `CardRow`.
+ *   - The invented figures in the export's copy ("14,238 filings", "2,417
+ *     juniors", "+38% median 90-day move", "47 min"). No hard-coded number is
+ *     copied; every value rendered below comes from the API.
+ *   - The `{n}/{limit}` counter, because this app has no watchlist limit.
+ *     `/api/watchlist` neither enforces nor returns one, and neither
+ *     `WATCHLIST_LIMIT` nor an equivalent constant exists in the frontend — the
+ *     export's 20 was dropped deliberately when its Supabase writes were
+ *     removed (see the header of src/hooks/use-signup-modal.tsx). Printing
+ *     "7/20" would advertise a cap that nothing applies, so the header reports
+ *     the real counts instead. The product brief's 20-company limit, and its
+ *     "Your watchlist is full (20). Remove a company to add another." message,
+ *     are therefore NOT implemented — not on this page and not on the server.
+ *
+ * House conventions the earlier ports established are applied here: every list
+ * is a `card-surface` container with `divide-y divide-border` rows (never
+ * stacked floating cards), tickers are monospace `TSX-V: AUR` via
+ * `formatTickerLabel`, the brand is "OreWire", and move colours use the
+ * `text-up` / `text-down` tokens rather than raw HSL.
+ */
 
 const COMMODITY_SLUG_TO_LABEL: Record<string, string> = {
   ...COMMODITY_SLUG_LABELS,
@@ -71,20 +128,6 @@ function fmtVol(n: number | null | undefined) {
   return `${Math.round(n)}`;
 }
 
-// [reorder] Ticker Exch Company Price Chg$ Chg% Volume MktCap Tags [del+link].
-// Full literal (no interpolation) so Tailwind's JIT emits the arbitrary tracks.
-const WATCH_GRID = "grid-cols-[44px_60px_52px_minmax(120px,1.3fr)_80px_84px_72px_78px_90px_minmax(120px,1fr)_72px]";
-
-// Spot tables (commodities / indexes / currencies): no volume/mkt-cap/tags -
-// those don't apply - so a leaner set: [reorder] Symbol Name Price Chg$ Chg% [del+open].
-const SPOT_GRID = "grid-cols-[44px_120px_minmax(120px,1fr)_140px_120px_110px_72px]";
-
-// Absolute change derived from price + percent change (these feeds only give %).
-function deriveChangeAbs(price: number | null | undefined, pct: number | null | undefined): number | null {
-  if (price == null || pct == null) return null;
-  return price - price / (1 + pct / 100);
-}
-
 function fmtMcap(n: number | null | undefined) {
   if (n == null) return "-";
   if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
@@ -98,12 +141,229 @@ function normalizeExchangeForTv(ex: string | null): string | null {
   return ex.toUpperCase().replace("-", "");
 }
 
+// Absolute change derived from price + percent change (these feeds only give %).
+function deriveChangeAbs(price: number | null | undefined, pct: number | null | undefined): number | null {
+  if (price == null || pct == null) return null;
+  return price - price / (1 + pct / 100);
+}
+
+/**
+ * The export's column header: a muted uppercase mono strip inside the card,
+ * separated from the rows by a single rule rather than sitting in its own box.
+ * Columns 4–8 (price … market cap) are right-aligned, as in the export.
+ *
+ * The `pr-12` reserves the trailing actions track (the delete button, which is
+ * absolutely positioned in each row and therefore outside the grid), so the
+ * last label lines up with the column it names. The tenth track is the tags
+ * line, which the rows drop onto a second grid line, so it takes no label.
+ */
+const RIGHT_ALIGNED_COLUMNS = new Set([3, 4, 5, 6, 7]);
+
+const ColumnHeader = ({ labels }: { labels: string[] }) => (
+  <div className="hidden md:grid md:grid-cols-[44px_92px_56px_minmax(140px,1fr)_84px_88px_76px_80px_minmax(120px,220px)] items-center gap-3 pl-4 pr-12 py-2.5 bg-muted/40 border-b border-border font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+    <div />
+    {labels.map((l, i) => (
+      // Index in the key: the spot lists deliberately pass blank labels for the
+      // columns they have no data for, so the labels are not unique.
+      <div key={`${i}-${l}`} className={RIGHT_ALIGNED_COLUMNS.has(i) ? "text-right" : ""}>{l}</div>
+    ))}
+  </div>
+);
+
+/** Section heading that introduces each `card-surface` list (Companies, Indexes, …). */
+const SectionLabel = ({ children }: { children: React.ReactNode }) => (
+  <h2 className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mt-2 first:mt-0">
+    {children}
+  </h2>
+);
+
+/**
+ * One watchlist row, shaped like the export's grid row.
+ *
+ * The row opens `href` when clicked, exactly as the export's row div does with
+ * `nav(...)`, plus Enter/Space for keyboard users. The export used a stretched
+ * overlay anchor for this; that is not possible here, because an absolutely
+ * positioned element is still a grid item as far as auto-placement is
+ * concerned — it consumes a track and pushes the following cells onto a second
+ * row, adding ~20px to every row. The company name is a real `<Link>` instead,
+ * so the row still exposes a genuine link target, and the reorder / remove
+ * controls sit at `z-10` and stop propagation so they never navigate.
+ *
+ * `metrics` are passed as pre-formatted strings because the three list types
+ * format their numbers differently (company quotes vs. spot prices vs. index
+ * levels) while the row itself only cares about layout.
+ */
+type CardRowProps = {
+  href: string;
+  /** Navigates to the row's detail page — used by the row click and Enter. */
+  onOpen: () => void;
+  /** Screen-reader name for the row, e.g. `TSX-V: SCZ`. */
+  openLabel: string;
+  /** Prefix for the reorder buttons' labels, e.g. `Reorder TSX-V: SCZ`. */
+  orderLabel: string;
+  orderPrev: string;
+  orderNext: string;
+  onMovePrev: () => void;
+  onMoveNext: () => void;
+  isFirst: boolean;
+  isLast: boolean;
+  ticker: string;
+  exchange: string | null;
+  name: string;
+  price: string;
+  changeAbs: string;
+  changePct: string;
+  volume: string;
+  marketCap: string;
+  tags: string[];
+  onRemove: () => void;
+  removeLabel: string;
+};
+
+const CardRow = ({
+  href,
+  onOpen,
+  openLabel,
+  orderLabel,
+  orderPrev,
+  orderNext,
+  onMovePrev,
+  onMoveNext,
+  isFirst,
+  isLast,
+  ticker,
+  exchange,
+  name,
+  price,
+  changeAbs,
+  changePct,
+  volume,
+  marketCap,
+  tags,
+  onRemove,
+  removeLabel,
+}: CardRowProps) => {
+  const up = !changePct.startsWith("-") && changePct !== "-";
+  const flat = changePct === "-";
+  const moveColor = flat ? "text-muted-foreground" : up ? "text-up" : "text-down";
+  const tickerLabel = formatTickerLabel(ticker, exchange);
+
+  return (
+    <div
+      role="link"
+      tabIndex={0}
+      aria-label={`Open ${openLabel}`}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      className="group relative grid cursor-pointer grid-cols-1 md:grid-cols-[44px_92px_56px_minmax(140px,1fr)_84px_88px_76px_80px_minmax(120px,220px)] md:auto-rows-[20px] items-center gap-x-3 gap-y-2 md:gap-y-1 pl-4 pr-12 py-3 md:py-2.5 hover:bg-muted/40 focus-visible:bg-muted/40 transition-colors"
+    >
+      {/* Reorder — the export's stacked chevrons, kept as real buttons. */}
+      <div className="relative z-10 flex md:flex-col items-center justify-start gap-1 md:gap-0">
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onMovePrev(); }}
+          disabled={isFirst}
+          aria-label={`${orderLabel} — ${orderPrev}`}
+          title={orderPrev}
+          className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed"
+        >
+          <ChevronUp className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onMoveNext(); }}
+          disabled={isLast}
+          aria-label={`${orderLabel} — ${orderNext}`}
+          title={orderNext}
+          className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed"
+        >
+          <ChevronDown className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* Ticker — monospace, `TSX-V: AUR`. */}
+      <span className="min-w-0 font-mono text-[13px] font-bold truncate group-hover:underline">{tickerLabel || "-"}</span>
+
+      {/* Exchange, as its own small column exactly as the export lays it out. */}
+      <span className="min-w-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground truncate">
+        {normalizeExchange(exchange) || "—"}
+      </span>
+
+      {/* Company — the row's real link target. */}
+      <Link
+        to={href}
+        onClick={(e) => e.stopPropagation()}
+        className="min-w-0 font-display font-bold text-[15px] leading-tight truncate hover:underline"
+      >
+        {name}
+      </Link>
+
+      {/* Price / change / volume / cap — mono, tabular, right-aligned as a block. */}
+      <span className="min-w-0 md:text-right font-mono text-[13px] font-semibold tabular-nums">{price}</span>
+      <span className={`min-w-0 md:text-right font-mono text-[13px] tabular-nums ${moveColor}`}>{changeAbs}</span>
+      <span className={`min-w-0 md:text-right font-mono text-[13px] font-semibold tabular-nums inline-flex md:justify-end items-center gap-0.5 ${moveColor}`}>
+        {!flat && (up ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+        {changePct}
+      </span>
+      <span className="min-w-0 md:text-right font-mono text-[12px] text-muted-foreground tabular-nums">{volume}</span>
+      <span className="min-w-0 md:text-right font-mono text-[13px] tabular-nums">{marketCap}</span>
+
+      {/* Commodity / geography tags — the export's boxed micro-labels, on the
+          row's second grid line. The delete button and the company link are
+          both grid items too, so the nine data columns already fill the first
+          line; the tags take the one after it rather than displacing a column.
+          Clipped rather than wrapped so a longer tag list cannot change the
+          row's height. */}
+      <div className="flex items-center gap-1 min-w-0 overflow-hidden md:col-start-9 md:row-start-2">
+        {tags.map((t) => (
+          <span key={t} className="text-[10px] font-mono uppercase border border-border px-1.5 py-0.5 leading-none text-muted-foreground whitespace-nowrap shrink-0">
+            {t}
+          </span>
+        ))}
+      </div>
+
+      {/* Remove — outside the grid flow, centred in the reserved actions
+          column, and the last child so it cannot displace the cells above. */}
+      <div className="md:absolute md:right-4 md:top-1/2 md:-translate-y-1/2">
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          aria-label={removeLabel}
+          title={removeLabel}
+          className="p-1.5 text-muted-foreground hover:text-down transition-colors"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+/** Shared wrapper so every list is the same `card-surface` + `divide-y` container.
+ *
+ * The nine-column row needs ~1120px to lay out; below that the card scrolls
+ * horizontally rather than letting the later columns collapse into nothing, and
+ * `overflow-hidden` moves to this outer element so the `overflow-x-auto` below
+ * can actually scroll instead of being clipped.
+ */
+const CardList = ({ children }: { children: React.ReactNode }) => (
+  <div className="card-surface overflow-x-auto">
+    <div className="divide-y divide-border md:min-w-[1120px]">{children}</div>
+  </div>
+);
+
 const Watchlist = () => {
   const { isAuthenticated, loading } = useAuth();
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [showResults, setShowResults] = useState(false);
 
+  // Unchanged: same query keys, same endpoints, same params.
   const { data: items = [], refetch } = useQuery({
     queryKey: ["watchlist"],
     queryFn: fetchWatchlist,
@@ -156,6 +416,7 @@ const Watchlist = () => {
     return () => clearTimeout(t);
   }, [search]);
 
+  // Unchanged: same search endpoint and the same limit/page params.
   const { data: searchData } = useQuery({
     queryKey: ["watchlist-search", debounced],
     queryFn: () => fetchCompanies({ search: debounced, limit: 8, page: 1 }),
@@ -177,11 +438,14 @@ const Watchlist = () => {
     );
   }
 
+  /* Signed-out gate: markup and behaviour are unchanged (the buttons still link
+     to /register and /login with the same `redirect`), only the surface now uses
+     the shared `card-surface` treatment so it matches the rest of the site. */
   if (!isAuthenticated) {
     return (
       <SiteLayout className="min-h-screen bg-background text-foreground flex flex-col">
         <main className="flex-1 flex items-center justify-center px-4 py-20">
-          <div className="max-w-md w-full border border-border bg-card p-8 text-center">
+          <div className="card-surface max-w-md w-full p-8 text-center">
             <div className="mx-auto w-12 h-12 grid place-items-center bg-muted rounded-full mb-4">
               <Lock className="w-5 h-5" />
             </div>
@@ -192,13 +456,13 @@ const Watchlist = () => {
             <div className="flex gap-2 justify-center">
               <Link
                 to="/register?redirect=/watchlist"
-                className="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium h-10 px-4 py-2 rounded-md bg-accent text-accent-foreground hover:bg-accent/90 transition-colors"
+                className="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-semibold h-10 px-4 py-2 rounded-md bg-accent text-accent-foreground hover:bg-accent/90 transition-colors"
               >
                 Sign up free
               </Link>
               <Link
                 to="/login?redirect=/watchlist"
-                className="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 rounded-md transition-colors"
+                className="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium border border-border bg-background hover:bg-muted h-10 px-4 py-2 rounded-md transition-colors"
               >
                 Sign in
               </Link>
@@ -226,6 +490,7 @@ const Watchlist = () => {
 
   return (
     <SiteLayout className="min-h-screen bg-background text-foreground flex flex-col">
+      {/* Header — the export's eyebrow / display headline / muted standfirst. */}
       <section className="border-b border-border bg-card">
         <div className="container-page section-y">
           <div className="flex items-end justify-between flex-wrap gap-4">
@@ -233,8 +498,13 @@ const Watchlist = () => {
               <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Your list</div>
               <h1 className="font-display text-4xl md:text-5xl font-bold leading-tight">Watchlist</h1>
               <p className="text-muted-foreground mt-2 max-w-xl">
-                Track the juniors, indexes, commodities and currencies you care about.{" "}
-                {companyItems.length} companies · {indexItems.length} indexes · {commodityItems.length} commodities · {currencyItems.length} currencies
+                Track the juniors, indexes, commodities and currencies you care about.
+              </p>
+              <p className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground mt-3">
+                {companyItems.length} {companyItems.length === 1 ? "company" : "companies"}
+                <span className="mx-1.5">·</span>{indexItems.length} indexes
+                <span className="mx-1.5">·</span>{commodityItems.length} commodities
+                <span className="mx-1.5">·</span>{currencyItems.length} currencies
               </p>
             </div>
             <button
@@ -249,8 +519,8 @@ const Watchlist = () => {
 
       <main className="flex-1">
         <div className="container-page section-y space-y-6">
-          {/* Search */}
-          <div className="bg-card border border-border">
+          {/* Add-company search — the export's card with a two-column result grid. */}
+          <div className="card-surface">
             <div className="relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
@@ -269,13 +539,12 @@ const Watchlist = () => {
                   const already = items.some(i => i.itemType === "company" && i.itemKey === String(c.id));
                   return (
                     <button key={c.id} disabled={already} onClick={() => handleAddCompany(c)}
-                      className="bg-card text-left px-4 py-3 flex items-center justify-between gap-3 hover:bg-background disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                      className="bg-card text-left px-4 py-3 flex items-center justify-between gap-3 hover:bg-muted/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                       <div className="min-w-0">
-                        <div className="flex items-baseline gap-2">
-                          <span className="font-mono font-bold text-sm">{c.ticker || "-"}</span>
-                          {c.exchange && <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{c.exchange}</span>}
+                        <div className="font-mono text-[13px] font-bold">
+                          {formatTickerLabel(c.ticker, c.exchange) || "-"}
                         </div>
-                        <div className="text-xs text-foreground/70 truncate">{c.name}</div>
+                        <div className="text-xs text-muted-foreground truncate">{c.name}</div>
                       </div>
                       <Plus className="w-4 h-4 text-accent shrink-0" />
                     </button>
@@ -285,109 +554,127 @@ const Watchlist = () => {
             )}
           </div>
 
-          {/* Company table */}
+          {/* Companies. */}
           {companyItems.length > 0 && (
-            <>
-              <CompanyWatchTable items={companyItems} onRemove={handleRemove} refetch={refetch} />
-              <p className="text-[11px] text-muted-foreground -mt-3">
-                Use the up/down arrows to reorder. Click a row to open the company page. Click the trash icon to remove.
-              </p>
-            </>
+            <section className="space-y-3">
+              <SectionLabel>Companies</SectionLabel>
+              <CompaniesList items={companyItems} onRemove={handleRemove} refetch={refetch} />
+            </section>
           )}
 
-          {/* Commodity watchlist */}
+          {/* Commodities. */}
           {commodityItems.length > 0 && (
-            <SpotWatchTable
-              title="Commodities"
-              nameHeader="Name"
-              priceHeader="Spot price"
-              onRemove={handleRemove}
-              refetch={refetch}
-              rows={commodityItems.map((it) => {
-                const slug = it.itemKey.toUpperCase();
-                const apiKey = commodityApiKeyFromSlug(slug);
-                const data = commodityByKey.get(apiKey);
-                const price = data?.price ?? null;
-                const abs = deriveChangeAbs(price, data?.change_pct);
-                return {
-                  id: it.id,
-                  itemType: "commodity",
-                  itemKey: it.itemKey,
-                  symbol: slug,
-                  name: COMMODITY_SLUG_TO_LABEL[slug] || slug,
-                  nameSuffix: data?.unit ? `/ ${data.unit}` : null,
-                  href: `/market/commodity/${slug}`,
-                  changePct: data?.change_pct ?? null,
-                  priceText: price != null ? `$${price.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "-",
-                  changeAbsText: abs != null ? `${abs >= 0 ? "+" : "-"}$${Math.abs(abs).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "-",
-                };
-              })}
-            />
+            <section className="space-y-3">
+              <SectionLabel>Commodities</SectionLabel>
+              <SpotList
+                nameHeader="Name"
+                priceHeader="Spot price"
+                onRemove={handleRemove}
+                refetch={refetch}
+                rows={commodityItems.map((it) => {
+                  const slug = it.itemKey.toUpperCase();
+                  const apiKey = commodityApiKeyFromSlug(slug);
+                  const data = commodityByKey.get(apiKey);
+                  const price = data?.price ?? null;
+                  const abs = deriveChangeAbs(price, data?.change_pct);
+                  return {
+                    id: it.id,
+                    itemType: "commodity",
+                    itemKey: it.itemKey,
+                    symbol: slug,
+                    exchange: null,
+                    name: COMMODITY_SLUG_TO_LABEL[slug] || slug,
+                    nameSuffix: data?.unit ? `/ ${data.unit}` : null,
+                    href: `/market/commodity/${slug}`,
+                    changePct: data?.change_pct ?? null,
+                    priceText: price != null ? `$${price.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "-",
+                    changeAbsText: abs != null ? `${abs >= 0 ? "+" : "-"}$${Math.abs(abs).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "-",
+                  };
+                })}
+              />
+            </section>
           )}
 
-          {/* Index watchlist */}
+          {/* Indexes. */}
           {indexItems.length > 0 && (
-            <SpotWatchTable
-              title="Indexes"
-              nameHeader="Index"
-              priceHeader="Level"
-              onRemove={handleRemove}
-              refetch={refetch}
-              rows={indexItems.map((it) => {
-                const slug = it.itemKey.toUpperCase();
-                const data = indexByKey.get(slug);
-                const price = data?.price ?? null;
-                const abs = deriveChangeAbs(price, data?.change_pct);
-                return {
-                  id: it.id,
-                  itemType: "index",
-                  itemKey: it.itemKey,
-                  symbol: slug,
-                  name: data?.label || INDEX_LABELS[slug] || slug,
-                  nameSuffix: null,
-                  href: `/market/index/${slug}`,
-                  changePct: data?.change_pct ?? null,
-                  priceText: price != null ? `${fmtIndexPrice(price)}${data?.currency ? ` ${data.currency}` : ""}` : "-",
-                  changeAbsText: abs != null ? `${abs >= 0 ? "+" : "-"}${fmtIndexPrice(Math.abs(abs))}` : "-",
-                };
-              })}
-            />
+            <section className="space-y-3">
+              <SectionLabel>Indexes</SectionLabel>
+              <SpotList
+                nameHeader="Index"
+                priceHeader="Level"
+                onRemove={handleRemove}
+                refetch={refetch}
+                rows={indexItems.map((it) => {
+                  const slug = it.itemKey.toUpperCase();
+                  const data = indexByKey.get(slug);
+                  const price = data?.price ?? null;
+                  const abs = deriveChangeAbs(price, data?.change_pct);
+                  return {
+                    id: it.id,
+                    itemType: "index",
+                    itemKey: it.itemKey,
+                    symbol: slug,
+                    exchange: null,
+                    name: data?.label || INDEX_LABELS[slug] || slug,
+                    nameSuffix: null,
+                    href: `/market/index/${slug}`,
+                    changePct: data?.change_pct ?? null,
+                    priceText: price != null ? `${fmtIndexPrice(price)}${data?.currency ? ` ${data.currency}` : ""}` : "-",
+                    changeAbsText: abs != null ? `${abs >= 0 ? "+" : "-"}${fmtIndexPrice(Math.abs(abs))}` : "-",
+                  };
+                })}
+              />
+            </section>
           )}
 
-          {/* Currency watchlist */}
+          {/* Currencies. */}
           {currencyItems.length > 0 && (
-            <SpotWatchTable
-              title="Currencies"
-              nameHeader="Pair"
-              priceHeader="Rate"
-              onRemove={handleRemove}
-              refetch={refetch}
-              rows={currencyItems.map((it) => {
-                const slug = it.itemKey.toUpperCase();
-                const data = currencyByKey.get(slug);
-                const meta = CURRENCY_LABELS[slug];
-                const price = data?.price ?? null;
-                const abs = deriveChangeAbs(price, data?.change_pct);
-                return {
-                  id: it.id,
-                  itemType: "currency",
-                  itemKey: it.itemKey,
-                  symbol: slug,
-                  name: meta?.name || slug,
-                  nameSuffix: meta?.subtitle || data?.subtitle || null,
-                  href: `/market/currency/${slug}`,
-                  changePct: data?.change_pct ?? null,
-                  priceText: price != null ? price.toFixed(4) : "-",
-                  changeAbsText: abs != null ? `${abs >= 0 ? "+" : "-"}${Math.abs(abs).toFixed(4)}` : "-",
-                };
-              })}
-            />
+            <section className="space-y-3">
+              <SectionLabel>Currencies</SectionLabel>
+              <SpotList
+                nameHeader="Pair"
+                priceHeader="Rate"
+                onRemove={handleRemove}
+                refetch={refetch}
+                rows={currencyItems.map((it) => {
+                  const slug = it.itemKey.toUpperCase();
+                  const data = currencyByKey.get(slug);
+                  const meta = CURRENCY_LABELS[slug];
+                  const price = data?.price ?? null;
+                  const abs = deriveChangeAbs(price, data?.change_pct);
+                  return {
+                    id: it.id,
+                    itemType: "currency",
+                    itemKey: it.itemKey,
+                    symbol: slug,
+                    exchange: null,
+                    name: meta?.name || slug,
+                    nameSuffix: meta?.subtitle || data?.subtitle || null,
+                    href: `/market/currency/${slug}`,
+                    changePct: data?.change_pct ?? null,
+                    priceText: price != null ? price.toFixed(4) : "-",
+                    changeAbsText: abs != null ? `${abs >= 0 ? "+" : "-"}${Math.abs(abs).toFixed(4)}` : "-",
+                  };
+                })}
+              />
+            </section>
           )}
 
+          {/* Empty state — the export's dashed card. */}
           {isEmpty && (
-            <div className="py-16 text-center text-sm text-muted-foreground">
-              Your watchlist is empty. Use the search above to add companies, or use <span className="font-semibold text-foreground">Watchlist</span> on any index, commodity, or currency page.
+            <div className="border border-dashed border-border bg-card/50 p-12 text-center">
+              <p className="font-display text-lg font-bold mb-2">Your watchlist is empty</p>
+              <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                Search for a company above, or use <span className="font-semibold text-foreground">Watchlist</span> on
+                any company, index, commodity or currency page.
+              </p>
             </div>
+          )}
+
+          {items.length > 0 && (
+            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              Use the arrows to reorder · click a row to open it · trash removes it
+            </p>
           )}
         </div>
       </main>
@@ -396,10 +683,10 @@ const Watchlist = () => {
 };
 
 // ---------------------------------------------------------------------------
-// Company watchlist table - full market columns + up/down reordering.
+// Company watchlist list — live quote columns + up/down reordering.
 // ---------------------------------------------------------------------------
 
-const CompanyWatchTable = ({
+const CompaniesList = ({
   items,
   onRemove,
   refetch,
@@ -413,6 +700,7 @@ const CompanyWatchTable = ({
   // Resync from server whenever the fetched list changes (after add/remove/reorder).
   useEffect(() => { setRows(items); }, [items]);
 
+  // Unchanged: same optimistic swap, same PUT /watchlist/reorder payload.
   const move = async (index: number, dir: -1 | 1) => {
     const target = index + dir;
     if (target < 0 || target >= rows.length) return;
@@ -429,37 +717,28 @@ const CompanyWatchTable = ({
   };
 
   return (
-    <div className="bg-surface border border-border overflow-x-auto">
-      <div className="min-w-[960px]">
-        <div className={`grid ${WATCH_GRID} items-center gap-3 px-5 py-3 border-b border-border bg-background/60 font-mono text-[10px] uppercase tracking-wider text-muted-foreground`}>
-          <div />
-          <div>Ticker</div>
-          <div>Exch</div>
-          <div>Company</div>
-          <div className="text-right">Price</div>
-          <div className="text-right">Chg $</div>
-          <div className="text-right">Chg %</div>
-          <div className="text-right">Volume</div>
-          <div className="text-right">Mkt Cap</div>
-          <div>Tags</div>
-          <div className="text-center">Del</div>
-        </div>
-        {rows.map((it, i) => (
-          <CompanyWatchRow
-            key={it.id}
-            it={it}
-            isFirst={i === 0}
-            isLast={i === rows.length - 1}
-            onMove={(dir) => move(i, dir)}
-            onRemove={() => onRemove("company", it.itemKey)}
-          />
-        ))}
-      </div>
-    </div>
+    <CardList>
+      <ColumnHeader labels={["Ticker", "Exch", "Company", "Price", "Chg $", "Chg %", "Volume", "Mkt Cap"]} />
+      {rows.map((it, i) => (
+        <CompanyRow
+          key={it.id}
+          it={it}
+          isFirst={i === 0}
+          isLast={i === rows.length - 1}
+          onMove={(dir) => move(i, dir)}
+          onRemove={() => onRemove("company", it.itemKey)}
+        />
+      ))}
+    </CardList>
   );
 };
 
-const CompanyWatchRow = ({
+/**
+ * A company row. Quotes still come from the same per-row
+ * `/market/quote/:exchange/:ticker` query with the same key and params, and the
+ * same 5-minute staleTime — only the presentation changed.
+ */
+const CompanyRow = ({
   it,
   isFirst,
   isLast,
@@ -472,6 +751,7 @@ const CompanyWatchRow = ({
   onMove: (dir: -1 | 1) => void;
   onRemove: () => void;
 }) => {
+  const navigate = useNavigate();
   const exForTv = normalizeExchangeForTv(it.exchange);
   const enabled = !!(exForTv && it.ticker);
   const { data: quote } = useQuery({
@@ -491,110 +771,44 @@ const CompanyWatchRow = ({
   });
 
   const price = quote?.price ?? null;
-  const change = quote?.change_pct ?? null;
   const changeAbs = quote?.change_abs ?? null;
   const volume = quote?.volume ?? null;
-  const up = change != null && change >= 0;
-  const exLabel = it.exchange === "TSXV" ? "TSX-V" : it.exchange;
-  const href = `/company/${companySlug(it.exchange, it.ticker)}`;
   const commodities = it.commodities ?? [];
   const geo = [it.country, ...(it.continents ?? [])].filter(Boolean) as string[];
-  const moveColor =
-    change == null ? "text-muted-foreground" : up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]";
+  // One commodity + the primary country. The export prints two commodity tags
+  // and a continent here; the tag column is the one field with no fixed width,
+  // so this is the slice that still fits on one line.
+  const tags = [...commodities.slice(0, 1), ...geo.slice(0, 1)];
 
   return (
-    <div className={`grid ${WATCH_GRID} items-center gap-3 px-5 py-4 border-b border-border last:border-b-0 hover:bg-background/40 transition-colors`}>
-      {/* Reorder */}
-      <div className="flex flex-col -my-1">
-        <button
-          type="button"
-          onClick={() => onMove(-1)}
-          disabled={isFirst}
-          aria-label="Move up"
-          className="text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed"
-        >
-          <ChevronUp className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onMove(1)}
-          disabled={isLast}
-          aria-label="Move down"
-          className="text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed"
-        >
-          <ChevronDown className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* Ticker */}
-      <Link to={href} className="font-mono font-bold text-sm hover:underline">{it.ticker || "-"}</Link>
-
-      {/* Exch */}
-      <span className="font-mono text-[10px] text-muted-foreground uppercase">{exLabel || "-"}</span>
-
-      {/* Company */}
-      <Link to={href} className="font-display text-[15px] font-semibold truncate hover:underline">{it.companyName || "-"}</Link>
-
-      {/* Price */}
-      <span className="text-right font-mono text-sm font-semibold">{fmtPrice(price)}</span>
-
-      {/* Chg $ */}
-      <span className={`text-right font-mono text-sm font-semibold ${moveColor}`}>{fmtChgAbs(changeAbs, price)}</span>
-
-      {/* Chg % */}
-      <span className={`text-right font-mono text-sm font-semibold inline-flex justify-end items-center gap-0.5 ${moveColor}`}>
-        {change == null ? (
-          "-"
-        ) : (
-          <>
-            {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-            {fmtPct(change)}
-          </>
-        )}
-      </span>
-
-      {/* Volume */}
-      <span className="text-right font-mono text-sm text-muted-foreground">{fmtVol(volume)}</span>
-
-      {/* Mkt Cap */}
-      <span className="text-right font-mono text-sm font-semibold">{fmtMcap(it.marketCap)}</span>
-
-      {/* Tags */}
-      <div className="flex flex-wrap gap-1">
-        {commodities.length === 0 && geo.length === 0 ? (
-          <span className="text-muted-foreground text-xs">-</span>
-        ) : (
-          <>
-            {commodities.slice(0, 3).map((cm) => (
-              <span key={`c-${cm}`} className="text-[10px] font-mono uppercase bg-muted px-1.5 py-0.5 rounded-sm">{cm}</span>
-            ))}
-            {geo.slice(0, 2).map((g) => (
-              <span key={`g-${g}`} className="text-[10px] font-mono uppercase border border-border text-muted-foreground px-1.5 py-0.5 rounded-sm">{g}</span>
-            ))}
-          </>
-        )}
-      </div>
-
-      {/* Del + open */}
-      <div className="flex items-center justify-center gap-1">
-        <button
-          type="button"
-          onClick={onRemove}
-          className="p-1.5 text-muted-foreground hover:text-red-600 transition-colors"
-          aria-label="Remove"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
-        <Link to={href} className="p-1.5 text-muted-foreground hover:text-foreground transition-colors" aria-label="Open company page">
-          <ArrowUpRight className="w-4 h-4" />
-        </Link>
-      </div>
-    </div>
+    <CardRow
+      href={`/company/${companySlug(it.exchange, it.ticker)}`}
+      onOpen={() => navigate(`/company/${companySlug(it.exchange, it.ticker)}`)}
+      openLabel={`${formatTickerLabel(it.ticker, it.exchange) || it.companyName || "company"} on OreWire`}
+      orderLabel={`Reorder ${formatTickerLabel(it.ticker, it.exchange)}`}
+      orderPrev="Move up"
+      orderNext="Move down"
+      onMovePrev={() => onMove(-1)}
+      onMoveNext={() => onMove(1)}
+      isFirst={isFirst}
+      isLast={isLast}
+      ticker={it.ticker || ""}
+      exchange={it.exchange}
+      name={it.companyName || "-"}
+      price={fmtPrice(price)}
+      changeAbs={fmtChgAbs(changeAbs, price)}
+      changePct={fmtPct(quote?.change_pct)}
+      volume={fmtVol(volume)}
+      marketCap={fmtMcap(it.marketCap)}
+      tags={tags}
+      onRemove={onRemove}
+      removeLabel={`Remove ${formatTickerLabel(it.ticker, it.exchange)} from watchlist`}
+    />
   );
 };
 
 // ---------------------------------------------------------------------------
-// Spot watchlist table (commodities / indexes / currencies) - reorder + Chg$.
+// Spot watchlist list (commodities / indexes / currencies) — reorder + Chg$.
 // ---------------------------------------------------------------------------
 
 type SpotRow = {
@@ -602,6 +816,7 @@ type SpotRow = {
   itemType: string;
   itemKey: string;
   symbol: string;
+  exchange: string | null;
   name: string;
   nameSuffix: string | null;
   href: string;
@@ -610,15 +825,13 @@ type SpotRow = {
   changeAbsText: string;
 };
 
-const SpotWatchTable = ({
-  title,
+const SpotList = ({
   nameHeader,
   priceHeader,
   rows: incoming,
   onRemove,
   refetch,
 }: {
-  title: string;
   nameHeader: string;
   priceHeader: string;
   rows: SpotRow[];
@@ -630,6 +843,7 @@ const SpotWatchTable = ({
   // Resync whenever the source list / live quotes change.
   useEffect(() => { setRows(incoming); }, [incoming]);
 
+  // Unchanged: same optimistic swap and PUT /watchlist/reorder payload.
   const move = async (index: number, dir: -1 | 1) => {
     const target = index + dir;
     if (target < 0 || target >= rows.length) return;
@@ -645,37 +859,27 @@ const SpotWatchTable = ({
     }
   };
 
+  // Spot instruments have no volume / market cap / tags, so those three cells
+  // stay empty — the columns are kept so every row in the app lines up on the
+  // same grid. The last three labels are blank for the same reason.
   return (
-    <>
-      <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mt-2">{title}</div>
-      <div className="bg-surface border border-border overflow-x-auto">
-        <div className="min-w-[680px]">
-          <div className={`grid ${SPOT_GRID} items-center gap-3 px-5 py-3 border-b border-border bg-background/60 font-mono text-[10px] uppercase tracking-wider text-muted-foreground`}>
-            <div />
-            <div>Symbol</div>
-            <div>{nameHeader}</div>
-            <div className="text-right">{priceHeader}</div>
-            <div className="text-right">Chg $</div>
-            <div className="text-right">Chg %</div>
-            <div className="text-center">Del</div>
-          </div>
-          {rows.map((r, i) => (
-            <SpotWatchRow
-              key={r.id}
-              row={r}
-              isFirst={i === 0}
-              isLast={i === rows.length - 1}
-              onMove={(dir) => move(i, dir)}
-              onRemove={() => onRemove(r.itemType, r.itemKey)}
-            />
-          ))}
-        </div>
-      </div>
-    </>
+    <CardList>
+      <ColumnHeader labels={["Symbol", "Exch", nameHeader, priceHeader, "Chg $", "Chg %", "", ""]} />
+      {rows.map((r, i) => (
+        <SpotRowView
+          key={r.id}
+          row={r}
+          isFirst={i === 0}
+          isLast={i === rows.length - 1}
+          onMove={(dir) => move(i, dir)}
+          onRemove={() => onRemove(r.itemType, r.itemKey)}
+        />
+      ))}
+    </CardList>
   );
 };
 
-const SpotWatchRow = ({
+const SpotRowView = ({
   row,
   isFirst,
   isLast,
@@ -688,61 +892,31 @@ const SpotWatchRow = ({
   onMove: (dir: -1 | 1) => void;
   onRemove: () => void;
 }) => {
-  const up = row.changePct != null && row.changePct >= 0;
-  const moveColor =
-    row.changePct == null ? "text-muted-foreground" : up ? "text-[hsl(var(--up))]" : "text-[hsl(var(--down))]";
-
+  const navigate = useNavigate();
   return (
-    <div className={`grid ${SPOT_GRID} items-center gap-3 px-5 py-4 border-b border-border last:border-b-0 hover:bg-background/40 transition-colors`}>
-      {/* Reorder */}
-      <div className="flex flex-col -my-1">
-        <button type="button" onClick={() => onMove(-1)} disabled={isFirst} aria-label="Move up"
-          className="text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed">
-          <ChevronUp className="w-4 h-4" />
-        </button>
-        <button type="button" onClick={() => onMove(1)} disabled={isLast} aria-label="Move down"
-          className="text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed">
-          <ChevronDown className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* Symbol */}
-      <Link to={row.href} className="font-mono font-bold text-sm hover:underline">{row.symbol}</Link>
-
-      {/* Name */}
-      <Link to={row.href} className="font-display text-[15px] font-semibold truncate hover:underline">
-        {row.name}
-        {row.nameSuffix && <span className="font-mono text-[10px] text-muted-foreground ml-2">{row.nameSuffix}</span>}
-      </Link>
-
-      {/* Price */}
-      <span className="text-right font-mono text-sm font-semibold">{row.priceText}</span>
-
-      {/* Chg $ */}
-      <span className={`text-right font-mono text-sm font-semibold ${moveColor}`}>{row.changeAbsText}</span>
-
-      {/* Chg % */}
-      <span className={`text-right font-mono text-sm inline-flex justify-end items-center gap-0.5 ${moveColor}`}>
-        {row.changePct == null ? (
-          "-"
-        ) : (
-          <>
-            {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-            {up ? "+" : ""}{row.changePct.toFixed(2)}%
-          </>
-        )}
-      </span>
-
-      {/* Del + open */}
-      <div className="flex items-center justify-center gap-1">
-        <button type="button" onClick={onRemove} className="p-1.5 text-muted-foreground hover:text-red-600 transition-colors" aria-label="Remove">
-          <Trash2 className="w-4 h-4" />
-        </button>
-        <Link to={row.href} className="p-1.5 text-muted-foreground hover:text-foreground transition-colors" aria-label="Open detail page">
-          <ArrowUpRight className="w-4 h-4" />
-        </Link>
-      </div>
-    </div>
+    <CardRow
+      href={row.href}
+      onOpen={() => navigate(row.href)}
+      openLabel={row.name}
+      orderLabel={`Reorder ${row.symbol}`}
+      orderPrev="Move up"
+      orderNext="Move down"
+      onMovePrev={() => onMove(-1)}
+      onMoveNext={() => onMove(1)}
+      isFirst={isFirst}
+      isLast={isLast}
+      ticker={row.symbol}
+      exchange={row.exchange}
+      name={row.nameSuffix ? `${row.name} ${row.nameSuffix}` : row.name}
+      price={row.priceText}
+      changeAbs={row.changeAbsText}
+      changePct={row.changePct == null ? "-" : `${row.changePct >= 0 ? "+" : ""}${row.changePct.toFixed(2)}%`}
+      volume="-"
+      marketCap="-"
+      tags={[]}
+      onRemove={onRemove}
+      removeLabel={`Remove ${row.symbol} from watchlist`}
+    />
   );
 };
 
