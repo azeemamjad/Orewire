@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Clock, FileText, Sparkles, X } from "lucide-react";
-import { Link, useSearchParams } from "react-router-dom";
+import { X } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import SiteLayout from "@/layouts/SiteLayout";
+import FeedRow from "@/components/site/FeedRow";
 import ListingPagination from "@/components/site/ListingPagination";
 import {
   ListFilterHeader,
@@ -11,7 +12,7 @@ import {
   EMPTY_FILTERS,
   type ListFilters,
 } from "@/components/site/ListFilterBar";
-import { fetchFilingsPage, type Filing, type Verdict } from "@/lib/api";
+import { fetchFilingsPage, type Filing } from "@/lib/api";
 import { useSeo, organizationLd, websiteLd, breadcrumbLd } from "@/lib/seo";
 import {
   apiCommodityFromFilters,
@@ -21,14 +22,6 @@ import {
 } from "@/lib/list-filter-api";
 
 const PAGE_SIZE = 10;
-
-const verdictStyle: Record<string, string> = {
-  Noteworthy: "bg-[hsl(var(--noteworthy))] text-[hsl(var(--noteworthy-foreground))]",
-  Watch: "bg-[hsl(var(--watch))] text-[hsl(var(--watch-foreground))]",
-  Routine: "bg-[hsl(var(--routine))] text-[hsl(var(--routine-foreground))]",
-  "Extraction failed": "bg-muted text-muted-foreground",
-  "Company mismatch": "bg-amber-500/15 text-amber-800 dark:text-amber-200",
-};
 
 const FilingsList = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -189,34 +182,18 @@ const FilingsList = () => {
                           }
                         : undefined;
                     return (
-                      <li key={item.id} className="hover:bg-background/60">
-                        <Link to={`/filings/${item.id}`} state={listingBack} className="block px-4 py-4">
-                          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                            <span className="font-mono text-[13px] font-bold whitespace-nowrap">{item.ticker}</span>
-                            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5 whitespace-nowrap">
-                              {item.exchange}
-                            </span>
-                            {item.verdict && (
-                              <span className={`font-mono text-[10px] uppercase tracking-widest px-1.5 py-0.5 font-bold rounded-full whitespace-nowrap ${verdictStyle[item.verdict]}`}>
-                                {item.verdict}
-                              </span>
-                            )}
-                            <span className="ml-auto font-mono text-[10px] text-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
-                              <Clock className="w-2.5 h-2.5" />
-                              {item.time}
-                            </span>
-                          </div>
-                          <div className="text-[13px] font-semibold text-foreground/90 mb-1 leading-snug truncate">{item.company}</div>
-                          <div className="flex items-center gap-1 text-[13px] font-bold tracking-tight text-foreground leading-snug mb-1.5 min-w-0">
-                            <FileText className="w-3.5 h-3.5 text-accent shrink-0" />
-                            <span className="truncate">{item.filingType}</span>
-                          </div>
-                          <p className="text-[12px] leading-relaxed text-foreground/70 line-clamp-2 min-h-[2.6rem]">
-                            <Sparkles className="inline w-3 h-3 text-accent mr-1 -mt-0.5" />
-                            {item.summary}
-                          </p>
-                        </Link>
-                      </li>
+                      <FeedRow
+                        key={item.id}
+                        href={`/filings/${item.id}`}
+                        linkState={listingBack}
+                        ticker={item.ticker}
+                        exchange={item.exchange}
+                        verdict={item.verdict}
+                        typeLabel={item.filingType}
+                        time={item.time}
+                        company={item.company}
+                        summary={item.summary}
+                      />
                     );
                   })}
                 </ul>

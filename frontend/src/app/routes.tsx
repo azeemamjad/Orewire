@@ -22,11 +22,17 @@ import ChangePassword from "@/features/auth/pages/ChangePassword";
 import GoogleAuthCallback from "@/features/auth/pages/GoogleAuthCallback";
 import SignupAgreements from "@/features/auth/pages/SignupAgreements";
 import NotFound from "@/pages/NotFound";
+import LandingPreview from "@/features/landing/pages/LandingPreview";
 
 export default function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<Index />} />
+      {/* Internal review surface for the anonymous/pre-signin landing design
+          ported from the Lovable export. noindex, composed of sample data.
+          Remove this route and src/features/landing to drop it — nothing else
+          depends on it. */}
+      <Route path="/preview" element={<LandingPreview />} />
       <Route path="/companies" element={<Companies />} />
       <Route path="/company/:slug" element={<CompanyDetail />} />
       <Route path="/watchlist" element={<Watchlist />} />

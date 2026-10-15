@@ -1,17 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpRight, Clock, FileText } from "lucide-react";
+import { ArrowUpRight, FileText } from "lucide-react";
 import { Link } from "react-router-dom";
+import FeedRow from "@/components/site/FeedRow";
 import { fetchFilings, type Filing } from "@/lib/api";
 
 const REFETCH_MS = 30 * 60 * 1000;
-
-const verdictStyle: Record<string, string> = {
-  Noteworthy: "bg-[hsl(var(--noteworthy))] text-[hsl(var(--noteworthy-foreground))]",
-  Watch: "bg-[hsl(var(--watch))] text-[hsl(var(--watch-foreground))]",
-  Routine: "bg-[hsl(var(--routine))] text-[hsl(var(--routine-foreground))]",
-  "Extraction failed": "bg-muted text-muted-foreground",
-  "Company mismatch": "bg-amber-500/15 text-amber-800 dark:text-amber-200",
-};
 
 const placeholderFilings: Filing[] = [
   { id: -1, ticker: "SCZ", company: "Scorpio Gold Resources", exchange: "TSX-V", filingType: "NI 43-101", verdict: "Noteworthy", commodity: "Gold", time: "22 min ago", summary: "Updated MRE: 1.42 Moz Indicated @ 1.8 g/t Au, 31% category upgrade vs prior." },
@@ -50,43 +43,18 @@ const Filings = ({ className = "" }: { className?: string }) => {
       </div>
       <ul className="divide-y divide-border flex-1 overflow-auto min-h-0">
         {items.slice(0, 20).map((f) => (
-          <li key={f.id} className="hover:bg-background/60">
-            <Link to={`/filings/${f.id}`} className="block px-3.5 py-3">
-              <div className="flex items-center gap-2 mb-1.5">
-                <span className="font-mono text-[13px] font-bold whitespace-nowrap">{f.ticker}</span>
-                <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5 whitespace-nowrap">
-                  {f.exchange}
-                </span>
-                <span className="ml-auto font-mono text-[10px] text-muted-foreground inline-flex items-center gap-1 shrink-0 whitespace-nowrap">
-                  <Clock className="w-2.5 h-2.5" />
-                  {f.time}
-                </span>
-              </div>
-              <div className="text-[12px] font-semibold text-foreground/90 mb-1.5 leading-snug truncate min-h-[1.125rem]">
-                {f.company || "\u00A0"}
-              </div>
-              <div className="flex items-center gap-1.5 mb-1.5 min-w-0">
-                {f.verdict ? (
-                  <span
-                    className={`font-mono text-[10px] uppercase tracking-widest px-1.5 py-0.5 font-bold rounded-full whitespace-nowrap shrink-0 ${verdictStyle[f.verdict] || verdictStyle.Routine}`}
-                  >
-                    {f.verdict}
-                  </span>
-                ) : (
-                  <span className="invisible font-mono text-[10px] uppercase tracking-widest px-1.5 py-0.5 font-bold rounded-full whitespace-nowrap shrink-0">
-                    Routine
-                  </span>
-                )}
-                <span className="inline-flex items-center gap-1 text-[12px] font-bold tracking-tight text-foreground leading-snug min-w-0 truncate">
-                  <FileText className="w-3 h-3 text-accent shrink-0" />
-                  <span className="truncate">{f.filingType}</span>
-                </span>
-              </div>
-              <p className="text-[12px] leading-relaxed text-foreground/70 line-clamp-2 min-h-[2.5rem]">
-                {f.summary || "\u00A0"}
-              </p>
-            </Link>
-          </li>
+          <FeedRow
+            key={f.id}
+            density="dense"
+            href={`/filings/${f.id}`}
+            ticker={f.ticker}
+            exchange={f.exchange}
+            verdict={f.verdict}
+            typeLabel={f.filingType}
+            time={f.time}
+            company={f.company}
+            summary={f.summary}
+          />
         ))}
         <li className="p-3 bg-muted/20">
           <Link

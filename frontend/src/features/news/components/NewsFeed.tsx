@@ -4,6 +4,7 @@ import { ArrowUpRight, Newspaper } from "lucide-react";
 import { Link } from "react-router-dom";
 import { fetchNewsFeed, type NewsItem } from "@/lib/api";
 import NewsReleaseItem from "@/components/site/NewsReleaseItem";
+import { normalizeVerdict } from "@/components/site/FeedRow";
 import {
   cleanNewsSummary,
   getNewsFilingType,
@@ -186,7 +187,7 @@ const NewsFeed = ({ className = "" }: { className?: string }) => {
       <ul className="divide-y divide-border flex-1 overflow-auto min-h-0">
         {items.map((item, i) => {
           const hero = item as HeroNewsItem;
-          const severity = hero.severity || getNewsSeverity(item.sentiment, item.title);
+          const severity = normalizeVerdict(hero.severity) || getNewsSeverity(item.sentiment, item.title);
           const filingType = hero.filingType || getNewsFilingType(item.title);
           const summary = cleanNewsSummary(item.summary) || item.title;
           return (

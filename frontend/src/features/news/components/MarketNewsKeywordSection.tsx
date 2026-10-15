@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpRight, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
+import FeedRow from "@/components/site/FeedRow";
 import { fetchNewsFeed, type NewsItem } from "@/lib/api";
 
 const REFETCH_MS = 30 * 60 * 1000;
@@ -40,33 +41,29 @@ function MarketNewsKeywordSection({ keyword, title = "Market news" }: { keyword:
           Google News RSS <ExternalLink className="w-3 h-3" />
         </a>
       </div>
-      <div className="px-6 pb-6 pt-0 space-y-3">
+      <div className="border-t border-border">
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading headlines…</p>
+          <p className="px-6 py-5 text-sm text-muted-foreground">Loading headlines…</p>
         ) : items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="px-6 py-5 text-sm text-muted-foreground">
             No recent headlines matched.{" "}
             <a href={rssUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">
               Open Google News RSS
             </a>
           </p>
         ) : (
-          items.map((item: NewsItem) => (
-            <a
-              key={item.link || item.title}
-              href={item.link?.startsWith("http") ? item.link : rssUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block group border-b border-border last:border-0 pb-3 last:pb-0"
-            >
-              <div className="font-medium text-sm leading-snug group-hover:underline underline-offset-2">{item.title}</div>
-              <div className="mt-1 flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
-                <span>{item.source || "Google News"}</span>
-                {item.timeAgo && <span>· {item.timeAgo}</span>}
-                <ArrowUpRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </div>
-            </a>
-          ))
+          <ul className="divide-y divide-border">
+            {items.map((item: NewsItem) => (
+              <FeedRow
+                key={item.link || item.title}
+                externalHref={item.link?.startsWith("http") ? item.link : rssUrl}
+                company={item.title}
+                time={item.timeAgo}
+                category={item.commodity}
+                source={item.source || "Google News"}
+              />
+            ))}
+          </ul>
         )}
       </div>
     </div>

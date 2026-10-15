@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import ListingPagination from "@/components/site/ListingPagination";
 import SiteLayout from "@/layouts/SiteLayout";
 import { ArrowDown, ArrowUp, Filter, Search, Sparkles, Star, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
+import { useSignupModal } from "@/hooks/use-signup-modal";
+import { FilterChip } from "@/components/site/ListFilterBar";
+import { formatTickerLabel } from "@/components/site/FeedRow";
 import {
   fetchCompanies,
   fetchCompanyFilters,
@@ -88,6 +91,13 @@ function normalizeMarketParam(value: string | null): string | null {
 
 const Companies = () => {
   const [searchParams] = useSearchParams();
+  const { isAuthenticated, loading } = useAuth();
+  const { openSignup } = useSignupModal();
+  // Anonymous visitors keep the sidebar on screen but every chip is locked
+  // (see FilterChip). While auth is still verifying a stored token the filters
+  // stay live, so a signed-in visitor never sees the padlocks flash on load.
+  const filtersLocked = !loading && !isAuthenticated;
+  const onLockedFilterClick = () => openSignup({ context: "filters" });
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState(() => searchParams.get("search") || "");
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get("search") || "");
@@ -319,10 +329,10 @@ const Companies = () => {
             )}
           </div>
 
-          <FilterGroup title="Market" options={filterOptions?.markets ?? []} value={sel.market} onToggle={(v) => toggle("market", v)} />
-          <FilterGroup title="Commodity" options={filterOptions?.commodities ?? []} value={sel.commodity} onToggle={(v) => toggle("commodity", v)} />
-          <FilterGroup title="Continent" options={filterOptions?.continents ?? []} value={sel.continent} onToggle={(v) => toggle("continent", v)} />
-          <FilterGroup title="Country of Operations" options={filterOptions?.countries ?? []} value={sel.country} onToggle={(v) => toggle("country", v)} />
+          <FilterGroup title="Market" options={filterOptions?.markets ?? []} value={sel.market} onToggle={(v) => toggle("market", v)} locked={filtersLocked} onLockedClick={onLockedFilterClick} />
+          <FilterGroup title="Commodity" options={filterOptions?.commodities ?? []} value={sel.commodity} onToggle={(v) => toggle("commodity", v)} locked={filtersLocked} onLockedClick={onLockedFilterClick} />
+          <FilterGroup title="Continent" options={filterOptions?.continents ?? []} value={sel.continent} onToggle={(v) => toggle("continent", v)} locked={filtersLocked} onLockedClick={onLockedFilterClick} />
+          <FilterGroup title="Country of Operations" options={filterOptions?.countries ?? []} value={sel.country} onToggle={(v) => toggle("country", v)} locked={filtersLocked} onLockedClick={onLockedFilterClick} />
         </aside>
 
         {/* Table */}
@@ -377,37 +387,35 @@ interface FilterGroupProps {
   options: string[];
   value: string | null;
   onToggle: (v: string) => void;
+  /** Signed-out: chips stay visible but carry a padlock and open the signup modal. */
+  locked?: boolean;
+  onLockedClick?: () => void;
 }
 
-const FilterGroup = ({ title, options, value, onToggle }: FilterGroupProps) => (
+const FilterGroup = ({ title, options, value, onToggle, locked = false, onLockedClick }: FilterGroupProps) => (
   <div className="border-t border-border py-4">
     <h4 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-3">{title}</h4>
     <div className="flex flex-wrap gap-1.5">
-      {options.map((o) => {
-        const active = value === o;
-        return (
-          <button
-            key={o}
-            onClick={() => onToggle(o)}
-            className={`px-3 py-1.5 text-xs font-medium border transition-colors ${
-              active
-                ? "bg-foreground text-background border-foreground"
-                : "bg-card text-foreground/80 border-border hover:border-foreground/40"
-            }`}
-          >
-            {o}
-          </button>
-        );
-      })}
+      {options.map((o) => (
+        <FilterChip
+          key={o}
+          active={value === o}
+          locked={locked}
+          onClick={() => (locked ? onLockedClick?.() : onToggle(o))}
+        >
+          {o}
+        </FilterChip>
+      ))}
     </div>
   </div>
 );
 
-// Watchlist star - toggles without navigating the row's parent Link. Unauthed
-// clicks go to the watchlist page (sign-in prompt lives there).
-const WatchStar = ({ companyId }: { companyId: number }) => {
+// Watchlist star - toggles without navigating the row's parent Link. Signed-out
+// clicks open the signup modal (context "watchlist") instead of the old redirect
+// to /watchlist, so the row stays put and the prompt is in place.
+const WatchStar = ({ companyId, label }: { companyId: number; label: string }) => {
   const { isAuthenticated } = useAuth();
-  const navigate = useNavigate();
+  const { openSignup } = useSignupModal();
   const [watched, setWatched] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -426,7 +434,7 @@ const WatchStar = ({ companyId }: { companyId: number }) => {
     e.stopPropagation();
     if (busy) return;
     if (!isAuthenticated) {
-      navigate("/watchlist");
+      openSignup({ context: "watchlist", ticker: label });
       return;
     }
     setBusy(true);
@@ -514,7 +522,7 @@ const CompanyRow = ({ c, quote }: { c: Company; quote: LiveTvQuote | null }) => 
 
       {/* Watch */}
       <div className="md:text-center md:flex md:justify-center">
-        <WatchStar companyId={c.id} />
+        <WatchStar companyId={c.id} label={formatTickerLabel(c.ticker, c.exchange) || c.name} />
       </div>
     </Link>
   );

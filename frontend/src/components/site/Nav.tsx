@@ -25,6 +25,7 @@ import SiteTopBar from "@/components/site/SiteTopBar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useAuth } from "@/features/auth/hooks";
+import { useSignupModal } from "@/hooks/use-signup-modal";
 import { logout } from "@/lib/api";
 
 const navItems = [
@@ -56,9 +57,11 @@ type NavProps = {
 
 const Nav = ({ showSiteTopBar = true }: NavProps) => {
   const { isAuthenticated, user } = useAuth();
+  const { openSignup } = useSignupModal();
   const navigate = useNavigate();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const backTo = `${location.pathname}${location.search}`;
 
   const username = user?.username || user?.email?.split("@")[0] || "you";
   const initial = (
@@ -191,12 +194,25 @@ const Nav = ({ showSiteTopBar = true }: NavProps) => {
                 </Popover>
               </>
             ) : (
-              <Link
-                to="/login"
-                className="inline-flex items-center rounded-lg bg-accent text-accent-foreground px-4 h-9 text-sm font-semibold shadow-sm hover:opacity-90 transition-opacity"
-              >
-                Login / Sign up
-              </Link>
+              /* Anonymous-visitor design ported from the export's Nav.tsx:
+                 a plain "Sign in" text link beside a gold "Sign up free"
+                 button. "Sign up free" opens the SignupModal rather than
+                 navigating, matching the export's openSignup() behaviour. */
+              <>
+                <Link
+                  to={`/login?redirect=${encodeURIComponent(backTo)}`}
+                  className="hidden sm:inline text-sm font-medium text-foreground/80 hover:text-foreground px-2"
+                >
+                  Sign in
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => openSignup()}
+                  className="inline-flex items-center rounded-lg bg-[#C8941A] text-white px-4 h-9 text-sm font-semibold shadow-sm hover:opacity-90 transition-opacity"
+                >
+                  Sign up free
+                </button>
+              </>
             )}
 
             <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
@@ -328,13 +344,24 @@ const Nav = ({ showSiteTopBar = true }: NavProps) => {
                       </button>
                     </>
                   ) : (
-                    <Link
-                      to="/login"
-                      onClick={() => setMenuOpen(false)}
-                      className="inline-flex w-full items-center justify-center h-10 rounded-lg bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition-opacity"
-                    >
-                      Login / Sign up
-                    </Link>
+                    /* Mobile sheet, signed out — same two actions as the export:
+                       gold "Sign up free" opens the modal, "Sign in" navigates. */
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => { setMenuOpen(false); openSignup(); }}
+                        className="inline-flex w-full items-center justify-center h-10 bg-[#C8941A] text-white text-sm font-semibold hover:opacity-90 transition-opacity"
+                      >
+                        Sign up free
+                      </button>
+                      <Link
+                        to={`/login?redirect=${encodeURIComponent(backTo)}`}
+                        onClick={() => setMenuOpen(false)}
+                        className="inline-flex w-full items-center justify-center h-10 border border-border text-sm font-medium hover:bg-muted transition-colors"
+                      >
+                        Sign in
+                      </Link>
+                    </div>
                   )}
                   <div className="flex items-center justify-center gap-3 pt-1">
                     <a

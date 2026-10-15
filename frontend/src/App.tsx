@@ -4,6 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import AppRoutes from "@/app/routes";
+import { SignupModalProvider } from "@/hooks/use-signup-modal";
 import WatchlistAlertsRunner from "@/components/shared/WatchlistAlertsRunner";
 import ForcePasswordChangeGuard from "@/components/shared/ForcePasswordChangeGuard";
 import ForceSignupAgreementsGuard from "@/components/shared/ForceSignupAgreementsGuard";
@@ -19,11 +20,15 @@ const App = () => (
       <Sonner />
       <WatchlistAlertsRunner />
       <BrowserRouter>
-        <ScrollToTop />
-        <ForcePasswordChangeGuard />
-        <ForceSignupAgreementsGuard />
-        <AppRoutes />
-        <CookieConsent />
+        {/* Inside the router: the signup modal navigates and reads the current
+            location, and any page can open it through useSignupModal(). */}
+        <SignupModalProvider>
+          <ScrollToTop />
+          <ForcePasswordChangeGuard />
+          <ForceSignupAgreementsGuard />
+          <AppRoutes />
+          <CookieConsent />
+        </SignupModalProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

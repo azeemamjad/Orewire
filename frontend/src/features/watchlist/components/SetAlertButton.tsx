@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Bell, Check } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
+import { useSignupModal } from "@/hooks/use-signup-modal";
 import { checkItemAlert, setItemAlert } from "@/lib/api";
 import { bumpItemAlertWatermark } from "@/lib/watchlist-alerts";
 
@@ -14,6 +15,11 @@ type SetAlertButtonProps = {
   /** Button label when alerts are off (e.g. "News alerts" on company pages) */
   label?: string;
   activeLabel?: string;
+  /**
+   * Ticker label for the signed-out signup modal headline, e.g. `TSX-V: SCZ`.
+   * Used only when `itemType` is "company" — see the note in `toggle`.
+   */
+  signupTicker?: string;
 };
 
 const SetAlertButton = ({
@@ -23,9 +29,11 @@ const SetAlertButton = ({
   size = "md",
   label = "Set alert",
   activeLabel = "Alert on",
+  signupTicker,
 }: SetAlertButtonProps) => {
   const [on, setOn] = useState(false);
   const { isAuthenticated, loading } = useAuth();
+  const { openSignup } = useSignupModal();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -38,7 +46,16 @@ const SetAlertButton = ({
   }, [itemType, itemKey, isAuthenticated, loading]);
 
   const toggle = async () => {
+    if (loading) return;
     if (!isAuthenticated) {
+      /* Company filing alerts use the design's signup modal ("Get an email the
+         moment {TICKER} files"). Price alerts on a commodity, index or currency
+         keep the existing sign-in redirect: that headline is about filings and
+         would read as nonsense for "Gold" or "TSX". */
+      if (itemType === "company") {
+        openSignup({ context: "alert", ticker: signupTicker });
+        return;
+      }
       navigate(`/login?redirect=${encodeURIComponent(location.pathname)}`);
       return;
     }

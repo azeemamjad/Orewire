@@ -28,11 +28,11 @@
     --muted: 40 14% 94%;
     --muted-foreground: 220 12% 42%;
 
-    /* Verdict colors */
-    --noteworthy: 174 62% 30%;         /* teal */
+    /* Verdict colors — export palette: Noteworthy #0F766E, Watch #B45309 */
+    --noteworthy: 175 77% 26%;         /* #0F766E teal */
     --noteworthy-foreground: 0 0% 100%;
-    --watch: 42 80% 46%;               /* amber */
-    --watch-foreground: 220 45% 9%;
+    --watch: 26 90% 37%;               /* #B45309 amber */
+    --watch-foreground: 0 0% 100%;
     --routine: 220 8% 55%;             /* warm gray */
     --routine-foreground: 0 0% 100%;
 
@@ -80,9 +80,10 @@
     --secondary-foreground: 36 30% 94%;
     --muted: 220 25% 16%;
     --muted-foreground: 36 12% 65%;
-    --noteworthy: 174 62% 42%;
+    /* Verdict colors — lightened #0F766E / #B45309 so pills stay legible on navy */
+    --noteworthy: 175 60% 45%;
     --noteworthy-foreground: 220 45% 8%;
-    --watch: 38 88% 58%;
+    --watch: 26 85% 58%;
     --watch-foreground: 220 45% 8%;
     --routine: 220 8% 50%;
     --routine-foreground: 0 0% 100%;

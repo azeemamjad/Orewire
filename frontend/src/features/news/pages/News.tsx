@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Clock, FileText, X } from "lucide-react";
-import { Link, useSearchParams } from "react-router-dom";
+import { X } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import SiteLayout from "@/layouts/SiteLayout";
+import FeedRow from "@/components/site/FeedRow";
 import ListingPagination from "@/components/site/ListingPagination";
 import {
   ListFilterHeader,
@@ -12,7 +13,7 @@ import {
   type ListFilters,
 } from "@/components/site/ListFilterBar";
 import { fetchNewsFeed, type NewsItem } from "@/lib/api";
-import { getNewsFilingType, getNewsSeverity, severityStyle } from "@/lib/news-severity";
+import { getNewsFilingType } from "@/lib/news-severity";
 import { newsDisplayTime } from "@/components/site/news-release-utils";
 import {
   apiCommodityFromFilters,
@@ -191,7 +192,6 @@ const News = () => {
               <div className="card-surface">
                 <ul className="divide-y divide-border">
                   {pageItems.map((item, i) => {
-                    const sev = getNewsSeverity(item.sentiment, item.title);
                     const filingType = getNewsFilingType(item.title);
                     const linkState =
                       companyId && companyLabel
@@ -201,36 +201,19 @@ const News = () => {
                           }
                         : undefined;
                     return (
-                      <li key={`${item.link}-${i}`} className="hover:bg-background/60">
-                        <Link to={`/news/${toNewsSlug(item)}`} state={linkState} className="block px-4 py-4">
-                          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                            {item.ticker && (
-                              <span className="font-mono text-[13px] font-bold whitespace-nowrap">{item.ticker}</span>
-                            )}
-                            {item.exchange && (
-                              <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5 whitespace-nowrap">
-                                {item.exchange}
-                              </span>
-                            )}
-                            <span className={`font-mono text-[10px] uppercase tracking-widest px-1.5 py-0.5 font-bold whitespace-nowrap ${severityStyle[sev]}`}>
-                              {newsSignificanceLabel(item.sentiment, item.title)}
-                            </span>
-                            <span className="ml-auto font-mono text-[10px] text-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
-                              <Clock className="w-2.5 h-2.5" />
-                              {newsDisplayTime(item)}
-                            </span>
-                          </div>
-                          <div className="text-[13px] font-semibold text-foreground/90 mb-1 leading-snug truncate">{item.company || " "}</div>
-                          <div className="flex items-center gap-1 text-[13px] font-bold tracking-tight text-foreground leading-snug mb-1.5 min-w-0">
-                            <FileText className="w-3.5 h-3.5 text-accent shrink-0" />
-                            <span className="truncate">{item.title}</span>
-                          </div>
-                          <p className="text-[12px] leading-relaxed text-foreground/70 line-clamp-2 min-h-[2.6rem]">
-                            {cleanSummary(item.summary) || item.title}
-                          </p>
-                          <span className="mt-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{filingType}</span>
-                        </Link>
-                      </li>
+                      <FeedRow
+                        key={`${item.link}-${i}`}
+                        href={`/news/${toNewsSlug(item)}`}
+                        linkState={linkState}
+                        ticker={item.ticker}
+                        exchange={item.exchange}
+                        verdict={newsSignificanceLabel(item.sentiment, item.title)}
+                        typeLabel={filingType}
+                        time={newsDisplayTime(item)}
+                        company={item.company}
+                        category={item.commodity}
+                        summary={cleanSummary(item.summary) || item.title}
+                      />
                     );
                   })}
                 </ul>

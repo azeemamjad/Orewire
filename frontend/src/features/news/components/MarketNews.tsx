@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, ExternalLink, Newspaper } from "lucide-react";
+import { ArrowUpRight, Newspaper } from "lucide-react";
+import FeedRow from "@/components/site/FeedRow";
 import { fetchNewsFeed, type NewsItem } from "@/lib/api";
 
 const REFETCH_MS = 30 * 60 * 1000;
@@ -19,36 +20,14 @@ const placeholderNews: NewsItem[] = [
 ];
 
 const NewsRow = ({ item }: { item: NewsItem }) => (
-  <li className="h-[6rem]">
-    <a
-      href={item.link}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="group flex h-full items-start gap-3 px-4 py-4 w-full hover:bg-background/60 transition-colors"
-    >
-      <div className="flex-1 min-w-0 flex flex-col justify-between gap-2">
-        <div className="text-[13px] font-semibold leading-snug text-foreground group-hover:text-accent transition-colors line-clamp-2">
-          {item.title}
-        </div>
-        <div className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
-          <span className="uppercase tracking-wider text-foreground/80">{item.source}</span>
-          {item.timeAgo && (
-            <>
-              <span>·</span>
-              <span>{item.timeAgo}</span>
-            </>
-          )}
-          {item.commodity && (
-            <>
-              <span>·</span>
-              <span className="uppercase tracking-wider truncate">{item.commodity}</span>
-            </>
-          )}
-        </div>
-      </div>
-      <ExternalLink className="w-3.5 h-3.5 text-muted-foreground group-hover:text-accent shrink-0 mt-1" />
-    </a>
-  </li>
+  <FeedRow
+    className="h-[6rem] flex-1"
+    externalHref={item.link}
+    company={item.title}
+    time={item.timeAgo}
+    category={item.commodity}
+    source={item.source}
+  />
 );
 
 const MarketNews = () => {

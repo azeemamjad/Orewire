@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, ExternalLink, Newspaper } from "lucide-react";
+import { ArrowUpRight, Newspaper } from "lucide-react";
+import FeedRow from "@/components/site/FeedRow";
 import { fetchNewsFeed, type NewsItem } from "@/lib/api";
 import { googleNewsRssUrl } from "@/components/site/MarketNewsKeywordSection";
 
@@ -8,36 +9,13 @@ const REFETCH_MS = 30 * 60 * 1000;
 
 function NewsRow({ item }: { item: NewsItem }) {
   return (
-    <li>
-      <a
-        href={item.link?.startsWith("http") ? item.link : "#"}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="group flex items-start gap-3 px-4 py-4 hover:bg-background/60 transition-colors"
-      >
-        <div className="flex-1 min-w-0">
-          <div className="text-[15px] font-semibold leading-snug text-foreground group-hover:text-accent transition-colors">
-            {item.title}
-          </div>
-          <div className="mt-1.5 flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
-            <span className="uppercase tracking-wider text-foreground/80">{item.source || "Google News"}</span>
-            {item.timeAgo && (
-              <>
-                <span>·</span>
-                <span>{item.timeAgo}</span>
-              </>
-            )}
-            {item.commodity && (
-              <>
-                <span>·</span>
-                <span className="uppercase tracking-wider">{item.commodity}</span>
-              </>
-            )}
-          </div>
-        </div>
-        <ExternalLink className="w-3.5 h-3.5 text-muted-foreground group-hover:text-accent shrink-0 mt-1" />
-      </a>
-    </li>
+    <FeedRow
+      externalHref={item.link?.startsWith("http") ? item.link : "#"}
+      company={item.title}
+      time={item.timeAgo}
+      category={item.commodity}
+      source={item.source || "Google News"}
+    />
   );
 }
 

@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, Clock, Sparkles } from "lucide-react";
+import { ArrowUpRight, Sparkles } from "lucide-react";
+import FeedRow from "@/components/site/FeedRow";
+import FeedGate from "@/components/site/FeedGate";
 import { fetchFilings, type Filing, type Verdict } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -26,14 +28,6 @@ const FILING_TYPES = [
   "Substantial Holder Notices",
 ];
 
-const verdictStyle: Record<string, string> = {
-  Noteworthy: "bg-[hsl(var(--noteworthy))] text-[hsl(var(--noteworthy-foreground))]",
-  Watch: "bg-[hsl(var(--watch))] text-[hsl(var(--watch-foreground))]",
-  Routine: "bg-[hsl(var(--routine))] text-[hsl(var(--routine-foreground))]",
-  "Extraction failed": "bg-muted text-muted-foreground",
-  "Company mismatch": "bg-amber-500/15 text-amber-800 dark:text-amber-200",
-};
-
 const placeholderFilings: Filing[] = [
   { id: -1, ticker: "SCZ", company: "Scorpio Gold Resources", exchange: "TSX-V", filingType: "NI 43-101", verdict: "Noteworthy", commodity: "Gold", time: "22 min ago", summary: "Updated MRE: 1.42 Moz Indicated @ 1.8 g/t Au - 31% category upgrade vs prior." },
   { id: -2, ticker: "DEG", company: "De Grey Mining", exchange: "ASX", filingType: "JORC Resource", verdict: "Noteworthy", commodity: "Gold", time: "1 hr ago", summary: "Hemi JORC 2012 update: 11.7 Moz total; Indicated now 6.8 Moz." },
@@ -48,34 +42,16 @@ const placeholderFilings: Filing[] = [
 ];
 
 const FilingCard = ({ item }: { item: Filing }) => (
-  <Link
-    to={`/filings/${item.id}`}
-    className="block border border-border bg-card hover:bg-muted/40 transition-colors px-4 py-3.5"
-  >
-    <div className="flex items-center gap-2.5 mb-2 flex-wrap">
-      <span className="font-mono text-[18px] font-extrabold tracking-tight leading-none">{item.ticker}</span>
-      <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1.5 py-0.5">
-        {item.exchange}
-      </span>
-      <span className="text-[15px] font-semibold leading-none truncate max-w-[45%]">{item.company}</span>
-      {item.verdict && (
-        <span className={`text-[10px] font-mono uppercase tracking-widest font-bold px-2 py-0.5 rounded-full ${verdictStyle[item.verdict]}`}>
-          {item.verdict}
-        </span>
-      )}
-      <span className="font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 border border-border text-muted-foreground">
-        {item.filingType}
-      </span>
-      <span className="ml-auto font-mono text-[10px] text-muted-foreground inline-flex items-center gap-1 shrink-0">
-        <Clock className="w-2.5 h-2.5" />
-        {item.time}
-      </span>
-    </div>
-    <p className="text-[13px] leading-snug text-foreground/85 pl-0.5">
-      <Sparkles className="inline w-3 h-3 text-accent mr-1 -mt-0.5" />
-      {item.summary}
-    </p>
-  </Link>
+  <FeedRow
+    href={`/filings/${item.id}`}
+    ticker={item.ticker}
+    exchange={item.exchange}
+    verdict={item.verdict}
+    typeLabel={item.filingType}
+    time={item.time}
+    company={item.company}
+    summary={item.summary}
+  />
 );
 
 const LiveFeed = () => {
@@ -97,7 +73,8 @@ const LiveFeed = () => {
   );
 
   const visible = filtered.slice(0, 5);
-  // Logged-out visitors see a blurred teaser of the next filings behind a sign-up gate.
+  // Logged-out visitors see a blurred teaser of the next filings behind the
+  // shared sign-up gate (5 visible, 5 teased - unchanged).
   const locked = isAuthenticated ? [] : filtered.slice(5, 10);
 
   return (
@@ -164,30 +141,35 @@ const LiveFeed = () => {
         </div>
 
         <div className="relative">
-          <div className="space-y-2">
-            {visible.length === 0 ? (
-              <div className="py-12 text-center text-muted-foreground text-sm">No filings match this filter.</div>
-            ) : (
-              visible.map((item) => <FilingCard key={item.id} item={item} />)
-            )}
-          </div>
+          {visible.length === 0 ? (
+            <div className="border border-dashed border-border p-12 text-center text-muted-foreground text-sm">
+              No filings match this filter.
+              <button
+                type="button"
+                onClick={() => setFilter("All")}
+                className="mt-3 block mx-auto text-sm text-foreground underline"
+              >
+                Reset
+              </button>
+            </div>
+          ) : (
+            <div className="card-surface">
+              <ul className="divide-y divide-border">
+                {visible.map((item) => (
+                  <FilingCard key={item.id} item={item} />
+                ))}
+              </ul>
+            </div>
+          )}
 
           {locked.length > 0 && (
-            <div className="relative mt-2">
-              <div className="space-y-2 pointer-events-none select-none blur-sm opacity-70">
+            <FeedGate>
+              <ul className="card-surface divide-y divide-border">
                 {locked.map((item) => (
                   <FilingCard key={item.id} item={item} />
                 ))}
-              </div>
-              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-b from-background/30 via-background/70 to-background">
-                <Link
-                  to="/register"
-                  className="inline-flex items-center gap-2 bg-accent text-accent-foreground px-5 h-11 text-sm font-semibold hover:opacity-90 transition-opacity"
-                >
-                  Sign up free to see more <ArrowUpRight className="w-4 h-4" />
-                </Link>
-              </div>
-            </div>
+              </ul>
+            </FeedGate>
           )}
 
           {isAuthenticated && (

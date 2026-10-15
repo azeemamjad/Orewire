@@ -30,7 +30,9 @@ const Login = () => {
   const [lastName, setLastName] = useState("");
   const [username, setUsername] = useState("");
   const [company, setCompany] = useState("");
-  const [email, setEmail] = useState("");
+  // SignupModal hands off here with the address the visitor typed, so it is not
+  // asked for twice. Nothing else reads `email` from the query string.
+  const [email, setEmail] = useState(new URLSearchParams(location.search).get("email") || "");
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");

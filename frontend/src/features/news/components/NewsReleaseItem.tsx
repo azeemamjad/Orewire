@@ -1,6 +1,4 @@
-import { Link } from "react-router-dom";
-import { Clock, FileText } from "lucide-react";
-import { newsSeverityStyle, getNewsSeverity, newsDisplayTime } from "@/lib/news-severity";
+import FeedRow from "@/components/site/FeedRow";
 
 export type NewsReleaseItemProps = {
   href: string;
@@ -13,7 +11,14 @@ export type NewsReleaseItemProps = {
   summary: string;
 };
 
-/** Single row in the hero “News releases” panel. */
+/**
+ * Single row in the hero “News releases” panel.
+ *
+ * The row presentation lives in <FeedRow> so this panel, the /news list and the
+ * /filings list render identical rows. `severity` accepts the internal
+ * Critical/High/Medium/Low scale as well as real verdicts; FeedRow normalises it
+ * to Noteworthy | Watch | Routine so the internal scale is never shown.
+ */
 const NewsReleaseItem = ({
   href,
   ticker,
@@ -24,39 +29,17 @@ const NewsReleaseItem = ({
   filingType,
   summary,
 }: NewsReleaseItemProps) => (
-  <li className="hover:bg-background/60">
-    <Link to={href} className="block px-3.5 py-3">
-      <div className="flex items-center gap-2 mb-1.5">
-        <span className="font-mono text-[13px] font-bold whitespace-nowrap">{ticker}</span>
-        {exchange ? (
-          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1 py-0.5 whitespace-nowrap">
-            {exchange}
-          </span>
-        ) : null}
-        <span className="ml-auto font-mono text-[10px] text-muted-foreground inline-flex items-center gap-1 shrink-0 whitespace-nowrap">
-          <Clock className="w-2.5 h-2.5" />
-          {timeAgo}
-        </span>
-      </div>
-      <div className="text-[12px] font-semibold text-foreground/90 mb-1.5 leading-snug truncate min-h-[1.125rem]">
-        {company || "\u00A0"}
-      </div>
-      <div className="flex items-center gap-1.5 mb-1.5 min-w-0">
-        <span
-          className={`font-mono text-[10px] uppercase tracking-widest px-1.5 py-0.5 font-bold whitespace-nowrap shrink-0 ${newsSeverityStyle[severity] || newsSeverityStyle.Low}`}
-        >
-          {severity}
-        </span>
-        <span className="inline-flex items-center gap-1 text-[12px] font-bold tracking-tight text-foreground leading-snug min-w-0 truncate">
-          <FileText className="w-3 h-3 text-accent shrink-0" />
-          <span className="truncate">{filingType}</span>
-        </span>
-      </div>
-      <p className="text-[12px] leading-relaxed text-foreground/70 line-clamp-2 min-h-[2.5rem]">
-        {summary || "\u00A0"}
-      </p>
-    </Link>
-  </li>
+  <FeedRow
+    density="dense"
+    href={href}
+    ticker={ticker}
+    exchange={exchange}
+    verdict={severity}
+    typeLabel={filingType}
+    time={timeAgo}
+    company={company}
+    summary={summary}
+  />
 );
 
 export default NewsReleaseItem;

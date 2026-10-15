@@ -24,6 +24,7 @@ import {
 import { fetchCompany, fetchCompanyProfile, fetchDiscussions, postDiscussion, voteDiscussion, fetchCompanyNews, fetchCompanyInsiders, fetchCompanySnapshot, login as apiLogin, register as apiRegister, type Discussion, type InsiderTransaction, type NewsItem } from "@/lib/api";
 import { getNewsSeverity, getNewsTags } from "@/lib/news-severity";
 import { useAuth } from "@/hooks/use-auth";
+import { useSignupModal } from "@/hooks/use-signup-modal";
 import { useState, useEffect, type ReactNode } from "react";
 import SiteLayout from "@/layouts/SiteLayout";
 import SetAlertButton from "@/components/site/SetAlertButton";
@@ -172,6 +173,8 @@ function buildCompanySeo(
 const CompanyDetail = () => {
   const { slug } = useParams();
   const [inWatchlist, setInWatchlist] = useState(false);
+  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { openSignup } = useSignupModal();
 
   const { data, isLoading } = useQuery({
     queryKey: ["company", slug],
@@ -308,6 +311,14 @@ const CompanyDetail = () => {
               <button
                 type="button"
                 onClick={async () => {
+                  if (authLoading) return;
+                  /* Signed-out: the same button now opens the signup modal
+                     (context "watchlist") instead of firing a POST that the API
+                     would reject. Signed-in behaviour is untouched below. */
+                  if (!isAuthenticated) {
+                    openSignup({ context: "watchlist", ticker: signupTickerLabel(data) });
+                    return;
+                  }
                   try {
                     if (inWatchlist) {
                       await removeFromWatchlist("company", String(data.id));
@@ -335,6 +346,7 @@ const CompanyDetail = () => {
                 companyId={data.id}
                 label="News alerts"
                 activeLabel="News alerts on"
+                signupTicker={signupTickerLabel(data)}
               />
             </div>
           </div>
@@ -795,6 +807,18 @@ function fmtExchange(ex?: string): string {
   return ex.toUpperCase() === "TSXV" ? "TSX-V" : ex;
 }
 
+/**
+ * `TSX-V: SCZ` — the label the signed-out signup modal headlines use for
+ * `context: "watchlist"` ("Track … for free") and `context: "alert"` ("Get an
+ * email the moment … files"). Falls back to the company name, and finally to
+ * "this company", so the headline never renders with a blank ticker.
+ */
+function signupTickerLabel(company: { ticker?: string | null; exchange?: string | null; name?: string | null }): string {
+  const ex = fmtExchange(company.exchange || undefined);
+  if (company.ticker) return ex ? `${ex}: ${company.ticker}` : company.ticker;
+  return company.name || "this company";
+}
+
 // Filing verdicts come from the API lowercase ("noteworthy"); normalize to the
 // capitalized form used by the verdict pills and filters everywhere else.
 function capVerdict(v: string | null): string | null {
@@ -1181,6 +1205,8 @@ function fmtInsiderDate(d: string | null): string {
 }
 
 const InsiderTransactionsSection = ({ companyId }: { companyId: number }) => {
+  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { openSignup } = useSignupModal();
   const { data } = useQuery({
     queryKey: ["company-insiders", companyId],
     queryFn: () => fetchCompanyInsiders(companyId),
@@ -1191,6 +1217,15 @@ const InsiderTransactionsSection = ({ companyId }: { companyId: number }) => {
   const transactions = data?.transactions ?? [];
   const registered = data?.registered ?? false;
   const moreTx = (data?.transactionsTotal ?? 0) - transactions.length;
+
+  /**
+   * Presentational gate only. The request is unchanged — fetchCompanyInsiders()
+   * is called exactly as before — and a signed-out visitor is simply shown the
+   * newest five rows plus one lock row. Signed-in visitors (and anyone whose
+   * stored token is still being verified) keep the full table.
+   */
+  const insidersLocked = !authLoading && !isAuthenticated;
+  const visibleTransactions = insidersLocked ? transactions.slice(0, 5) : transactions;
 
   if (transactions.length === 0) {
     return (
@@ -1225,7 +1260,7 @@ const InsiderTransactionsSection = ({ companyId }: { companyId: number }) => {
             </tr>
           </thead>
           <tbody>
-            {transactions.map((t, i) => {
+            {visibleTransactions.map((t, i) => {
               const sell = isInsiderSell(t);
               const typeLabel = insiderTxTypeLabel(t);
               return (
@@ -1259,12 +1294,25 @@ const InsiderTransactionsSection = ({ companyId }: { companyId: number }) => {
           </tbody>
         </table>
       </div>
-      {!registered && moreTx > 0 && (
-        <p className="text-center mt-3">
-          <Link to="/register" className="text-[12px] font-mono uppercase tracking-widest text-accent hover:underline">
-            Sign up free to see all {data?.transactionsTotal} transactions →
-          </Link>
-        </p>
+      {insidersLocked ? (
+        /* One lock row, per the design: not a blurred teaser, and no counts. */
+        <button
+          type="button"
+          onClick={() => openSignup({ context: "insiders" })}
+          className="mt-3 w-full inline-flex items-center justify-center gap-2 border border-dashed border-border bg-muted/20 px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors"
+        >
+          <Lock size={14} className="shrink-0" aria-hidden="true" />
+          See all insiders, free
+        </button>
+      ) : (
+        !registered &&
+        moreTx > 0 && (
+          <p className="text-center mt-3">
+            <Link to="/register" className="text-[12px] font-mono uppercase tracking-widest text-accent hover:underline">
+              Sign up free to see all {data?.transactionsTotal} transactions →
+            </Link>
+          </p>
+        )
       )}
       <p className="text-xs text-muted-foreground mt-3 font-mono">Source: SEDI insider reports · last 90 days</p>
     </section>

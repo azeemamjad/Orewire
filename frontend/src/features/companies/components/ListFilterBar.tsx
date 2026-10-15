@@ -1,7 +1,9 @@
-import { Search, Filter, Sparkles, X } from "lucide-react";
+import { Search, Filter, Sparkles, X, Lock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/features/auth/hooks";
+import { useSignupModal } from "@/hooks/use-signup-modal";
 
 export const SEVERITIES = ["Noteworthy", "Watch", "Routine"] as const;
 export const EXCHANGES = ["TSX", "TSX-V", "CSE", "ASX"] as const;
@@ -23,24 +25,45 @@ export function toggle<T>(arr: T[], v: T): T[] {
   return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
 }
 
-const Chip = ({
+/**
+ * FilterChip — one filter control, and the single place the anonymous lock is
+ * drawn.
+ *
+ * The design keeps the filters on screen for signed-out visitors: the chip stays
+ * exactly where it was, gains a small grey padlock (lucide `Lock`, 14px), and
+ * clicking it opens the signup modal with context "filters" instead of filtering.
+ * Signed-in visitors call `onClick` unchanged, and the chip renders exactly as it
+ * did before this lock existed.
+ *
+ * `locked` is passed in by the caller rather than read from useAuth() here, so
+ * that the calling list decides when a visitor counts as anonymous. Callers must
+ * pass `false` while auth is still loading, otherwise a signed-in visitor would
+ * see the padlock flash on first paint.
+ */
+export const FilterChip = ({
   active,
+  locked = false,
   onClick,
   children,
 }: {
   active: boolean;
+  locked?: boolean;
   onClick: () => void;
   children: React.ReactNode;
 }) => (
   <button
     type="button"
     onClick={onClick}
-    className={`px-3 py-1.5 text-xs font-medium border transition-colors ${
+    aria-disabled={locked || undefined}
+    className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border transition-colors ${
       active
         ? "bg-foreground text-background border-foreground"
-        : "bg-card text-foreground/80 border-border hover:border-foreground/40"
+        : locked
+          ? "bg-card text-muted-foreground border-border hover:border-foreground/40"
+          : "bg-card text-foreground/80 border-border hover:border-foreground/40"
     }`}
   >
+    {locked && <Lock size={14} className="shrink-0 text-muted-foreground" aria-hidden="true" />}
     {children}
   </button>
 );
@@ -50,19 +73,28 @@ const Group = ({
   items,
   selected,
   onToggle,
+  locked = false,
+  onLockedClick,
 }: {
   label: string;
   items: readonly string[];
   selected: string[];
   onToggle: (v: string) => void;
+  locked?: boolean;
+  onLockedClick?: () => void;
 }) => (
   <div className="border-t border-border py-4">
     <h4 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-3">{label}</h4>
     <div className="flex flex-wrap gap-1.5">
       {items.map((i) => (
-        <Chip key={i} active={selected.includes(i)} onClick={() => onToggle(i)}>
+        <FilterChip
+          key={i}
+          active={selected.includes(i)}
+          locked={locked}
+          onClick={() => (locked ? onLockedClick?.() : onToggle(i))}
+        >
           {i}
-        </Chip>
+        </FilterChip>
       ))}
     </div>
   </div>
@@ -158,7 +190,20 @@ export function ListFilterSidebar({
   severityLabel = "Significance",
   severityItems = SEVERITIES,
 }: Pick<Props, "filters" | "setFilters" | "showSeverity" | "showExchange" | "showCommodity" | "severityLabel" | "severityItems">) {
+  const { isAuthenticated, loading } = useAuth();
+  const { openSignup } = useSignupModal();
   const activeCount = filters.severities.length + filters.exchanges.length + filters.commodities.length;
+
+  /**
+   * Signed-out visitors get the locked treatment; signed-in visitors (and anyone
+   * whose stored token is still being verified) keep the filters working exactly
+   * as before. Nothing about the request changes either way — list pages fetch
+   * the same endpoint and only a click is intercepted — so this is a conversion
+   * prompt, not access control.
+   */
+  const locked = !loading && !isAuthenticated;
+  const onLockedClick = () => openSignup({ context: "filters" });
+
   return (
     <aside>
       <div className="flex items-center justify-between mb-2">
@@ -185,6 +230,8 @@ export function ListFilterSidebar({
           items={severityItems}
           selected={filters.severities}
           onToggle={(v) => setFilters({ ...filters, severities: toggle(filters.severities, v) })}
+          locked={locked}
+          onLockedClick={onLockedClick}
         />
       )}
       {showExchange && (
@@ -193,6 +240,8 @@ export function ListFilterSidebar({
           items={EXCHANGES}
           selected={filters.exchanges}
           onToggle={(v) => setFilters({ ...filters, exchanges: toggle(filters.exchanges, v) })}
+          locked={locked}
+          onLockedClick={onLockedClick}
         />
       )}
       {showCommodity && (
@@ -201,6 +250,8 @@ export function ListFilterSidebar({
           items={COMMODITIES}
           selected={filters.commodities}
           onToggle={(v) => setFilters({ ...filters, commodities: toggle(filters.commodities, v) })}
+          locked={locked}
+          onLockedClick={onLockedClick}
         />
       )}
     </aside>
