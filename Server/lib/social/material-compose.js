@@ -194,7 +194,8 @@ function buildUserPrompt(candidate, { shorten = false, extra = '' } = {}) {
   return `CATEGORY: ${spec.label}
 
 1) "title" — a SHORT completion of the fixed opener. The system prints:
-   "<emoji>${company ? ` ${company}` : ''} $${candidate.ticker} <your title> <emoji>"
+   "${company ? `${company} ` : ''}($${candidate.ticker}) <your title> <emoji>"
+   The opener has no leading emoji; the only emoji is the trailing one shown above.
    So do NOT repeat the company name or the ticker, and do NOT add emojis. ${TITLE_GUIDE[cat] || ''}
 
 2) "body" — an array of 1-${Math.max(1, guide.length)} short lines following this shape exactly

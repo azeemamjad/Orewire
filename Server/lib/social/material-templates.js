@@ -375,7 +375,10 @@ function buildText({ templateKey, ticker, title, body = [], commodity, url, comp
   const t = TEMPLATES[templateKey];
   if (!t) throw new Error(`Unknown template: ${templateKey}`);
 
-  const sym = ticker ? `$${String(ticker).toUpperCase().replace(/^\$/, '')}` : '';
+  // The symbol is parenthesised: "Diatreme Resources Limited ($DRX)". A bare "$DRX"
+  // running straight on from the name reads as part of the sentence, and the
+  // parenthesised form is what readers expect from a company-plus-cashtag opener.
+  const sym = ticker ? `($${String(ticker).toUpperCase().replace(/^\$/, '')})` : '';
 
   // The company name leads the opener and the cashtag follows it, so a reader who does
   // not know the symbol can tell who the post is about without opening the link. Both
