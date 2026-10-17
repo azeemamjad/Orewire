@@ -2570,6 +2570,9 @@ async function resetUserPassword(userId, sendEmail) {
     loadUsers();
   } catch (err) { toast(err.message, 'err'); }
 }
+function openUserDetail(id) {
+  window.location.href = `/admin/user-detail.html?id=${id}`;
+}
 async function loadUsers() {
   const tbody = document.getElementById('users-body');
   if (!tbody) return;
@@ -2586,14 +2589,14 @@ async function loadUsers() {
     tbody.innerHTML = items.map((u) => {
       const name = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || 'N/A';
       const created = u.createdAt ? new Date(u.createdAt).toLocaleString() : 'N/A';
-      return `<tr>
-        <td>${esc(name)}</td>
+      return `<tr style="cursor:pointer;" title="Open user detail" onclick="openUserDetail(${u.id})">
+        <td><strong>${esc(name)}</strong></td>
         <td>${esc(u.email)}</td>
         <td>${esc(u.company || 'N/A')}</td>
         <td>${esc(u.username || 'N/A')}</td>
         <td>${u.emailVerified ? '✓' : 'N/A'}</td>
         <td style="font-size:12px;color:var(--muted);">${esc(created)}</td>
-        <td class="user-actions">
+        <td class="user-actions" onclick="event.stopPropagation()">
           <button class="btn btn-primary btn-sm" type="button" onclick="resetUserPassword(${u.id}, true)" title="Generate temp password and email">📧 Send password</button>
           <button class="btn btn-ghost btn-sm" type="button" onclick="resetUserPassword(${u.id}, false)" title="Generate temp password only">🔑 Temp PW</button>
         </td>

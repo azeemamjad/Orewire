@@ -1108,6 +1108,39 @@ function requireUser(req, res, next) {
   next();
 }
 
+// ── Live/page tracking (logged-in users) ─────────────────────────────────
+// Frontend pings this on every route change (with path) and on a ~60s
+// heartbeat (no path). Only identified users are recorded.
+router.post('/track-live', attachUser, async (req, res) => {
+  try {
+    if (!req.user) return res.json({ ok: true, tracked: false });
+    const userId = req.user.id;
+    const path = String(req.body?.path || '').slice(0, 300).trim();
+
+    // De-dupe: skip a page view identical to the user's most recent one
+    // (React re-renders / double effects can fire twice for one navigation).
+    if (path) {
+      const last = await db.query(
+        'SELECT path FROM user_page_visits WHERE user_id = $1 ORDER BY visited_at DESC LIMIT 1',
+        [userId],
+      );
+      if (!last.rows.length || last.rows[0].path !== path) {
+        await db.query(
+          'INSERT INTO user_page_visits (user_id, path) VALUES ($1, $2)',
+          [userId, path],
+        );
+      }
+    }
+
+    await db.query('UPDATE users SET last_live_at = NOW() WHERE id = $1', [userId]);
+    res.json({ ok: true, tracked: true });
+  } catch (err) {
+    // Tracking must never break the user's browsing experience
+    console.error('track-live failed:', err?.message || err);
+    res.json({ ok: false });
+  }
+});
+
 module.exports = {
   router,
   adminAuth,

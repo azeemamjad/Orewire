@@ -324,6 +324,18 @@ async function migrate() {
 
   await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS watchlist_alerts_enabled BOOLEAN DEFAULT TRUE`);
 
+  // Page-visit tracking (admin user detail: recent pages + last-live presence)
+  await safeQuery(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_live_at TIMESTAMPTZ`);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS user_page_visits (
+      id          SERIAL PRIMARY KEY,
+      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      path        TEXT NOT NULL,
+      visited_at  TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await safeQuery(`CREATE INDEX IF NOT EXISTS idx_user_page_visits_user_time ON user_page_visits(user_id, visited_at DESC)`);
+
   await db.query(`
     CREATE TABLE IF NOT EXISTS watchlist_filing_email_sent (
       user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

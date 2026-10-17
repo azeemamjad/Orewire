@@ -9,6 +9,7 @@ import WatchlistAlertsRunner from "@/components/shared/WatchlistAlertsRunner";
 import ForcePasswordChangeGuard from "@/components/shared/ForcePasswordChangeGuard";
 import ForceSignupAgreementsGuard from "@/components/shared/ForceSignupAgreementsGuard";
 import ScrollToTop from "@/components/shared/ScrollToTop";
+import PageViewTracker from "@/components/shared/PageViewTracker";
 import CookieConsent from "@/components/shared/CookieConsent";
 
 const queryClient = new QueryClient();
@@ -24,6 +25,7 @@ const App = () => (
             location, and any page can open it through useSignupModal(). */}
         <SignupModalProvider>
           <ScrollToTop />
+          <PageViewTracker />
           <ForcePasswordChangeGuard />
           <ForceSignupAgreementsGuard />
           <AppRoutes />

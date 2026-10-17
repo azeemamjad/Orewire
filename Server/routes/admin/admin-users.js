@@ -25,6 +25,7 @@ function formatUser(row) {
     watchlistAlertsEnabled: row.watchlist_alerts_enabled != null ? Boolean(row.watchlist_alerts_enabled) : true,
     mustChangePassword: Boolean(row.must_change_password),
     createdByAdmin: Boolean(row.created_by_admin),
+    lastLiveAt: row.last_live_at,
     createdAt: row.created_at,
   };
 }
@@ -38,7 +39,7 @@ function validateName(value, label) {
 }
 
 const USER_SELECT = `id, email, username, first_name, last_name, company, email_verified, two_step_enabled,
-  briefing_enabled, watchlist_alerts_enabled, must_change_password, created_by_admin, created_at`;
+  briefing_enabled, watchlist_alerts_enabled, must_change_password, created_by_admin, created_at, last_live_at`;
 
 function trimCompany(value) {
   const s = String(value || '').trim();
@@ -131,6 +132,51 @@ router.post('/', express.json(), async (req, res) => {
   } catch (err) {
     console.error('Admin create user failed:', err?.message || err);
     res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+// GET /api/admin/users/:id — single user detail (+ light activity info)
+router.get('/:id', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
+
+    const r = await db.query(
+      `SELECT ${USER_SELECT}, password_set_at FROM users WHERE id = $1`,
+      [id],
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'User not found' });
+
+    const [watchlist, briefingSub, visits] = await Promise.all([
+      db.query('SELECT COUNT(*)::int AS n FROM watchlist WHERE user_id = $1', [id])
+        .catch(() => ({ rows: [{ n: 0 }] })),
+      db.query(
+        'SELECT id, created_at, unsubscribed_at FROM briefing_subscribers WHERE email = $1',
+        [r.rows[0].email],
+      ).catch(() => ({ rows: [] })),
+      db.query(
+        `SELECT path, visited_at FROM user_page_visits
+         WHERE user_id = $1 ORDER BY visited_at DESC LIMIT 10`,
+        [id],
+      ).catch(() => ({ rows: [] })),
+    ]);
+
+    const sub = briefingSub.rows[0] || null;
+    res.json({
+      user: {
+        ...formatUser(r.rows[0]),
+        passwordSetAt: r.rows[0].password_set_at,
+        lastLiveAt: r.rows[0].last_live_at,
+      },
+      watchlistCount: watchlist.rows[0]?.n ?? 0,
+      briefingSubscription: sub
+        ? { id: sub.id, createdAt: sub.created_at, active: !sub.unsubscribed_at }
+        : null,
+      recentPages: visits.rows.map((v) => ({ path: v.path, visitedAt: v.visited_at })),
+    });
+  } catch (err) {
+    console.error('Admin user detail failed:', err?.message || err);
+    res.status(500).json({ error: 'Failed to load user' });
   }
 });
 
