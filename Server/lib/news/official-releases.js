@@ -191,12 +191,22 @@ let _officialSyncRunning = false;
 /**
  * Sync official releases for every listed company whose cooldown expired.
  * Called from the news pipeline cron; also safe to trigger manually.
+ *
+ * Newsfile (Canadian sources) sits behind an aggressive WAF and starts
+ * answering 403 after a sustained burst, so Canadian companies get a longer
+ * spacing than the ASX JSON API, and a 403 triggers one 60s back-off + retry
+ * before the rest of the Canadian sweep is abandoned for this run.
  */
-async function runOfficialReleasesSync({ delayMs = 750, enrich = true, limit = null } = {}) {
+async function runOfficialReleasesSync({
+  asxDelayMs = 500,
+  canadianDelayMs = 2500,
+  enrich = true,
+  limit = null,
+} = {}) {
   if (_officialSyncRunning) return { skipped: true };
   _officialSyncRunning = true;
   const { addLog } = require('../../pipeline/state');
-  const stats = { due: 0, inserted: 0, withNew: 0, errors: 0, companies: 0 };
+  const stats = { due: 0, inserted: 0, withNew: 0, errors: 0, companies: 0, canadianAborted: false };
 
   try {
     const result = await db.query(
@@ -208,35 +218,56 @@ async function runOfficialReleasesSync({ delayMs = 750, enrich = true, limit = n
     stats.companies = result.rows.length;
     if (limit) result.rows = result.rows.slice(0, limit);
 
-    addLog('out', `[News Pipeline] [Official] Starting sync — ${stats.companies} companies (${delayMs}ms spacing)`);
+    addLog(
+      'out',
+      `[News Pipeline] [Official] Starting sync — ${stats.companies} companies (ASX ${asxDelayMs}ms / Newsfile ${canadianDelayMs}ms spacing)`,
+    );
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    let canadianBlocked = false;
 
     for (const row of result.rows) {
       const company = { name: row.name, ticker: row.ticker, exchange: row.exchange, companyId: row.id };
+      const isAsx = isAsxExchange(row.exchange);
+      if (!isAsx && canadianBlocked) continue;
       if (!officialSyncDue(row.id)) continue;
-      _officialSyncAt.set(row.id, Date.now());
       stats.due++;
 
       try {
-        const res = await syncOfficialCompanyReleases(company, { enrich });
-        if (res.error) {
+        let res = await syncOfficialCompanyReleases(company, { enrich });
+
+        if (!isAsx && res?.error && /403/.test(res.error)) {
+          addLog('warn', `[News Pipeline] [Official] Newsfile rate-limited at ${row.ticker} — backing off 60s`);
+          await sleep(60_000);
+          res = await syncOfficialCompanyReleases(company, { enrich });
+          if (res?.error && /403/.test(res.error)) {
+            canadianBlocked = true;
+            stats.canadianAborted = true;
+            addLog('warn', `[News Pipeline] [Official] Newsfile still 403 — skipping remaining Canadian companies this run`);
+            continue;
+          }
+        }
+
+        if (res?.error) {
           stats.errors++;
-        } else if (res.inserted > 0) {
-          stats.withNew++;
-          stats.inserted += res.inserted;
-          addLog('out', `[News Pipeline] [Official] ${row.ticker}: ${res.inserted} new (${res.source})`);
+        } else {
+          _officialSyncAt.set(row.id, Date.now());
+          if (res.inserted > 0) {
+            stats.withNew++;
+            stats.inserted += res.inserted;
+            addLog('out', `[News Pipeline] [Official] ${row.ticker}: ${res.inserted} new (${res.source})`);
+          }
         }
       } catch (err) {
         stats.errors++;
         addLog('err', `[News Pipeline] [Official] ${row.ticker || row.name}: ${err.message}`);
       }
 
-      await sleep(delayMs);
+      await sleep(isAsx ? asxDelayMs : canadianDelayMs);
     }
 
     addLog(
       'out',
-      `[News Pipeline] [Official] Done — ${stats.companies} companies, ${stats.due} synced, ${stats.withNew} with new releases, ${stats.inserted} inserted, ${stats.errors} errors`,
+      `[News Pipeline] [Official] Done — ${stats.companies} companies, ${stats.due} due, ${stats.withNew} with new releases, ${stats.inserted} inserted, ${stats.errors} errors${stats.canadianAborted ? ' (Newsfile aborted after 403)' : ''}`,
     );
   } catch (err) {
     addLog('err', `[News Pipeline] [Official] Fatal: ${err.message}`);

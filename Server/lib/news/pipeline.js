@@ -54,7 +54,7 @@ async function runNewsPipeline() {
     // feed; keep them fresh on a per-company cooldown instead.
     try {
       const { runOfficialReleasesSync } = require('./official-releases');
-      await runOfficialReleasesSync();
+      await runOfficialReleasesSync({ asxDelayMs: 600, canadianDelayMs: 3000 });
     } catch (err) {
       addLog('err', `[News Pipeline] Official releases sync failed: ${err.message}`);
     }
