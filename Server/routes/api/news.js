@@ -234,6 +234,20 @@ router.get('/company/:name', async (req, res) => {
         companyId,
       });
       result = await runQuery();
+    } else if (companyId && result.rows.length && result.rows[0].pub_date) {
+      // Rows exist but may be stale: refresh in the background when the newest
+      // stored release is over a day old. Cooldown-guarded, so repeated page
+      // views do not hammer the upstream ASX / Newsfile APIs.
+      const newest = new Date(result.rows[0].pub_date).getTime();
+      if (Number.isFinite(newest) && Date.now() - newest > 24 * 60 * 60 * 1000) {
+        const { syncOfficialCompanyReleasesThrottled } = require('../../lib/news/official-releases');
+        syncOfficialCompanyReleasesThrottled({
+          name: companyName,
+          ticker,
+          exchange,
+          companyId,
+        }).catch(() => { /* best effort */ });
+      }
     }
 
     const hasMore = result.rows.length > limit;

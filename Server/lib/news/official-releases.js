@@ -163,6 +163,95 @@ async function syncOfficialCompanyReleases({ name, ticker, exchange, companyId }
   return { inserted, source: isAsxExchange(exchange) ? 'ASX' : 'TMX Newsfile' };
 }
 
+// ── Scheduled sync ─────────────────────────────────────────────────────────
+// The /news page and company tabs read news_releases rows sourced from ASX /
+// TMX Newsfile. Historically these were only fetched on demand the first time
+// a company page was opened (zero rows), so the public feed went stale the
+// moment nobody new visited. This section keeps every company fresh on its own
+// cooldown, driven by the news pipeline cron and stale company-page views.
+
+const OFFICIAL_SYNC_COOLDOWN_MS = 22 * 60 * 60 * 1000; // ~1 day per company
+const _officialSyncAt = new Map(); // companyId → ms of last attempt
+
+function officialSyncDue(companyId) {
+  const last = _officialSyncAt.get(companyId) || 0;
+  return Date.now() - last >= OFFICIAL_SYNC_COOLDOWN_MS;
+}
+
+/** Cooldown-guarded sync — safe to call from many places for the same company. */
+async function syncOfficialCompanyReleasesThrottled(company, opts = {}) {
+  const key = company?.companyId ?? company?.id;
+  if (!key || !officialSyncDue(key)) return { skipped: true };
+  _officialSyncAt.set(key, Date.now());
+  return syncOfficialCompanyReleases(company, opts);
+}
+
+let _officialSyncRunning = false;
+
+/**
+ * Sync official releases for every listed company whose cooldown expired.
+ * Called from the news pipeline cron; also safe to trigger manually.
+ */
+async function runOfficialReleasesSync({ delayMs = 750, enrich = true, limit = null } = {}) {
+  if (_officialSyncRunning) return { skipped: true };
+  _officialSyncRunning = true;
+  const { addLog } = require('../../pipeline/state');
+  const stats = { due: 0, inserted: 0, withNew: 0, errors: 0, companies: 0 };
+
+  try {
+    const result = await db.query(
+      `SELECT id, name, ticker, exchange FROM companies
+        WHERE ticker IS NOT NULL AND TRIM(ticker) <> ''
+          AND UPPER(exchange) IN ('TSX', 'TSXV', 'TSX-V', 'CSE', 'ASX')
+        ORDER BY id`,
+    );
+    stats.companies = result.rows.length;
+    if (limit) result.rows = result.rows.slice(0, limit);
+
+    addLog('out', `[News Pipeline] [Official] Starting sync — ${stats.companies} companies (${delayMs}ms spacing)`);
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    for (const row of result.rows) {
+      const company = { name: row.name, ticker: row.ticker, exchange: row.exchange, companyId: row.id };
+      if (!officialSyncDue(row.id)) continue;
+      _officialSyncAt.set(row.id, Date.now());
+      stats.due++;
+
+      try {
+        const res = await syncOfficialCompanyReleases(company, { enrich });
+        if (res.error) {
+          stats.errors++;
+        } else if (res.inserted > 0) {
+          stats.withNew++;
+          stats.inserted += res.inserted;
+          addLog('out', `[News Pipeline] [Official] ${row.ticker}: ${res.inserted} new (${res.source})`);
+        }
+      } catch (err) {
+        stats.errors++;
+        addLog('err', `[News Pipeline] [Official] ${row.ticker || row.name}: ${err.message}`);
+      }
+
+      await sleep(delayMs);
+    }
+
+    addLog(
+      'out',
+      `[News Pipeline] [Official] Done — ${stats.companies} companies, ${stats.due} synced, ${stats.withNew} with new releases, ${stats.inserted} inserted, ${stats.errors} errors`,
+    );
+  } catch (err) {
+    addLog('err', `[News Pipeline] [Official] Fatal: ${err.message}`);
+    stats.errors++;
+  } finally {
+    _officialSyncRunning = false;
+  }
+
+  return stats;
+}
+
+function isOfficialReleasesSyncRunning() {
+  return _officialSyncRunning;
+}
+
 module.exports = {
   OFFICIAL_RELEASE_SOURCES,
   isCanadianExchange,
@@ -170,4 +259,7 @@ module.exports = {
   fetchNewsfileCompanyReleases,
   fetchAsxCompanyReleases,
   syncOfficialCompanyReleases,
+  syncOfficialCompanyReleasesThrottled,
+  runOfficialReleasesSync,
+  isOfficialReleasesSyncRunning,
 };

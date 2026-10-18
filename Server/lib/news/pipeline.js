@@ -48,6 +48,16 @@ async function runNewsPipeline() {
       'out',
       `[News Pipeline] Done — ${stats.companies} companies, ${stats.withNew} with new articles, ${stats.skipped} skipped (no news), ${stats.inserted} inserted, ${stats.enriched} AI-enriched, ${stats.errors} errors`
     );
+
+    // Official ASX / TMX Newsfile releases power the public /news page and
+    // company tabs. They used to sync only on first visit, which froze the
+    // feed; keep them fresh on a per-company cooldown instead.
+    try {
+      const { runOfficialReleasesSync } = require('./official-releases');
+      await runOfficialReleasesSync();
+    } catch (err) {
+      addLog('err', `[News Pipeline] Official releases sync failed: ${err.message}`);
+    }
   } catch (err) {
     addLog('err', `[News Pipeline] Fatal: ${err.message}`);
     stats.errors++;
