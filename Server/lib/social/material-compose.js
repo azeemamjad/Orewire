@@ -13,6 +13,7 @@
  */
 const { chatWithSystem } = require('../ai/client');
 const { appBase } = require('./select');
+const { displayCompanyName } = require('./company-name');
 const {
   TEMPLATES,
   BODY_GUIDE,
@@ -189,7 +190,7 @@ function buildUserPrompt(candidate, { shorten = false, extra = '' } = {}) {
   const guide = BODY_GUIDE[cat] || [];
   const req = requiredFields(cat);
   const source = sourceBlob(candidate);
-  const company = (candidate.company_display || candidate.company_name || '').trim();
+  const company = displayCompanyName((candidate.company_display || candidate.company_name || '').trim());
 
   return `CATEGORY: ${spec.label}
 

@@ -1,4 +1,5 @@
 const db = require('../../db');
+const { displayCompanyName } = require('./company-name');
 
 const HOURS_24_MS = 24 * 60 * 60 * 1000;
 const DEDUPE_DAYS = 14;
@@ -59,7 +60,7 @@ async function fetchFilingCandidates(since, limit = 20) {
       verdict: row.verdict,
       summary,
       href: `${base}/filings/${row.id}`,
-      label: ticker ? `$${ticker}${exchange ? ` (${exchange})` : ''}` : (row.company_name || 'Filing'),
+      label: ticker ? `$${ticker}${exchange ? ` (${exchange})` : ''}` : (displayCompanyName(row.company_name) || 'Filing'),
     };
   });
 }
@@ -94,7 +95,7 @@ async function fetchNewsCandidates(since, limit = 20) {
       summary,
       title: row.title,
       href: row.link ? `${base}/news/${encodeURIComponent(row.link)}` : `${base}/news`,
-      label: ticker ? `$${ticker}${exchange ? ` (${exchange})` : ''}` : (row.company_name || 'News'),
+      label: ticker ? `$${ticker}${exchange ? ` (${exchange})` : ''}` : (displayCompanyName(row.company_name) || 'News'),
     };
   });
 }
@@ -160,7 +161,7 @@ async function selectThreadItems({ itemsMin = 5, itemsMax = 7 } = {}) {
         companyName: row.company_name,
         summary,
         href: `${base}/filings/${row.id}`,
-        label: ticker ? `$${ticker}${exchange ? ` (${exchange})` : ''}` : (row.company_name || 'Filing'),
+        label: ticker ? `$${ticker}${exchange ? ` (${exchange})` : ''}` : (displayCompanyName(row.company_name) || 'Filing'),
       });
     }
   }

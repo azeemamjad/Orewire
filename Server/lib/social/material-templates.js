@@ -11,6 +11,8 @@
  * model can never break the locked format.
  */
 
+const { displayCompanyName } = require('./company-name');
+
 const APP_LINK_LINE = {
   drill: 'Full results + section map 👇',
   financing: 'Details 👇',
@@ -384,7 +386,8 @@ function buildText({ templateKey, ticker, title, body = [], commodity, url, comp
   // not know the symbol can tell who the post is about without opening the link. Both
   // belong to the same code-owned opener as the emojis — which means the model has to
   // budget for them, so the user prompt shows the opener with the name already in place.
-  const company = String(companyName || '').trim();
+  // Exchange rows are often stored ALL CAPS, which reads as shouting — title-case those.
+  const company = displayCompanyName(String(companyName || '').trim());
 
   // The prompt forbids the model from writing the name, but not every model obeys. If it
   // appears in the title, strip it there and let the leading slot carry it — otherwise the
