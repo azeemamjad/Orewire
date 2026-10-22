@@ -4,7 +4,7 @@
  * Env (all optional):
  *   NEWS_ENRICH_ENABLED=true
  *   NEWS_ENRICH_MAX_AGE_HOURS=48        — skip items older than this
- *   NEWS_ENRICH_DAILY_MAX_CALLS=30      — max LLM calls / day (feature=news_enrichment)
+ *   NEWS_ENRICH_DAILY_MAX_CALLS=50      — max LLM calls / day (feature=news_enrichment)
  *   NEWS_ENRICH_BATCH_SIZE=5            — headlines per LLM call
  *   NEWS_ENRICH_REQUIRE_COMPANY=true    — only enrich rows linked to a company
  *   NEWS_ENRICH_MAX_DRAIN_BATCHES=2     — max batches per drainUnprocessedNews() call
@@ -28,7 +28,7 @@ function getPolicy() {
   return {
     enabled: envBool('NEWS_ENRICH_ENABLED', true),
     maxAgeHours: envInt('NEWS_ENRICH_MAX_AGE_HOURS', 48),
-    dailyMaxCalls: envInt('NEWS_ENRICH_DAILY_MAX_CALLS', 30),
+    dailyMaxCalls: envInt('NEWS_ENRICH_DAILY_MAX_CALLS', 50),
     batchSize: Math.max(1, envInt('NEWS_ENRICH_BATCH_SIZE', 5)),
     requireCompany: envBool('NEWS_ENRICH_REQUIRE_COMPANY', true),
     maxDrainBatches: Math.max(1, envInt('NEWS_ENRICH_MAX_DRAIN_BATCHES', 2)),
