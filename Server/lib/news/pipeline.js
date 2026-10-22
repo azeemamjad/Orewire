@@ -2,18 +2,32 @@ const db = require('../../db');
 const { addLog } = require('../../pipeline/state');
 const { fetchCompanyNews } = require('./fetch');
 
+// A run that outlives this window is treated as wedged (e.g. an un-timed
+// upstream fetch hung forever): the next tick clears the lock and proceeds.
+const STALE_RUN_MS = 2 * 60 * 60 * 1000;
+
 let running = false;
+let runningSince = 0;
 
 /**
  * For each company with a ticker: fetch news releases; skip AI if nothing new.
  */
 async function runNewsPipeline() {
   if (running) {
-    addLog('warn', '[News Pipeline] Already running — skipping');
-    return { skipped: true };
+    if (runningSince && Date.now() - runningSince > STALE_RUN_MS) {
+      addLog('warn', `[News Pipeline] Previous run stuck for ${Math.round((Date.now() - runningSince) / 60_000)} min — clearing stale lock`);
+      running = false;
+    } else {
+      addLog('warn', '[News Pipeline] Already running — skipping');
+      return { skipped: true };
+    }
   }
 
+  // Token identifies THIS run: a cleared stale run's finally (which fires long
+  // after it was abandoned) must not release the fresh run's lock.
+  const myToken = Date.now();
   running = true;
+  runningSince = myToken;
   const stats = { companies: 0, withNew: 0, skipped: 0, inserted: 0, enriched: 0, errors: 0 };
 
   try {
@@ -62,7 +76,10 @@ async function runNewsPipeline() {
     addLog('err', `[News Pipeline] Fatal: ${err.message}`);
     stats.errors++;
   } finally {
-    running = false;
+    if (runningSince === myToken) {
+      running = false;
+      runningSince = 0;
+    }
   }
 
   return stats;

@@ -72,6 +72,9 @@ function parseRssItems(xml, defaultSource) {
 async function fetchRssFeed(url) {
   const res = await fetch(url, {
     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT  10.0; Win64; x64) AppleWebKit/537.36' },
+    // No timeout means a hung socket stalls the whole fetch cycle; these feeds
+    // either answer fast or are not worth waiting for.
+    signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(`RSS ${res.status} for ${url}`);
   return res.text();
@@ -336,6 +339,7 @@ async function fetchCompanyNews(companyName, ticker, companyId = null, { skipCoo
       const url = `https://news.google.com/rss/search?q=${encoded}&hl=en&gl=US&ceid=US:en`;
       const res = await fetch(url, {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(15_000),
       });
       if (res.ok) {
         const xml = await res.text();

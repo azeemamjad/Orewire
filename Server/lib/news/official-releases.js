@@ -7,6 +7,9 @@ const { TABLE_RELEASES } = require('./db');
 const { companyCategoryKey } = require('./fetch');
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+// A hung upstream must cost the sync one skipped company, not the whole run —
+// an un-timed fetch here is what wedged the news pipeline once already.
+const FETCH_TIMEOUT_MS = 15_000;
 const NEWSFILE_BASE = 'https://www.newsfilecorp.com';
 const ASX_API = 'https://asx.api.markitdigital.com/asx-research/1.0/companies';
 
@@ -34,7 +37,7 @@ async function fetchNewsfileCompanyReleases(companyName, limit = 15) {
   if (!q) return [];
 
   const url = `${NEWSFILE_BASE}/search?k=${q}&l=en`;
-  const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'text/html' } });
+  const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'text/html' }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`Newsfile ${res.status}`);
 
   const html = await res.text();
@@ -68,7 +71,7 @@ async function fetchAsxCompanyReleases(ticker, limit = 15) {
   if (!sym) return [];
 
   const url = `${ASX_API}/${encodeURIComponent(sym)}/announcements?count=${Math.min(limit, 20)}`;
-  const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' } });
+  const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`ASX ${res.status}`);
 
   const json = await res.json();
@@ -202,11 +205,13 @@ async function runOfficialReleasesSync({
   canadianDelayMs = 2500,
   enrich = true,
   limit = null,
+  maxRuntimeMs = 45 * 60 * 1000,
 } = {}) {
   if (_officialSyncRunning) return { skipped: true };
   _officialSyncRunning = true;
   const { addLog } = require('../../pipeline/state');
-  const stats = { due: 0, inserted: 0, withNew: 0, errors: 0, companies: 0, canadianAborted: false };
+  const stats = { due: 0, inserted: 0, withNew: 0, errors: 0, companies: 0, canadianAborted: false, timeCapped: false };
+  const startedAt = Date.now();
 
   try {
     const result = await db.query(
@@ -230,6 +235,12 @@ async function runOfficialReleasesSync({
       const isAsx = isAsxExchange(row.exchange);
       if (!isAsx && canadianBlocked) continue;
       if (!officialSyncDue(row.id)) continue;
+      if (Date.now() - startedAt > maxRuntimeMs) {
+        // Whatever is left stays due — the next tick (or page visit) picks it up.
+        stats.timeCapped = true;
+        addLog('warn', `[News Pipeline] [Official] Runtime cap reached — continuing next tick`);
+        break;
+      }
       stats.due++;
 
       try {

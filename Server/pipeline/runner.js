@@ -558,6 +558,11 @@ async function syncAnalyses() {
       for (const jf of jsons) {
         const pdfName = jf.replace(/_analysis\.json$/, '.pdf');
         const pdfPath = path.join(dp, pdfName);
+        // One poisoned statement aborts the whole transaction, so a single bad
+        // file would fail every remaining file with "current transaction is
+        // aborted". Isolate each file in a savepoint: failed files roll back
+        // to it, the batch continues, successful files still commit together.
+        await client.query('SAVEPOINT file_sync');
         try {
           let storedPdfPath = pdfPath;
           if (isStorageEnabled() && fs.existsSync(pdfPath)) {
@@ -569,7 +574,7 @@ async function syncAnalyses() {
             'SELECT id FROM filings WHERE pdf_path = $1 OR pdf_path = $2',
             [pdfPath, storedPdfPath],
           );
-          if (existing.rows.length > 0) { stats.skipped++; continue; }
+          if (existing.rows.length > 0) { stats.skipped++; await client.query('RELEASE SAVEPOINT file_sync'); continue; }
 
           const analysis = JSON.parse(fs.readFileSync(path.join(dp, jf), 'utf8'));
           const companyRow = await findCompanyForFiling(client, {
@@ -593,7 +598,7 @@ async function syncAnalyses() {
             analysis.filing_type || null,
           ]);
           const fid = fiResult.rows[0]?.id;
-          if (!fid) { stats.skipped++; continue; }
+          if (!fid) { stats.skipped++; await client.query('RELEASE SAVEPOINT file_sync'); continue; }
 
           const ext = analysis.data_extracted || {};
           await client.query(AI_OUTPUT_SQL, aiOutputParams(fid, analysis));
@@ -601,7 +606,10 @@ async function syncAnalyses() {
             await upsertInsiderData(client, companyRow?.id, fid, ext);
           }
           stats.imported++;
+          await client.query('RELEASE SAVEPOINT file_sync');
         } catch (err) {
+          await client.query('ROLLBACK TO SAVEPOINT file_sync').catch(() => {});
+          await client.query('RELEASE SAVEPOINT file_sync').catch(() => {});
           stats.errors++;
           addLog('err', `[Sync] ${jf}: ${err.message}`);
         }
