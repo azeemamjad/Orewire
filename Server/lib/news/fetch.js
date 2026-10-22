@@ -333,7 +333,11 @@ async function fetchCompanyNews(companyName, ticker, companyId = null, { skipCoo
   }
 
   let allItems = [];
+  let attempts = 0;
+  let failed = 0;
+  let lastFailure = '';
   for (const q of queries) {
+    attempts++;
     try {
       const encoded = encodeURIComponent(q);
       const url = `https://news.google.com/rss/search?q=${encoded}&hl=en&gl=US&ceid=US:en`;
@@ -344,11 +348,24 @@ async function fetchCompanyNews(companyName, ticker, companyId = null, { skipCoo
       if (res.ok) {
         const xml = await res.text();
         allItems.push(...parseRssItems(xml, 'Google News'));
+      } else {
+        failed++;
+        lastFailure = `HTTP ${res.status}`;
       }
-    } catch {
-      /* skip */
+    } catch (e) {
+      failed++;
+      lastFailure = e?.name === 'TimeoutError' || /timeout/i.test(String(e?.name) + e?.message) ? 'timeout' : (e?.message || 'request failed');
     }
     if (allItems.length >= 6) break;
+  }
+
+  // When the upstream is blocked or blackholed from this server, EVERY request
+  // fails and the old code returned "no news" silently — a whole run would
+  // crawl through 2,408 companies inserting nothing. Fail loudly instead.
+  if (attempts > 0 && failed === attempts) {
+    const err = new Error(`Google News unreachable (${lastFailure} on ${failed}/${attempts} requests)`);
+    err.googleBlocked = true;
+    throw err;
   }
 
   const seen = new Set();

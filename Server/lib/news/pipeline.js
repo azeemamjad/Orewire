@@ -36,6 +36,7 @@ async function runNewsPipeline() {
       `SELECT id, name, ticker FROM companies WHERE ticker IS NOT NULL AND TRIM(ticker) <> '' ORDER BY name`
     );
     stats.companies = result.rows.length;
+    let consecutiveBlocked = 0;
 
     for (const row of result.rows) {
       try {
@@ -55,6 +56,16 @@ async function runNewsPipeline() {
       } catch (err) {
         stats.errors++;
         addLog('err', `[News Pipeline] ${row.ticker || row.name}: ${err.message}`);
+        // If the upstream is unreachable from this server (network block),
+        // every remaining company would fail the same way. Abort the run
+        // after a short streak — the next tick retries from scratch.
+        if (err.googleBlocked) {
+          consecutiveBlocked++;
+          if (consecutiveBlocked >= 10) {
+            addLog('warn', '[News Pipeline] Google News unreachable from this server (10 consecutive companies) — aborting run; will retry next tick');
+            throw new Error('aborted: Google News unreachable from this server');
+          }
+        }
       }
     }
 
