@@ -214,6 +214,8 @@ services:
     environment:
       CONSOLE_PORT: "8018"
       STATE_DIR: /data
+      POSTAL_SMTP_HOST: postal-smtp
+      POSTAL_SMTP_PORT: "25"
       POSTAL_MESSAGE_DB_HOST: postal-mariadb
       POSTAL_DB_USER: root
       POSTAL_DB_PASSWORD: ${MARIADB_ROOT_PASSWORD:-ulGYNpIWRzTMQIx24FxsZ6Mm}

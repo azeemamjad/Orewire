@@ -10,7 +10,7 @@ const nodemailer = require("nodemailer");
 
 const PORT = process.env.CONSOLE_PORT || 8018;
 const STATE_FILE = path.join(process.env.STATE_DIR || __dirname, "state.json");
-const UPSTREAM = { host: "localhost", port: 2525, secure: false }; // Postal
+const UPSTREAM = { host: process.env.POSTAL_SMTP_HOST || "localhost", port: Number(process.env.POSTAL_SMTP_PORT || 2525), secure: false }; // Postal SMTP
 
 // ---------- state ----------
 function today() { return new Date().toISOString().slice(0, 10); }
@@ -272,6 +272,8 @@ const server = http.createServer((req, res) => {
         if (b.warmup) mb.warmup = { ...mb.warmup, ...b.warmup };
         if (b.user) mb.user = b.user;
         if (b.pass) mb.pass = b.pass;
+        if (b.host) { mb.host = b.host; transports.delete(mb.id); }
+        if (b.port !== undefined) { mb.port = Number(b.port); transports.delete(mb.id); }
         save(); log(`mailbox updated: ${mb.email}`);
       }
       res.writeHead(200, { "Content-Type": "application/json" }); res.end('{"ok":true}');
