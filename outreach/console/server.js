@@ -279,6 +279,30 @@ const server = http.createServer((req, res) => {
     })();
     return;
   }
+  if (url.pathname === "/api/queue-sample") {
+    const first = state.queue[0];
+    res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ len: state.queue.length, sample: first ? first.raw.slice(0, 3000) : null }));
+  }
+  if (req.method === "POST" && url.pathname === "/api/sanitize-queue") {
+    let n = 0;
+    const stripHtml = /<p>\s*--\s*Azeem Amjad\s*<br\s*\/?>\s*OreWire\s*<\/p>/gi;
+    const stripLine = /--\s*Azeem Amjad[^\r\n]*(\r?\n)?(?:OreWire)?[^\r\n]*(\r?\n)?/gi;
+    const stripOre = /(^|\r?\n)[ \t]*OreWire[ \t]*(\r?\n|$)/g;
+    for (const item of state.queue) {
+      if (!item.raw) continue;
+      const before = item.raw;
+      let raw = before;
+      raw = raw.replace(stripHtml, "");
+      raw = raw.replace(stripLine, "");
+      raw = raw.replace(stripOre, "$1");
+      if (raw !== before) { item.raw = raw; n++; }
+    }
+    save();
+    log(`sanitized ${n} queued messages (signature removed)`);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ sanitized: n, queue: state.queue.length }));
+  }
   if (req.method === "POST" && url.pathname === "/api/mailbox") {
     let body = ""; req.on("data", c => body += c); req.on("end", () => {
       const b = JSON.parse(body);
