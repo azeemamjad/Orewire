@@ -1,14 +1,14 @@
-# Campaign A — Research / Analysts (Week 1 sequence)
+﻿# Campaign A â€” Research / Analysts (Week 1 sequence)
 
 **List:** AU Research Analysts (38 leads)
-**Merge fields:** `{{ .Subscriber.FirstName }}` · `{{ .Subscriber.Attribs.company_name }}` · `{{ .Subscriber.Attribs.title }}`
+**Merge fields:** `{{ .Subscriber.FirstName }}` Â· `{{ .Subscriber.Attribs.company_name }}` Â· `{{ .Subscriber.Attribs.title }}`
 
-## Subjects (test all 3 — use Listmonk's A/B variations on the campaign)
+## Subjects (test all 3 â€” use Listmonk's A/B variations on the campaign)
 1. Filing noise on the TSX-V
 2. Quick question, {{ .Subscriber.FirstName }}
 3. Mining filings without the grind
 
-## Step 1 — Body variant A (loaded as draft: "A1 - Research - Filing noise on the TSX-V (Step 1A)")
+## Step 1 â€” Body variant A (loaded as draft: "A1 - Research - Filing noise on the TSX-V (Step 1A)")
 ```
 Hi {{ .Subscriber.FirstName }},
 
@@ -18,10 +18,9 @@ Curious if {{ .Subscriber.Attribs.company_name }} still pulls filings the hard w
 
 Happy to send a 2-minute walkthrough if useful.
 
--- Azeem Amjad, OreWire
 ```
 
-## Step 1 — Body variant B
+## Step 1 â€” Body variant B
 ```
 Hi {{ .Subscriber.FirstName }},
 
@@ -31,10 +30,9 @@ OreWire summarizes regulatory filings and news across TSX/TSX-V/CSE/ASX juniors 
 
 Worth a look for {{ .Subscriber.Attribs.company_name }}, or not a priority right now?
 
--- Azeem Amjad, OreWire
 ```
 
-## Step 2 (Day 3 — follow-up, blank subject to stay in thread)
+## Step 2 (Day 3 â€” follow-up, blank subject to stay in thread)
 ```
 Hi {{ .Subscriber.FirstName }},
 
@@ -44,7 +42,6 @@ If your coverage universe is mostly Canadian and Australian listings, that's usu
 
 Want me to set a sample watchlist around a few tickers you follow?
 
--- Azeem Amjad, OreWire
 ```
 
 ## Step 3 (Day 7)
@@ -59,10 +56,9 @@ OreWire sits in between: same-day filing summaries + alerts, without claiming to
 
 If I should stop pinging you, just say so. Otherwise happy to send a free look.
 
--- Azeem Amjad, OreWire
 ```
 
-## Step 4 — Breakup (Day 12)
+## Step 4 â€” Breakup (Day 12)
 ```
 Hi {{ .Subscriber.FirstName }},
 
@@ -70,5 +66,5 @@ I'll close the loop here. If filing summaries and watchlist alerts ever become u
 
 Either way, good luck with the book.
 
--- Azeem Amjad, OreWire
 ```
+

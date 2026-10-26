@@ -1,14 +1,14 @@
-# Campaign B — Company IR (Week 1 sequence)
+﻿# Campaign B â€” Company IR (Week 1 sequence)
 
 **List:** AU Company IR (195 leads)
-**Merge fields:** `{{ .Subscriber.FirstName }}` · `{{ .Subscriber.Attribs.company_name }}` · `{{ .Subscriber.Attribs.title }}`
+**Merge fields:** `{{ .Subscriber.FirstName }}` Â· `{{ .Subscriber.Attribs.company_name }}` Â· `{{ .Subscriber.Attribs.title }}`
 
-## Subjects (test all 3 — use Listmonk's A/B variations on the campaign)
+## Subjects (test all 3 â€” use Listmonk's A/B variations on the campaign)
 1. Peer filings without the chase
 2. {{ .Subscriber.FirstName }}, a watchlist for your IR desk
 3. How peers are announcing this week
 
-## Step 1 — Body variant A (loaded as draft: "B1 - Company IR - Peer filings without the chase (Step 1A)")
+## Step 1 â€” Body variant A (loaded as draft: "B1 - Company IR - Peer filings without the chase (Step 1A)")
 ```
 Hi {{ .Subscriber.FirstName }},
 
@@ -18,10 +18,9 @@ For IR and corp-dev teams, the useful part is a peer watchlist: see what compara
 
 Would a peer-alert feed be useful at {{ .Subscriber.Attribs.company_name }}?
 
--- Azeem Amjad, OreWire
 ```
 
-## Step 1 — Body variant B
+## Step 1 â€” Body variant B
 ```
 Hi {{ .Subscriber.FirstName }},
 
@@ -32,7 +31,7 @@ OreWire tracks filings and news across Canadian and Australian mining listings a
 Worth 2 minutes for {{ .Subscriber.Attribs.company_name }}, or should I leave you alone?
 ```
 
-## Step 2 (Day 3 — follow-up, blank subject to stay in thread)
+## Step 2 (Day 3 â€” follow-up, blank subject to stay in thread)
 ```
 Hi {{ .Subscriber.FirstName }},
 
@@ -43,7 +42,6 @@ Typical setup for a junior IR lead:
 
 Happy to build a sample peer list around {{ .Subscriber.Attribs.company_name }} if you share a few tickers you already track.
 
--- Azeem Amjad, OreWire
 ```
 
 ## Step 3 (Day 7)
@@ -54,10 +52,9 @@ Not pitching a press-release wire or an IR agency. OreWire is market intelligenc
 
 If timing is bad, no worries. If useful, reply and I'll send a free look.
 
--- Azeem Amjad, OreWire
 ```
 
-## Step 4 — Breakup (Day 12)
+## Step 4 â€” Breakup (Day 12)
 ```
 Hi {{ .Subscriber.FirstName }},
 
@@ -65,5 +62,5 @@ Last note from me. If peer filings and alerts would help the IR desk at {{ .Subs
 
 Otherwise I'll assume it's a pass. Thanks for reading.
 
--- Azeem Amjad, OreWire
 ```
+
