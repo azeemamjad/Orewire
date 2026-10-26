@@ -1,5 +1,5 @@
 # OreWire email stack - Postal bootstrap (runs via rails runner inside postal-init)
-# Idempotent: safe to run on every deploy.
+# Idempotent: safe to run on every deploy. Runs domain verification each pass.
 
 admin = User.find_by!(email_address: "admin@orewire.com")
 org = Organization.find_or_create_by!(name: "OreWire Outreach") { |o| o.owner = admin }
@@ -42,3 +42,4 @@ puts "CF|INFRA|A|track.#{ENV.fetch('EMAIL_DOMAIN', 'emails.orewire.com')}|#{vps_
   puts "CF|#{d.name}|MX|#{rp}|10 #{smtp_host}"
   puts "CF|#{d.name}|TXT|#{rp}|v=spf1 a mx include:#{spf_include} ~all"
 end
+
