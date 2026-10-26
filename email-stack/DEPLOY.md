@@ -12,23 +12,21 @@ stack deploys as **one additional Compose service**.
 - [ ] Pick an **infra hostname** for Postal itself, e.g. `postal.orewirehq.co`
       (the sending domains are separate: getorewire.co, orewirehq.co, …)
 
-## 2. DNS — infra hostname (once)
+## 2. DNS — one wildcard for the whole stack
 
-For `postal.<your-domain>` (pointing at the VPS IP):
+Add **one** record (or one A record per host if your DNS provider lacks wildcards):
 
 | Type | Name | Value |
 |------|------|-------|
-| A | `postal.yourdomain` | VPS IP |
-| A | `mx.postal.yourdomain` | VPS IP |
-| TXT | `spf.postal.yourdomain` | `v=spf1 ip4:VPS_IP ~all` |
-| A | `rp.postal.yourdomain` | VPS IP |
-| MX | `rp.postal.yourdomain` | `10 postal.yourdomain` |
-| TXT | `rp.postal.yourdomain` | `v=spf1 a mx include:spf.postal.yourdomain ~all` |
-| MX | `routes.postal.yourdomain` | `10 postal.yourdomain` |
-| A | `track.postal.yourdomain` | VPS IP |
+| A | `*.email.yourdomain` | VPS IP |
 
-(DKIM `postal._domainkey.rp...` value comes from Postal after first boot:
-`postal default-dkim-record`, or copy from the domain screen.)
+That single record serves:
+- `console.email.yourdomain` → Outreach Console (daily driver; header links to the other two)
+- `lists.email.yourdomain` → Listmonk
+- `postal.email.yourdomain` → Postal
+
+Infra host (once, for Postal's HELO/return-path): `postal.email.yourdomain` is covered by the
+wildcard. Per-domain DKIM/SPF/return-path for the *sending* domains is separate — see §3.
 
 ## 3. DNS — per sending domain (getorewire.co, orewirehq.co, …)
 
@@ -39,16 +37,20 @@ before verification.
 
 ## 4. Deploy on Dokploy
 
-- [ ] New service → **Compose** → Root Directory `email-stack`, file `docker-compose.yml`
-- [ ] Fill `.env` (copy from `.env.example`) in Dokploy's environment editor
+- [ ] New service → **Compose** (⚠️ NOT "Application" — Applications expect a Dockerfile and
+      fail with `failed to read dockerfile`). Compose file path: `./email-stack/docker-compose.yml`,
+      Branch `production`, Trigger On Push, Watch Paths `email-stack/**,outreach/console/**`
+- [ ] Fill `.env` values (copy from `.env.example`) in Dokploy's environment editor
+      — `EMAIL_DOMAIN` drives the Traefik routing labels
 - [ ] Deploy. First boot auto-creates Listmonk schema; Postal schema auto-installs on first UI visit
-- [ ] Console builds from `../outreach/console` — if Dokploy refuses the parent-relative
-      context, either move `outreach/console/` into `email-stack/console/` or build/push the
-      image and swap `build:` for `image:` in the compose
-- [ ] Put the three UIs behind domains (Dokploy reverse proxy + HTTPS):
-      `postal.orewirehq.co` → :5000, `lists.orewirehq.co` → :9000, `console.orewirehq.co` → :8018
-      **Protect them** — Listmonk/Postal/Console have single-password auth; add Dokploy basic-auth
-      or IP allow-listing in front of Postal + Console
+- [ ] The three UIs attach to Dokploy's `dokploy-network` and expose themselves via Traefik
+      labels (TLS resolver: `letsencrypt`); no extra ports published. Verify the network exists:
+      `docker network ls | grep dokploy-network`
+- [ ] If Dokploy rejects the console's parent-relative build context
+      (`../outreach/console`), move `outreach/console/` into `email-stack/console/` and update
+      the compose `build:` path — or build/push the image and swap `build:` for `image:`
+- [ ] Log in at each host; consider Dokploy basic-auth / IP allow-listing in front of
+      Postal + Console (Listmonk has proper logins; the console is single-tenant)
 
 ## 5. Post-deploy configuration (one-time)
 

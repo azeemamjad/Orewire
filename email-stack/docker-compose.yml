@@ -1,15 +1,20 @@
 # OreWire email outreach stack — single-compose deployment (Postal + Listmonk + Console + Reacher)
 #
-# Dokploy: Create Service -> Compose -> Root Directory: email-stack, Compose file: docker-compose.yml
-# Local:   docker compose up -d  (from this folder)
+# Dokploy: Create service of type **Compose** (NOT Application) ->
+#   Compose file path: ./email-stack/docker-compose.yml   Branch: production
+# Local:   docker compose --env-file .env up -d   (from this folder)
 #
-# Required environment (.env next to this file, see .env.example):
-#   POSTAL_HOST_DOMAIN   e.g. postal.orewirehq.co      (A record -> VPS IP)
-#   POSTAL_WEB_PORT      host port for Postal UI (default 5000)
-#   LISTMONK_PORT        host port for Listmonk UI (default 9000)
-#   CONSOLE_PORT         host port for Outreach Console (default 8018)
+# One-domain access: add ONE DNS record  *.EMAIL_DOMAIN -> VPS IP  (or one A record per host).
+#   console.EMAIL_DOMAIN  -> Outreach Console (daily driver)
+#   lists.EMAIL_DOMAIN    -> Listmonk
+#   postal.EMAIL_DOMAIN   -> Postal
+# Routing/TLS is handled by Dokploy's Traefik via the labels below (resolver: letsencrypt).
+#
+# Required environment (.env, see .env.example):
+#   EMAIL_DOMAIN          e.g. email.orewirehq.co        (wildcard DNS -> VPS)
+#   POSTAL_HOST_DOMAIN    e.g. postal.email.orewirehq.co (the infra hostname Postal uses)
 #   LISTMONK_ADMIN_USER / LISTMONK_ADMIN_PASSWORD
-#   MARIADB_PASSWORD / MARIADB_ROOT_PASSWORD
+#   MARIADB_PASSWORD / MARIADB_ROOT_PASSWORD / LISTMONK_DB_PASSWORD
 
 x-postal-db: &postal-db
   MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?set in .env}
@@ -17,14 +22,15 @@ x-postal-db: &postal-db
   MARIADB_USER: postal
   MARIADB_PASSWORD: ${MARIADB_PASSWORD:?set in .env}
 
+x-ui-networks: &ui-networks
+  networks: [email, dokploy-network]
+
 services:
   # ---------------- Postal ----------------
   postal-web:
     image: ghcr.io/postalserver/postal:3.3.7
     restart: unless-stopped
     command: postal web-server
-    ports:
-      - "${POSTAL_WEB_PORT:-5000}:5000"
     environment:
       POSTAL_POSTAL_WEB_HOSTNAME: ${POSTAL_HOST_DOMAIN:?set in .env}
       POSTAL_POSTAL_WEB_PROTOCOL: https
@@ -48,14 +54,20 @@ services:
     depends_on:
       postal-mariadb:
         condition: service_healthy
-    networks: [email]
+    networks: [email, dokploy-network]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.postal.rule=Host(`postal.${EMAIL_DOMAIN:?set in .env}`)
+      - traefik.http.routers.postal.entrypoints=websecure
+      - traefik.http.routers.postal.tls.certresolver=letsencrypt
+      - traefik.http.services.postal.loadbalancer.server.port=5000
 
   postal-smtp:
     image: ghcr.io/postalserver/postal:3.3.7
     restart: unless-stopped
     command: postal smtp-server
     ports:
-      - "25:25"          # must be reachable; some providers require unlocking outbound 25
+      - "25:25"          # real mail; some providers require unlocking outbound 25
     environment:
       POSTAL_POSTAL_SMTP_HOSTNAME: ${POSTAL_HOST_DOMAIN}
       POSTAL_POSTAL_SIGNING_KEY_PATH: /config/signing.key
@@ -71,7 +83,7 @@ services:
       POSTAL_MESSAGE_DB_DATABASE_NAME_PREFIX: postal
       POSTAL_SMTP_SERVER_DEFAULT_PORT: "25"
       POSTAL_SMTP_SERVER_DEFAULT_BIND_ADDRESS: 0.0.0.0
-      POSTAL_SMTP_SERVER_TLS_ENABLED: "false"   # terminate TLS at the proxy later; internal hop stays plain
+      POSTAL_SMTP_SERVER_TLS_ENABLED: "false"
     volumes:
       - postal-config:/config
     depends_on:
@@ -135,8 +147,6 @@ services:
   listmonk:
     image: listmonk/listmonk:latest
     restart: unless-stopped
-    ports:
-      - "${LISTMONK_PORT:-9000}:9000"
     depends_on:
       listmonk-db:
         condition: service_healthy
@@ -152,29 +162,39 @@ services:
       LISTMONK_ADMIN_USER: ${LISTMONK_ADMIN_USER:-}
       LISTMONK_ADMIN_PASSWORD: ${LISTMONK_ADMIN_PASSWORD:-}
       TZ: Etc/UTC
-    networks: [email]
+    networks: [email, dokploy-network]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.lists.rule=Host(`lists.${EMAIL_DOMAIN}`)
+      - traefik.http.routers.lists.entrypoints=websecure
+      - traefik.http.routers.lists.tls.certresolver=letsencrypt
+      - traefik.http.services.lists.loadbalancer.server.port=9000
 
-  # ---------------- Outreach Console (rotation / caps / warmup / reply-watch) ----------------
+  # ---------------- Outreach Console ----------------
   console:
     build: ../outreach/console
     image: orewire/outreach-console:latest
     restart: unless-stopped
-    ports:
-      - "${CONSOLE_PORT:-8018}:8018"
     environment:
       CONSOLE_PORT: "8018"
-    networks: [email]
+    networks: [email, dokploy-network]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.console.rule=Host(`console.${EMAIL_DOMAIN}`) || Host(`${EMAIL_DOMAIN}`)
+      - traefik.http.routers.console.entrypoints=websecure
+      - traefik.http.routers.console.tls.certresolver=letsencrypt
+      - traefik.http.services.console.loadbalancer.server.port=8018
 
   # ---------------- Reacher (mailbox verification) ----------------
   email-verifier:
     image: reacherhq/backend:latest
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:8080:8080"   # keep internal/localhost unless the bridge needs remote access
     networks: [email]
 
 networks:
   email:
+  dokploy-network:
+    external: true   # created by Dokploy on install (`docker network ls` to confirm)
 
 volumes:
   mariadb-data:

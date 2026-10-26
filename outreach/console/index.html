@@ -41,6 +41,10 @@
   <span class="stat">sent today <b id="sentToday">0</b> / <b id="capTotal">45</b></span>
   <span class="stat">queue <b id="qCount">0</b></span>
   <span class="stat">replies <b id="rCount">0</b></span>
+  <nav style="margin-left:auto" class="row">
+    <a id="linkLists" class="stat" href="#" style="color:#58a6ff;text-decoration:none">📋 Listmonk</a>
+    <a id="linkPostal" class="stat" href="#" style="color:#58a6ff;text-decoration:none">📮 Postal</a>
+  </nav>
 </header>
 <main>
 
@@ -84,6 +88,14 @@
 </main>
 
 <script>
+// One-domain navigation: console.lists.postal live as subdomains of the same base domain.
+(function () {
+  const host = window.location.hostname;
+  const base = host.replace(/^console\./, '');
+  document.getElementById('linkLists').href = 'https://lists.' + base;
+  document.getElementById('linkPostal').href = 'https://postal.' + base;
+})();
+
 let S = null;
 
 function render() {
