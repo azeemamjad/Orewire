@@ -36,7 +36,7 @@ function defaultMailboxes() {
 
 let state = {
   mailboxes: defaultMailboxes(),
-  settings: { pace_seconds: 300, reply_check_minutes: 0, imap: { host: "", port: 993, secure: true, user: "", pass: "", mailbox: "INBOX" } },
+  settings: { pace_seconds: 300, reply_check_minutes: 0, imap: { host: "", port: 993, secure: true, user: "", pass: "", mailbox: "INBOX" }, links: { lists: "", postal: "" } },
   queue: [],        // {id, mailbox_id, mail_from, rcpt_to, raw, attempts, queued_at}
   replied: [],      // {from, subject, seen_at}
   log: [],
@@ -227,6 +227,7 @@ const server = http.createServer((req, res) => {
       if (b.pace_seconds !== undefined) state.settings.pace_seconds = Math.max(10, Number(b.pace_seconds));
       if (b.reply_check_minutes !== undefined) state.settings.reply_check_minutes = Number(b.reply_check_minutes);
       if (b.imap) state.settings.imap = { ...state.settings.imap, ...b.imap };
+      if (b.links) state.settings.links = { ...state.settings.links, ...b.links };
       save(); log("settings updated");
       res.writeHead(200, { "Content-Type": "application/json" }); res.end('{"ok":true}');
     }); return;

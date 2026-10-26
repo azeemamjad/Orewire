@@ -63,6 +63,9 @@
       <h3>⚙️ Sending</h3>
       <label>Pace — minimum seconds between outgoing messages (listmonk queues; we release paced)</label>
       <input type="number" id="pace" min="10"> <span class="muted">e.g. 300 = one email every 5 min</span>
+      <label>Panel links (shown in the header)</label>
+      <div class="row"><span class="muted" style="width:52px">📋 Lists</span><input type="text" id="ll" placeholder="https://lists.emails.orewire.com"></div>
+      <div class="row" style="margin-top:6px"><span class="muted" style="width:52px">📮 Postal</span><input type="text" id="lp" placeholder="https://postal.emails.orewire.com"></div>
       <div style="margin-top:12px"><button class="primary" onclick="saveSettings()">Save settings</button></div>
     </div>
     <div class="card">
@@ -88,14 +91,7 @@
 </main>
 
 <script>
-// One-domain navigation: console.lists.postal live as subdomains of the same base domain.
-(function () {
-  const host = window.location.hostname;
-  const base = host.replace(/^console\./, '');
-  document.getElementById('linkLists').href = 'https://lists.' + base;
-  document.getElementById('linkPostal').href = 'https://postal.' + base;
-})();
-
+// Panel links: admin-configurable in Settings; fall back to hostname derivation.
 let S = null;
 
 function render() {
@@ -131,6 +127,9 @@ function render() {
     document.getElementById('iu').value = s.settings.imap.user || '';
     document.getElementById('ip').value = s.settings.imap.port || 993;
     document.getElementById('ipw').value = s.settings.imap.pass || '';
+    if (!document.getElementById('ll').value) document.getElementById('ll').value = (s.settings.links && s.settings.links.lists) || '';
+    if (!document.getElementById('lp').value) document.getElementById('lp').value = (s.settings.links && s.settings.links.postal) || '';
+    applyLinks(s.settings.links);
 
     document.getElementById('replies').innerHTML = s.replied.length
       ? s.replied.map(r => `<div>↩ <b>${r.from}</b> — ${r.subject || '(no subject)'} <span class="muted">${new Date(r.seen_at).toLocaleString()}</span></div>`).join('')
@@ -150,7 +149,8 @@ function saveSettings() {
       pace_seconds: Number(document.getElementById('pace').value),
       reply_check_minutes: Number(document.getElementById('rcm').value),
       imap: { host: document.getElementById('ih').value, user: document.getElementById('iu').value,
-              port: Number(document.getElementById('ip').value), pass: document.getElementById('ipw').value }
+              port: Number(document.getElementById('ip').value), pass: document.getElementById('ipw').value },
+      links: { lists: document.getElementById('ll').value, postal: document.getElementById('lp').value }
     }) }).then(() => render());
 }
 function checkReplies() {
