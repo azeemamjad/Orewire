@@ -106,30 +106,37 @@ async function syncSentCounts() {
   if (Date.now() - lastStatsSync < 60000) return;
   lastStatsSync = Date.now();
   let mysql;
-  try { mysql = require("mysql2/promise"); } catch { return; }
+  try { mysql = require("mysql2/promise"); } catch (e) { return log("[stats] mysql2 not loadable: " + e.message); }
   const host = process.env.POSTAL_MESSAGE_DB_HOST || "postal-mariadb";
-  const conn = await mysql.createConnection({
-    host, port: 3306,
-    user: process.env.POSTAL_DB_USER || "root",
-    password: process.env.POSTAL_DB_PASSWORD || "",
-    connectTimeout: 8000,
-  });
+  let conn;
+  try {
+    conn = await mysql.createConnection({
+      host, port: 3306,
+      user: process.env.POSTAL_DB_USER || "root",
+      password: process.env.POSTAL_DB_PASSWORD || "",
+      connectTimeout: 8000,
+    });
+  } catch (e) { return log("[stats] DB connect failed: " + String(e.message).slice(0, 100)); }
   try {
     const [dbs] = await conn.query("SHOW DATABASES LIKE ?", [process.env.POSTAL_DB_PREFIX || "postal-server-%"]);
-    if (!dbs.length) return;
+    if (!dbs.length) return log("[stats] no postal-server-* DBs found");
     const parts = dbs.map(d => `SELECT mail_from, COUNT(*) c FROM \`${d.Database}\`.messages WHERE scope = 'outgoing' AND mail_from IS NOT NULL AND timestamp >= UNIX_TIMESTAMP(CURDATE()) GROUP BY mail_from`);
     const [rows] = await conn.query(parts.join(" UNION ALL "));
     const counts = {};
+    let total = 0;
     for (const row of rows) {
       const k = String(row.mail_from).toLowerCase();
       counts[k] = (counts[k] || 0) + Number(row.c);
+      total += Number(row.c);
     }
-    let changed = false;
+    let changed = false; let matched = 0;
     for (const mb of state.mailboxes) {
       const c = counts[mb.email.toLowerCase()] || 0;
       if (mb.sent_date !== today()) { mb.sent_today = 0; mb.sent_date = today(); }
+      if (c > 0) matched++;
       if (c !== mb.sent_today) { mb.sent_today = c; changed = true; }
     }
+    log(`[stats] synced: dbs=${dbs.length} rows=${rows.length} total=${total} mailboxes-with-sends=${matched} changed=${changed}`);
     if (changed) save();
   } finally {
     await conn.end();
