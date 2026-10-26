@@ -206,6 +206,11 @@ const server = http.createServer((req, res) => {
     };
     res.writeHead(200, { "Content-Type": "application/json" }); return res.end(JSON.stringify(view));
   }
+  if (url.pathname === "/api/dns-records") {
+    const f = path.join(process.env.STATE_DIR || __dirname, "dns-records.txt");
+    if (fs.existsSync(f)) { res.writeHead(200, { "Content-Type": "text/plain" }); return res.end(fs.readFileSync(f, "utf8")); }
+    res.writeHead(404, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "no dns-records.txt yet — redeploy the email stack to generate it" }));
+  }
   if (req.method === "POST" && url.pathname === "/api/mailbox") {
     let body = ""; req.on("data", c => body += c); req.on("end", () => {
       const b = JSON.parse(body);

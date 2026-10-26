@@ -40,7 +40,9 @@ services:
         echo "[postal-init] step 3/4: ensure admin user"
         printf "admin@orewire.com\nAzeem\nAmjad\n6VkFkIzY2olwjLt8\n" | postal make-user >/dev/null 2>&1 && echo "[postal-init] admin created" || echo "[postal-init] admin already exists (skipped)"
         echo "[postal-init] step 4/4: bootstrap org/server/credentials/domains"
-        (cd /opt/postal/app && bin/rails runner /postal-bootstrap.rb) && echo "[postal-init] bootstrap OK" || echo "[postal-init] BOOTSTRAP FAILED"
+        (cd /opt/postal/app && bin/rails runner /postal-bootstrap.rb) | grep -v "^SMTP_KEY=\|^API_KEY=" > /data/dns-records.txt 2>&1
+        cat /data/dns-records.txt
+        echo "[postal-init] bootstrap done (records available at console /api/dns-records)"
     environment:
       POSTAL_CONFIG_FILE_PATH: /config/postal.yml
       POSTAL_POSTAL_SIGNING_KEY_PATH: /config/signing.key
@@ -58,6 +60,7 @@ services:
       - postal-config:/config
       - ./postal.yml:/config/postal.yml:ro
       - ./postal-bootstrap.rb:/postal-bootstrap.rb:ro
+      - console-state:/data
     depends_on:
       postal-mariadb:
         condition: service_healthy
