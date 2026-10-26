@@ -66,3 +66,19 @@ data/download-ledger.jsonl
 # These hold live session cookies and storage — never commit them.
 Server/data/profiles/
 data/profiles/
+
+# --- Email stack (local Postal / Listmonk) ---
+listmonk/
+postal/config/signing.key
+postal/config/smtp.key
+postal/config/smtp.cert
+
+# --- Outreach: local state, credentials, lead data (PII) ---
+outreach/console/state.json
+outreach/emails*.txt
+outreach/results*.csv
+outreach/leads-import.sql
+outreach/apply-verification.sql
+
+# --- Scratch ---
+Server/tmp/

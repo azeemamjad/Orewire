@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Outreach Console</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: #0d1117; color: #e6edf3; }
+  header { padding: 14px 22px; background: #161b22; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 18px; }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  .stat { font-size: 13px; color: #8b949e; } .stat b { color: #e6edf3; font-size: 15px; }
+  main { padding: 18px 22px; max-width: 1200px; margin: 0 auto; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: #8b949e; margin: 22px 0 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #21262d; }
+  th { color: #8b949e; font-weight: 500; font-size: 12px; }
+  input, button { background: #0d1117; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: 5px 8px; font-size: 13px; }
+  input[type=number] { width: 64px; } input[type=text], input[type=password] { width: 100%; }
+  button { cursor: pointer; } button:hover { border-color: #8b949e; }
+  button.primary { background: #238636; border-color: #238636; font-weight: 600; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .pill.ok { background: #12331d; color: #3fb950; } .pill.off { background: #3a1d1d; color: #f85149; }
+  .pill.warm { background: #33290f; color: #d29922; }
+  .capbar { width: 110px; height: 7px; background: #21262d; border-radius: 4px; overflow: hidden; }
+  .capbar i { display: block; height: 100%; background: #3fb950; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 14px; }
+  .card h3 { margin: 0 0 10px; font-size: 14px; }
+  label { font-size: 12px; color: #8b949e; display: block; margin: 8px 0 3px; }
+  .log { font-family: Consolas, monospace; font-size: 12px; background: #010409; border: 1px solid #30363d; border-radius: 8px; padding: 10px; max-height: 260px; overflow-y: auto; }
+  .log div { padding: 1px 0; color: #8b949e; } .log b { color: #c9d1d9; font-weight: 400; }
+  .row { display: flex; gap: 10px; align-items: center; }
+  .muted { color: #8b949e; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📨 Outreach Console</h1>
+  <span class="stat">sent today <b id="sentToday">0</b> / <b id="capTotal">45</b></span>
+  <span class="stat">queue <b id="qCount">0</b></span>
+  <span class="stat">replies <b id="rCount">0</b></span>
+</header>
+<main>
+
+  <h2>Mailboxes — rotation & caps (5/day each = 45/day total)</h2>
+  <table id="mbTable">
+    <thead><tr>
+      <th>On</th><th>Mailbox (From address)</th><th>Status</th><th>Sends today</th><th>Daily cap</th>
+      <th>Warmup</th><th>Warm day / cap</th><th>Total sent</th><th></th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+  <p class="muted">Rotation is random among enabled, under-cap mailboxes. Warmup cap = start + (day × increment), capped at max. Rename mailboxes to your real domains when they connect.</p>
+
+  <div class="grid2" style="margin-top:20px">
+    <div class="card">
+      <h3>⚙️ Sending</h3>
+      <label>Pace — minimum seconds between outgoing messages (listmonk queues; we release paced)</label>
+      <input type="number" id="pace" min="10"> <span class="muted">e.g. 300 = one email every 5 min</span>
+      <div style="margin-top:12px"><button class="primary" onclick="saveSettings()">Save settings</button></div>
+    </div>
+    <div class="card">
+      <h3>📬 Stop on reply (IMAP watch)</h3>
+      <label>Auto-check every N minutes (0 = off)</label>
+      <input type="number" id="rcm" min="0">
+      <label>IMAP host</label><input type="text" id="ih">
+      <div class="row">
+        <div style="flex:1"><label>User</label><input type="text" id="iu"></div>
+        <div style="width:110px"><label>Port</label><input type="number" id="ip"></div>
+      </div>
+      <label>Password</label><input type="password" id="ipw">
+      <div class="row" style="margin-top:12px">
+        <button class="primary" onclick="saveSettings()">Save</button>
+        <button onclick="checkReplies()">Check replies now</button>
+      </div>
+      <div id="replies" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <h2>Activity log</h2>
+  <div class="log" id="log"></div>
+</main>
+
+<script>
+let S = null;
+
+function render() {
+  fetch('/api/state').then(r => r.json()).then(s => {
+    S = s;
+    document.getElementById('sentToday').textContent = s.sent_today;
+    document.getElementById('capTotal').textContent = s.mailboxes.reduce((a, m) => a + (m.enabled ? m.cap_now : 0), 0);
+    document.getElementById('qCount').textContent = s.queue.length;
+    document.getElementById('rCount').textContent = s.replied.length;
+
+    const tb = document.querySelector('#mbTable tbody');
+    tb.innerHTML = s.mailboxes.map(m => {
+      const pct = m.cap_now ? Math.min(100, Math.round(100 * m.sent_today / m.cap_now)) : 0;
+      const st = m.enabled
+        ? (m.warmup.active ? '<span class="pill warm">warming</span>' : '<span class="pill ok">active</span>')
+        : '<span class="pill off">paused</span>';
+      return `<tr>
+        <td><input type="checkbox" ${m.enabled ? 'checked' : ''} onchange="mb('${m.id}',{enabled:this.checked})"></td>
+        <td><input type="text" value="${m.email}" onchange="mb('${m.id}',{email:this.value})"></td>
+        <td>${st}</td>
+        <td><div class="row"><div class="capbar"><i style="width:${pct}%"></i></div> ${m.sent_today}/${m.cap_now}</div></td>
+        <td><input type="number" value="${m.daily_cap}" min="0" onchange="mb('${m.id}',{daily_cap:this.value})"></td>
+        <td><input type="checkbox" ${m.warmup.active ? 'checked' : ''} onchange="mb('${m.id}',{warmup:{active:this.checked}})"></td>
+        <td class="muted">${m.warmup.active ? new Date(m.warmup.start).toLocaleDateString() + ' · ' + m.warmup.start_per_day + '+' + m.warmup.increment : '—'}</td>
+        <td>${m.total_sent}</td>
+        <td><button onclick="mb('${m.id}',{email:document.querySelector(\`[onchange*=\\"${m.id}\\"]\`).value})">save</button></td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('pace').value = s.settings.pace_seconds;
+    document.getElementById('rcm').value = s.settings.reply_check_minutes || 0;
+    document.getElementById('ih').value = s.settings.imap.host || '';
+    document.getElementById('iu').value = s.settings.imap.user || '';
+    document.getElementById('ip').value = s.settings.imap.port || 993;
+    document.getElementById('ipw').value = s.settings.imap.pass || '';
+
+    document.getElementById('replies').innerHTML = s.replied.length
+      ? s.replied.map(r => `<div>↩ <b>${r.from}</b> — ${r.subject || '(no subject)'} <span class="muted">${new Date(r.seen_at).toLocaleString()}</span></div>`).join('')
+      : '<span class="muted">no replies detected</span>';
+
+    document.getElementById('log').innerHTML = s.log.map(l => `<div><b>${new Date(l.at).toLocaleTimeString()}</b> ${l.msg}</div>`).join('');
+  });
+}
+
+function mb(id, patch) {
+  fetch('/api/mailbox', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, ...patch }) }).then(() => render());
+}
+function saveSettings() {
+  fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      pace_seconds: Number(document.getElementById('pace').value),
+      reply_check_minutes: Number(document.getElementById('rcm').value),
+      imap: { host: document.getElementById('ih').value, user: document.getElementById('iu').value,
+              port: Number(document.getElementById('ip').value), pass: document.getElementById('ipw').value }
+    }) }).then(() => render());
+}
+function checkReplies() {
+  fetch('/api/check-replies', { method: 'POST' }).then(() => render());
+}
+render();
+setInterval(render, 5000);
+</script>
+</body>
+</html>

@@ -1,4 +1,5 @@
 const { sendBriefingEmail } = require('../email');
+const { verifyOrSuppress } = require('../email/verify');
 const { renderDailyBriefing, briefingSubject } = require('../email-templates/daily-briefing');
 const {
   buildGlobalBriefingData,
@@ -62,8 +63,19 @@ async function sendDailyBriefings() {
   const globalCache = await buildGlobalBriefingData();
   let sent = 0;
   let failed = 0;
+  let skipped = 0;
+  const presendVerify = process.env.ENABLE_PRESEND_VERIFICATION === 'true';
 
   for (const recipient of recipients) {
+    // Pre-send step: verify the mailbox exists; suppress instead of bouncing.
+    if (presendVerify) {
+      const verdict = await verifyOrSuppress(recipient.email);
+      if (!verdict.send) {
+        skipped++;
+        console.log(`[briefing] Skipped ${recipient.email} — ${verdict.reason}`);
+        continue;
+      }
+    }
     try {
       await sendBriefingToRecipient(recipient, globalCache);
       sent++;
@@ -74,8 +86,8 @@ async function sendDailyBriefings() {
     if (SEND_DELAY_MS > 0) await sleep(SEND_DELAY_MS);
   }
 
-  console.log(`[briefing] Done — sent ${sent}, failed ${failed}`);
-  return { sent, failed };
+  console.log(`[briefing] Done — sent ${sent}, failed ${failed}, suppressed ${skipped}`);
+  return { sent, failed, skipped };
 }
 
 module.exports = {

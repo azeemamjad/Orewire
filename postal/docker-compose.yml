@@ -1,0 +1,76 @@
+services:
+  postal-web:
+    image: ghcr.io/postalserver/postal:3.3.7
+    container_name: postal-web
+    command: postal web-server
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./config/postal.yml:/config/postal.yml
+      - ./config/signing.key:/config/signing.key
+      - postal-assets:/opt/postal/public/assets
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    networks:
+      - postal-network
+    restart: unless-stopped
+
+  postal-smtp:
+    image: ghcr.io/postalserver/postal:3.3.7
+    container_name: postal-smtp
+    command: postal smtp-server
+    ports:
+      - "2525:25"   # host 2525 -> container 25 (avoids low-port conflicts on Windows)
+    volumes:
+      - ./config/postal.yml:/config/postal.yml
+      - ./config/signing.key:/config/signing.key
+      - ./config/smtp.cert:/config/smtp.cert
+      - ./config/smtp.key:/config/smtp.key
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    networks:
+      - postal-network
+    restart: unless-stopped
+
+  postal-worker:
+    image: ghcr.io/postalserver/postal:3.3.7
+    container_name: postal-worker
+    command: postal worker
+    volumes:
+      - ./config/postal.yml:/config/postal.yml
+      - ./config/signing.key:/config/signing.key
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    networks:
+      - postal-network
+    restart: unless-stopped
+
+  mariadb:
+    image: mariadb:10.11
+    container_name: postal-mariadb
+    environment:
+      MARIADB_ROOT_PASSWORD: postal_root_pass
+      MARIADB_DATABASE: postal
+      MARIADB_USER: postal
+      MARIADB_PASSWORD: postal_db_pass
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - postal-network
+    restart: unless-stopped
+
+volumes:
+  mariadb-data:
+  postal-assets:
+
+networks:
+  postal-network:
+    driver: bridge

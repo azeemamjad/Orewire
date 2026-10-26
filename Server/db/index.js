@@ -81,4 +81,17 @@ CREATE INDEX idx_filings_company_id ON filings(company_id);
 CREATE INDEX idx_filings_pdf_path ON filings(pdf_path);
 CREATE INDEX idx_ai_output_verdict ON ai_output(verdict);
 CREATE INDEX idx_ai_output_filing_id ON ai_output(filing_id);
+
+-- Pre-send mailbox verification + suppression (Server/lib/email/verify.js)
+CREATE TABLE IF NOT EXISTS email_verifications (
+  email TEXT PRIMARY KEY,
+  is_reachable TEXT,            -- safe | risky | invalid | unknown (from check-if-email-exists)
+  is_deliverable BOOLEAN,
+  is_catch_all BOOLEAN,
+  is_disposable BOOLEAN,
+  suppressed BOOLEAN NOT NULL DEFAULT FALSE,
+  suppress_reason TEXT,
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_email_verifications_suppressed ON email_verifications(suppressed);
 */

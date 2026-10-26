@@ -1,0 +1,11 @@
+{
+  "name": "outreach-console",
+  "version": "1.0.0",
+  "description": "Outreach Console - SMTP rotation proxy with daily caps, warmup and reply-watch",
+  "main": "server.js",
+  "dependencies": {
+    "nodemailer": "^6.9.13",
+    "smtp-server": "^3.13.4",
+    "imapflow": "^1.0.164"
+  }
+}

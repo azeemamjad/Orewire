@@ -1,0 +1,52 @@
+# Local Postal configuration (UI exploration; DNS entries are placeholders
+# for orewire.com — swap when deploying for real)
+version: 2
+
+postal:
+  web_hostname: localhost
+  web_protocol: http
+  smtp_hostname: localhost
+  use_ip_pools: false
+  default_maximum_delivery_attempts: 18
+  default_maximum_hold_expiry_days: 7
+  default_suppression_list_automatic_removal_days: 30
+  signing_key_path: /config/signing.key
+
+web_server:
+  default_bind_address: 0.0.0.0
+  default_port: 5000
+
+main_db:
+  host: mariadb
+  port: 3306
+  username: postal
+  password: postal_db_pass
+  database: postal
+
+message_db:
+  host: mariadb
+  port: 3306
+  username: root
+  password: postal_root_pass
+  database_name_prefix: postal
+
+logging:
+  enabled: true
+
+smtp_server:
+  default_port: 25
+  default_bind_address: 0.0.0.0
+  tls_enabled: true
+  tls_certificate_path: /config/smtp.cert
+  tls_private_key_path: /config/smtp.key
+
+dns:
+  mx_records:
+    - mx.postal.orewire.com
+  spf_include: spf.postal.orewire.com
+  return_path_domain: rp.postal.orewire.com
+  route_domain: routes.postal.orewire.com
+  track_domain: track.postal.orewire.com
+  helo_hostname: postal.orewire.com
+  dkim_identifier: postal
+  domain_verify_prefix: postal-verification
