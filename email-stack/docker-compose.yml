@@ -49,12 +49,6 @@ services:
       postal-mariadb:
         condition: service_healthy
     networks: [email, dokploy-network]
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.postal.rule=Host(`postal.${EMAIL_DOMAIN:-emails.orewire.com}`)
-      - traefik.http.routers.postal.entrypoints=websecure
-      - traefik.http.routers.postal.tls.certresolver=letsencrypt
-      - traefik.http.services.postal.loadbalancer.server.port=5000
 
   postal-smtp:
     image: ghcr.io/postalserver/postal:3.3.7
@@ -157,12 +151,6 @@ services:
       LISTMONK_ADMIN_PASSWORD: ${LISTMONK_ADMIN_PASSWORD:-dmmGAwNdePYl33zuivvIndqd}
       TZ: Etc/UTC
     networks: [email, dokploy-network]
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.lists.rule=Host(`lists.${EMAIL_DOMAIN:-emails.orewire.com}`)
-      - traefik.http.routers.lists.entrypoints=websecure
-      - traefik.http.routers.lists.tls.certresolver=letsencrypt
-      - traefik.http.services.lists.loadbalancer.server.port=9000
 
   # ---------------- Outreach Console ----------------
   console:
@@ -172,12 +160,6 @@ services:
     environment:
       CONSOLE_PORT: "8018"
     networks: [email, dokploy-network]
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.console.rule=Host(`console.${EMAIL_DOMAIN:-emails.orewire.com}`) || Host(`${EMAIL_DOMAIN:-emails.orewire.com}`)
-      - traefik.http.routers.console.entrypoints=websecure
-      - traefik.http.routers.console.tls.certresolver=letsencrypt
-      - traefik.http.services.console.loadbalancer.server.port=8018
 
   # ---------------- Reacher (mailbox verification) ----------------
   email-verifier:
