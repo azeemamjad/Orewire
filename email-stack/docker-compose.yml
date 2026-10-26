@@ -21,55 +21,24 @@ x-postal-db: &postal-db
 
 services:
   # ---------------- Postal ----------------
-  # One-shot bootstrap: generates the signing key on first boot and installs/upgrades
-  # the database schema. web/smtp/worker wait for it to complete successfully.
+  # One-shot bootstrap: generates the signing key (as root, then hands it to the postal
+  # user) and installs/upgrades the database schema. Config comes from the read-only
+  # ./postal.yml mount - no writes to /config needed for config.
   postal-init:
     image: ghcr.io/postalserver/postal:3.3.7
+    user: "0"
     restart: "no"
     command:
       - sh
       - -c
       - |
-        echo "[postal-init] step 1/3: ensure signing key"
-        ruby -ropenssl -e 'File.write("/config/signing.key", OpenSSL::PKey::RSA.new(2048).to_pem) unless File.exist?("/config/signing.key")' && echo "[postal-init] signing key OK" || echo "[postal-init] WARNING: key generation failed (continuing)"
-        echo "[postal-init] step 2/3: ensure config file"
-        if [ ! -f /config/postal.yml ]; then
-          cat > /config/postal.yml <<POSTAL_CFG
-        version: 2
-        postal:
-          web_hostname: ${POSTAL_HOST_DOMAIN:-postal.emails.orewire.com}
-          web_protocol: https
-          smtp_hostname: ${POSTAL_HOST_DOMAIN:-postal.emails.orewire.com}
-          signing_key_path: /config/signing.key
-        web_server:
-          default_bind_address: 0.0.0.0
-          default_port: 5000
-        main_db:
-          host: postal-mariadb
-          port: 3306
-          username: postal
-          password: ${MARIADB_PASSWORD:-bqnl2tgU0sNIb8uY5PMXJ5v8}
-          database: postal
-        message_db:
-          host: postal-mariadb
-          port: 3306
-          username: root
-          password: ${MARIADB_ROOT_PASSWORD:-ulGYNpIWRzTMQIx24FxsZ6Mm}
-          database_name_prefix: postal
-        logging:
-          enabled: true
-        smtp_server:
-          default_port: 25
-          default_bind_address: 0.0.0.0
-          tls_enabled: false
-        POSTAL_CFG
-          echo "[postal-init] config file written"
-        else
-          echo "[postal-init] config file already present"
-        fi
-        echo "[postal-init] step 3/3: postal initialize"
+        echo "[postal-init] step 1/2: signing key"
+        ruby -ropenssl -e 'File.write("/config/signing.key", OpenSSL::PKey::RSA.new(2048).to_pem) unless File.exist?("/config/signing.key")' && echo "[postal-init] signing key OK" || echo "[postal-init] WARNING: key generation failed"
+        chown 999:999 /config/signing.key 2>/dev/null || true
+        echo "[postal-init] step 2/2: postal initialize"
         postal initialize && echo "[postal-init] initialize OK"
     environment:
+      POSTAL_CONFIG_FILE_PATH: /config/postal.yml
       POSTAL_POSTAL_SIGNING_KEY_PATH: /config/signing.key
       POSTAL_MAIN_DB_HOST: postal-mariadb
       POSTAL_MAIN_DB_PORT: "3306"
@@ -83,6 +52,7 @@ services:
       POSTAL_MESSAGE_DB_DATABASE_NAME_PREFIX: postal
     volumes:
       - postal-config:/config
+      - ./postal.yml:/config/postal.yml:ro
     depends_on:
       postal-mariadb:
         condition: service_healthy
@@ -112,6 +82,7 @@ services:
     volumes:
       - postal-assets:/opt/postal/public/assets
       - postal-config:/config
+      - ./postal.yml:/config/postal.yml:ro
     depends_on:
       postal-init:
         condition: service_completed_successfully
@@ -143,6 +114,7 @@ services:
       POSTAL_SMTP_SERVER_TLS_ENABLED: "false"
     volumes:
       - postal-config:/config
+      - ./postal.yml:/config/postal.yml:ro
     depends_on:
       postal-init:
         condition: service_completed_successfully
@@ -168,6 +140,7 @@ services:
       POSTAL_MESSAGE_DB_DATABASE_NAME_PREFIX: postal
     volumes:
       - postal-config:/config
+      - ./postal.yml:/config/postal.yml:ro
     depends_on:
       postal-init:
         condition: service_completed_successfully

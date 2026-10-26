@@ -1,0 +1,51 @@
+# OreWire email stack - Postal configuration (deployed)
+# Mounted read-only into all postal containers at /config/postal.yml.
+# DB credentials here must match the baked defaults in docker-compose.yml.
+version: 2
+
+postal:
+  web_hostname: postal.emails.orewire.com
+  web_protocol: https
+  smtp_hostname: postal.emails.orewire.com
+  signing_key_path: /config/signing.key
+  use_ip_pools: false
+  default_maximum_delivery_attempts: 18
+  default_maximum_hold_expiry_days: 7
+  default_suppression_list_automatic_removal_days: 30
+
+web_server:
+  default_bind_address: 0.0.0.0
+  default_port: 5000
+
+main_db:
+  host: postal-mariadb
+  port: 3306
+  username: postal
+  password: bqnl2tgU0sNIb8uY5PMXJ5v8
+  database: postal
+
+message_db:
+  host: postal-mariadb
+  port: 3306
+  username: root
+  password: ulGYNpIWRzTMQIx24FxsZ6Mm
+  database_name_prefix: postal
+
+logging:
+  enabled: true
+
+smtp_server:
+  default_port: 25
+  default_bind_address: 0.0.0.0
+  tls_enabled: false
+
+dns:
+  mx_records:
+    - mx.postal.emails.orewire.com
+  spf_include: spf.postal.emails.orewire.com
+  return_path_domain: rp.emails.orewire.com
+  route_domain: routes.emails.orewire.com
+  track_domain: track.emails.orewire.com
+  helo_hostname: postal.emails.orewire.com
+  dkim_identifier: postal
+  domain_verify_prefix: postal-verification
