@@ -9,7 +9,7 @@ const { SMTPServer } = require("smtp-server");
 const nodemailer = require("nodemailer");
 
 const PORT = process.env.CONSOLE_PORT || 8018;
-const STATE_FILE = path.join(__dirname, "state.json");
+const STATE_FILE = path.join(process.env.STATE_DIR || __dirname, "state.json");
 const UPSTREAM = { host: "localhost", port: 2525, secure: false }; // Postal
 
 // ---------- state ----------
