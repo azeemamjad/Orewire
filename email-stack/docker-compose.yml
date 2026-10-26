@@ -21,6 +21,36 @@ x-postal-db: &postal-db
 
 services:
   # ---------------- Postal ----------------
+  # One-shot bootstrap: generates the signing key on first boot and installs/upgrades
+  # the database schema. web/smtp/worker wait for it to complete successfully.
+  postal-init:
+    image: ghcr.io/postalserver/postal:3.3.7
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - |
+        ruby -ropenssl -e 'File.write("/config/signing.key", OpenSSL::PKey::RSA.new(2048).to_pem) unless File.exist?("/config/signing.key")'
+        postal initialize
+    environment:
+      POSTAL_POSTAL_SIGNING_KEY_PATH: /config/signing.key
+      POSTAL_MAIN_DB_HOST: postal-mariadb
+      POSTAL_MAIN_DB_PORT: "3306"
+      POSTAL_MAIN_DB_USERNAME: postal
+      POSTAL_MAIN_DB_PASSWORD: ${MARIADB_PASSWORD:-bqnl2tgU0sNIb8uY5PMXJ5v8}
+      POSTAL_MAIN_DB_DATABASE: postal
+      POSTAL_MESSAGE_DB_HOST: postal-mariadb
+      POSTAL_MESSAGE_DB_PORT: "3306"
+      POSTAL_MESSAGE_DB_USERNAME: root
+      POSTAL_MESSAGE_DB_PASSWORD: ${MARIADB_ROOT_PASSWORD:-ulGYNpIWRzTMQIx24FxsZ6Mm}
+      POSTAL_MESSAGE_DB_DATABASE_NAME_PREFIX: postal
+    volumes:
+      - postal-config:/config
+    depends_on:
+      postal-mariadb:
+        condition: service_healthy
+    networks: [email]
+
   postal-web:
     image: ghcr.io/postalserver/postal:3.3.7
     restart: unless-stopped
@@ -46,6 +76,8 @@ services:
       - postal-assets:/opt/postal/public/assets
       - postal-config:/config
     depends_on:
+      postal-init:
+        condition: service_completed_successfully
       postal-mariadb:
         condition: service_healthy
     networks: [email, dokploy-network]
@@ -75,6 +107,8 @@ services:
     volumes:
       - postal-config:/config
     depends_on:
+      postal-init:
+        condition: service_completed_successfully
       postal-mariadb:
         condition: service_healthy
     networks: [email]
@@ -98,6 +132,8 @@ services:
     volumes:
       - postal-config:/config
     depends_on:
+      postal-init:
+        condition: service_completed_successfully
       postal-mariadb:
         condition: service_healthy
     networks: [email]
