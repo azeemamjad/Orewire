@@ -1,0 +1,183 @@
+# OreWire email outreach stack — single-compose deployment (Postal + Listmonk + Console + Reacher)
+#
+# Dokploy: Create Service -> Compose -> Root Directory: email-stack, Compose file: docker-compose.yml
+# Local:   docker compose up -d  (from this folder)
+#
+# Required environment (.env next to this file, see .env.example):
+#   POSTAL_HOST_DOMAIN   e.g. postal.orewirehq.co      (A record -> VPS IP)
+#   POSTAL_WEB_PORT      host port for Postal UI (default 5000)
+#   LISTMONK_PORT        host port for Listmonk UI (default 9000)
+#   CONSOLE_PORT         host port for Outreach Console (default 8018)
+#   LISTMONK_ADMIN_USER / LISTMONK_ADMIN_PASSWORD
+#   MARIADB_PASSWORD / MARIADB_ROOT_PASSWORD
+
+x-postal-db: &postal-db
+  MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?set in .env}
+  MARIADB_DATABASE: postal
+  MARIADB_USER: postal
+  MARIADB_PASSWORD: ${MARIADB_PASSWORD:?set in .env}
+
+services:
+  # ---------------- Postal ----------------
+  postal-web:
+    image: ghcr.io/postalserver/postal:3.3.7
+    restart: unless-stopped
+    command: postal web-server
+    ports:
+      - "${POSTAL_WEB_PORT:-5000}:5000"
+    environment:
+      POSTAL_POSTAL_WEB_HOSTNAME: ${POSTAL_HOST_DOMAIN:?set in .env}
+      POSTAL_POSTAL_WEB_PROTOCOL: https
+      POSTAL_POSTAL_SMTP_HOSTNAME: ${POSTAL_HOST_DOMAIN}
+      POSTAL_POSTAL_SIGNING_KEY_PATH: /config/signing.key
+      POSTAL_MAIN_DB_HOST: postal-mariadb
+      POSTAL_MAIN_DB_PORT: "3306"
+      POSTAL_MAIN_DB_USERNAME: postal
+      POSTAL_MAIN_DB_PASSWORD: ${MARIADB_PASSWORD}
+      POSTAL_MAIN_DB_DATABASE: postal
+      POSTAL_MESSAGE_DB_HOST: postal-mariadb
+      POSTAL_MESSAGE_DB_PORT: "3306"
+      POSTAL_MESSAGE_DB_USERNAME: root
+      POSTAL_MESSAGE_DB_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      POSTAL_MESSAGE_DB_DATABASE_NAME_PREFIX: postal
+      POSTAL_WEB_SERVER_DEFAULT_PORT: "5000"
+      POSTAL_WEB_SERVER_DEFAULT_BIND_ADDRESS: 0.0.0.0
+    volumes:
+      - postal-assets:/opt/postal/public/assets
+      - postal-config:/config
+    depends_on:
+      postal-mariadb:
+        condition: service_healthy
+    networks: [email]
+
+  postal-smtp:
+    image: ghcr.io/postalserver/postal:3.3.7
+    restart: unless-stopped
+    command: postal smtp-server
+    ports:
+      - "25:25"          # must be reachable; some providers require unlocking outbound 25
+    environment:
+      POSTAL_POSTAL_SMTP_HOSTNAME: ${POSTAL_HOST_DOMAIN}
+      POSTAL_POSTAL_SIGNING_KEY_PATH: /config/signing.key
+      POSTAL_MAIN_DB_HOST: postal-mariadb
+      POSTAL_MAIN_DB_PORT: "3306"
+      POSTAL_MAIN_DB_USERNAME: postal
+      POSTAL_MAIN_DB_PASSWORD: ${MARIADB_PASSWORD}
+      POSTAL_MAIN_DB_DATABASE: postal
+      POSTAL_MESSAGE_DB_HOST: postal-mariadb
+      POSTAL_MESSAGE_DB_PORT: "3306"
+      POSTAL_MESSAGE_DB_USERNAME: root
+      POSTAL_MESSAGE_DB_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      POSTAL_MESSAGE_DB_DATABASE_NAME_PREFIX: postal
+      POSTAL_SMTP_SERVER_DEFAULT_PORT: "25"
+      POSTAL_SMTP_SERVER_DEFAULT_BIND_ADDRESS: 0.0.0.0
+      POSTAL_SMTP_SERVER_TLS_ENABLED: "false"   # terminate TLS at the proxy later; internal hop stays plain
+    volumes:
+      - postal-config:/config
+    depends_on:
+      postal-mariadb:
+        condition: service_healthy
+    networks: [email]
+
+  postal-worker:
+    image: ghcr.io/postalserver/postal:3.3.7
+    restart: unless-stopped
+    command: postal worker
+    environment:
+      POSTAL_POSTAL_SIGNING_KEY_PATH: /config/signing.key
+      POSTAL_MAIN_DB_HOST: postal-mariadb
+      POSTAL_MAIN_DB_PORT: "3306"
+      POSTAL_MAIN_DB_USERNAME: postal
+      POSTAL_MAIN_DB_PASSWORD: ${MARIADB_PASSWORD}
+      POSTAL_MAIN_DB_DATABASE: postal
+      POSTAL_MESSAGE_DB_HOST: postal-mariadb
+      POSTAL_MESSAGE_DB_PORT: "3306"
+      POSTAL_MESSAGE_DB_USERNAME: root
+      POSTAL_MESSAGE_DB_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      POSTAL_MESSAGE_DB_DATABASE_NAME_PREFIX: postal
+    volumes:
+      - postal-config:/config
+    depends_on:
+      postal-mariadb:
+        condition: service_healthy
+    networks: [email]
+
+  postal-mariadb:
+    image: mariadb:10.11
+    restart: unless-stopped
+    environment: *postal-db
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [email]
+
+  # ---------------- Listmonk ----------------
+  listmonk-db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: listmonk
+      POSTGRES_PASSWORD: ${LISTMONK_DB_PASSWORD:?set in .env}
+      POSTGRES_DB: listmonk
+    volumes:
+      - listmonk-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U listmonk"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks: [email]
+
+  listmonk:
+    image: listmonk/listmonk:latest
+    restart: unless-stopped
+    ports:
+      - "${LISTMONK_PORT:-9000}:9000"
+    depends_on:
+      listmonk-db:
+        condition: service_healthy
+    command: [sh, -c, "./listmonk --install --idempotent --yes --config '' && ./listmonk --upgrade --yes --config '' && ./listmonk --config ''"]
+    environment:
+      LISTMONK_app__address: 0.0.0.0:9000
+      LISTMONK_db__user: listmonk
+      LISTMONK_db__password: ${LISTMONK_DB_PASSWORD}
+      LISTMONK_db__database: listmonk
+      LISTMONK_db__host: listmonk-db
+      LISTMONK_db__port: "5432"
+      LISTMONK_db__ssl_mode: disable
+      LISTMONK_ADMIN_USER: ${LISTMONK_ADMIN_USER:-}
+      LISTMONK_ADMIN_PASSWORD: ${LISTMONK_ADMIN_PASSWORD:-}
+      TZ: Etc/UTC
+    networks: [email]
+
+  # ---------------- Outreach Console (rotation / caps / warmup / reply-watch) ----------------
+  console:
+    build: ../outreach/console
+    image: orewire/outreach-console:latest
+    restart: unless-stopped
+    ports:
+      - "${CONSOLE_PORT:-8018}:8018"
+    environment:
+      CONSOLE_PORT: "8018"
+    networks: [email]
+
+  # ---------------- Reacher (mailbox verification) ----------------
+  email-verifier:
+    image: reacherhq/backend:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"   # keep internal/localhost unless the bridge needs remote access
+    networks: [email]
+
+networks:
+  email:
+
+volumes:
+  mariadb-data:
+  listmonk-data:
+  postal-assets:
+  postal-config:
