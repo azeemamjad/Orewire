@@ -32,7 +32,8 @@ puts "CF|INFRA|A|track.#{ENV.fetch('EMAIL_DOMAIN', 'emails.orewire.com')}|#{vps_
     dom.incoming = false
     dom.verification_method = "DNS"
   end
-  puts "DOMAIN=#{d.name} verified=#{d.verified?}"
+  verified_now = d.verify_with_dns
+  puts "DOMAIN=#{d.name} verified=#{d.verified?} (verify_run=#{verified_now})"
 
   puts "CF|#{d.name}|TXT|#{d.name}|#{d.dns_verification_string}"
   puts "CF|#{d.name}|TXT|#{d.name}|#{d.spf_record}"
