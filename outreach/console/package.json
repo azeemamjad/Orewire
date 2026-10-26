@@ -6,6 +6,7 @@
   "dependencies": {
     "nodemailer": "^6.9.13",
     "smtp-server": "^3.13.4",
-    "imapflow": "^1.0.164"
+    "imapflow": "^1.0.164",
+    "mysql2": "^3.11.0"
   }
 }

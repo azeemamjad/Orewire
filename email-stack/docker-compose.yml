@@ -214,6 +214,10 @@ services:
     environment:
       CONSOLE_PORT: "8018"
       STATE_DIR: /data
+      POSTAL_MESSAGE_DB_HOST: postal-mariadb
+      POSTAL_DB_USER: root
+      POSTAL_DB_PASSWORD: ${MARIADB_ROOT_PASSWORD:-ulGYNpIWRzTMQIx24FxsZ6Mm}
+      POSTAL_DB_PREFIX: postal-server-
     volumes:
       - console-state:/data
     networks: [email, dokploy-network]
