@@ -241,3 +241,5 @@ volumes:
   postal-assets:
   postal-config:
   console-state:
+
+# deploy trigger: reload Listmonk SMTP messenger from DB
