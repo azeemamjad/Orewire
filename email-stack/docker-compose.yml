@@ -243,3 +243,4 @@ volumes:
   console-state:
 
 # deploy trigger: reload Listmonk SMTP messenger from DB
+# deploy trigger: reload listmonk SMTP messenger (no-auth internal hop)
