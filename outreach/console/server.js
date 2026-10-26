@@ -301,6 +301,7 @@ const server = http.createServer((req, res) => {
       tolerant("-- Azeem Amjad\r\nOreWire"),
       tolerant("-- Azeem Amjad\nOreWire"),
     ];
+    const localhostUrl = tolerant("http://localhost:9000");
     const loneLines = /(^|\r?\n)[ \t]*(?:--\s*Azeem Amjad|OreWire)[ \t]*(\r?\n|$)/g;
     const emptyP = /<p>\s*<\/p>/gi;
     let n = 0;
@@ -309,6 +310,7 @@ const server = http.createServer((req, res) => {
       const before = item.raw;
       let raw = before;
       for (const re of sigs) raw = raw.replace(re, "");
+      raw = raw.replace(localhostUrl, "https://lists.emails.orewire.com");
       raw = raw.replace(loneLines, "$1").replace(emptyP, "");
       if (raw !== before) { item.raw = raw; n++; }
     }

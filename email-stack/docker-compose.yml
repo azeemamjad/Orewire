@@ -195,6 +195,7 @@ services:
     command: [sh, -c, "./listmonk --install --idempotent --yes --config '' && ./listmonk --upgrade --yes --config '' && ./listmonk --config ''"]
     environment:
       LISTMONK_app__address: 0.0.0.0:9000
+      LISTMONK_app__root_url: https://lists.emails.orewire.com
       LISTMONK_db__user: listmonk
       LISTMONK_db__password: ${LISTMONK_DB_PASSWORD:-FIeZ1vWzXxNr8QT2zQZnpuIi}
       LISTMONK_db__database: listmonk
