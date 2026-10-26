@@ -168,6 +168,7 @@ function rewriteFrom(raw, mb) {
 const proxy = new SMTPServer({
   authOptional: true,
   banner: "Outreach Console proxy",
+  onConnect(session, cb) { log(`SMTP CONNECT from ${session.remoteAddress}`); cb(); },
   onAuth(auth, session, cb) { cb(null, { user: auth.username || "anonymous" }); }, // accept listmonk's auth, we auth upstream ourselves
   onData(stream, session, cb) {
     const chunks = [];
@@ -259,6 +260,24 @@ const server = http.createServer((req, res) => {
     const f = path.join(process.env.STATE_DIR || __dirname, "dns-records.txt");
     if (fs.existsSync(f)) { res.writeHead(200, { "Content-Type": "text/plain" }); return res.end(fs.readFileSync(f, "utf8")); }
     res.writeHead(404, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "no dns-records.txt yet — redeploy the email stack to generate it" }));
+  }
+  if (url.pathname === "/api/selftest") {
+    (async () => {
+      const out = { steps: [] };
+      try {
+        const t = nodemailer.createTransport({ host: "127.0.0.1", port: 2526, secure: false, tls: { rejectUnauthorized: false } });
+        const info = await t.sendMail({ from: "selftest@orewire.com", to: "selftest@example.com", subject: "console selftest", text: "selftest" });
+        out.steps.push({ step: "client->proxy", ok: true, resp: info.response });
+      } catch (e) { out.steps.push({ step: "client->proxy", ok: false, error: String(e.message).slice(0, 200) }); }
+      try {
+        const mb = state.mailboxes.find(m => m.enabled) || state.mailboxes[0];
+        const info = await transportFor(mb).sendMail({ from: "selftest@getorewire.com", to: "selftest@example.com", subject: "console selftest upstream", text: "selftest" });
+        out.steps.push({ step: "proxy->postal", ok: true, resp: info.response });
+      } catch (e) { out.steps.push({ step: "proxy->postal", ok: false, error: String(e.message).slice(0, 200) }); }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(out));
+    })();
+    return;
   }
   if (req.method === "POST" && url.pathname === "/api/mailbox") {
     let body = ""; req.on("data", c => body += c); req.on("end", () => {
