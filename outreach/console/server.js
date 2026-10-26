@@ -216,6 +216,8 @@ const server = http.createServer((req, res) => {
         if (b.display_name !== undefined) mb.display_name = b.display_name;
         if (b.daily_cap !== undefined) mb.daily_cap = Math.max(0, Number(b.daily_cap));
         if (b.warmup) mb.warmup = { ...mb.warmup, ...b.warmup };
+        if (b.user) mb.user = b.user;
+        if (b.pass) mb.pass = b.pass;
         save(); log(`mailbox updated: ${mb.email}`);
       }
       res.writeHead(200, { "Content-Type": "application/json" }); res.end('{"ok":true}');
