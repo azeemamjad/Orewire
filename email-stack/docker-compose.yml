@@ -30,8 +30,10 @@ services:
       - sh
       - -c
       - |
-        ruby -ropenssl -e 'File.write("/config/signing.key", OpenSSL::PKey::RSA.new(2048).to_pem) unless File.exist?("/config/signing.key")'
-        postal initialize
+        echo "[postal-init] step 1/2: ensure signing key"
+        ruby -ropenssl -e 'File.write("/config/signing.key", OpenSSL::PKey::RSA.new(2048).to_pem) unless File.exist?("/config/signing.key")' && echo "[postal-init] signing key OK" || echo "[postal-init] WARNING: key generation failed (continuing)"
+        echo "[postal-init] step 2/2: postal initialize"
+        postal initialize && echo "[postal-init] initialize OK"
     environment:
       POSTAL_POSTAL_SIGNING_KEY_PATH: /config/signing.key
       POSTAL_MAIN_DB_HOST: postal-mariadb
