@@ -281,21 +281,35 @@ const server = http.createServer((req, res) => {
   }
   if (url.pathname === "/api/queue-sample") {
     const first = state.queue[0];
+    let sigContext = null;
+    if (first) {
+      const m = first.raw.search(/Azeem/i);
+      if (m >= 0) sigContext = first.raw.slice(Math.max(0, m - 200), m + 300);
+    }
     res.writeHead(200, { "Content-Type": "application/json" });
-    return res.end(JSON.stringify({ len: state.queue.length, sample: first ? first.raw.slice(0, 3000) : null }));
+    return res.end(JSON.stringify({ len: state.queue.length, sample: first ? first.raw.slice(0, 400) : null, sigContext }));
   }
   if (req.method === "POST" && url.pathname === "/api/sanitize-queue") {
+    // Tolerant matcher: allow quoted-printable soft breaks (=CRLF) between any two characters.
+    function tolerant(str) {
+      const esc = [...str].map(ch => ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+      return new RegExp(esc.join("(?:=\\r?\\n)?"), "gi");
+    }
+    const sigs = [
+      tolerant("<p>-- Azeem Amjad<br>OreWire</p>"),
+      tolerant("<p>-- Azeem Amjad<br />OreWire</p>"),
+      tolerant("-- Azeem Amjad\r\nOreWire"),
+      tolerant("-- Azeem Amjad\nOreWire"),
+    ];
+    const loneLines = /(^|\r?\n)[ \t]*(?:--\s*Azeem Amjad|OreWire)[ \t]*(\r?\n|$)/g;
+    const emptyP = /<p>\s*<\/p>/gi;
     let n = 0;
-    const stripHtml = /<p>\s*--\s*Azeem Amjad\s*<br\s*\/?>\s*OreWire\s*<\/p>/gi;
-    const stripLine = /--\s*Azeem Amjad[^\r\n]*(\r?\n)?(?:OreWire)?[^\r\n]*(\r?\n)?/gi;
-    const stripOre = /(^|\r?\n)[ \t]*OreWire[ \t]*(\r?\n|$)/g;
     for (const item of state.queue) {
       if (!item.raw) continue;
       const before = item.raw;
       let raw = before;
-      raw = raw.replace(stripHtml, "");
-      raw = raw.replace(stripLine, "");
-      raw = raw.replace(stripOre, "$1");
+      for (const re of sigs) raw = raw.replace(re, "");
+      raw = raw.replace(loneLines, "$1").replace(emptyP, "");
       if (raw !== before) { item.raw = raw; n++; }
     }
     save();
