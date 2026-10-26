@@ -1,29 +1,23 @@
 # OreWire email outreach stack — single-compose deployment (Postal + Listmonk + Console + Reacher)
 #
-# Dokploy: Create service of type **Compose** (NOT Application) ->
-#   Compose file path: ./email-stack/docker-compose.yml   Branch: production
-# Local:   docker compose --env-file .env up -d   (from this folder)
+# ZERO-CONFIG: every variable has a baked-in default — deploys with no .env needed.
+# Override anything via Dokploy's environment editor if you want different values.
 #
-# One-domain access: add ONE DNS record  *.EMAIL_DOMAIN -> VPS IP  (or one A record per host).
-#   console.EMAIL_DOMAIN  -> Outreach Console (daily driver)
-#   lists.EMAIL_DOMAIN    -> Listmonk
-#   postal.EMAIL_DOMAIN   -> Postal
-# Routing/TLS is handled by Dokploy's Traefik via the labels below (resolver: letsencrypt).
+# Dokploy: service type **Compose**, Compose file path: ./email-stack/docker-compose.yml
+# One DNS record: *.emails.orewire.com -> VPS IP (DNS only / grey cloud on Cloudflare)
+#   emails.orewire.com            -> Outreach Console
+#   lists.emails.orewire.com      -> Listmonk  (login: admin / dmmGAwNdePYl33zuivvIndqd)
+#   postal.emails.orewire.com     -> Postal
 #
-# Required environment (.env, see .env.example):
-#   EMAIL_DOMAIN          e.g. email.orewirehq.co        (wildcard DNS -> VPS)
-#   POSTAL_HOST_DOMAIN    e.g. postal.email.orewirehq.co (the infra hostname Postal uses)
-#   LISTMONK_ADMIN_USER / LISTMONK_ADMIN_PASSWORD
-#   MARIADB_PASSWORD / MARIADB_ROOT_PASSWORD / LISTMONK_DB_PASSWORD
+# NOTE: default DB passwords are baked in for zero-config boot. The databases are
+# internal-only (no host ports), but if this repo is public, override
+# MARIADB_* / LISTMONK_DB_PASSWORD in Dokploy's environment editor.
 
 x-postal-db: &postal-db
-  MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?set in .env}
+  MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-ulGYNpIWRzTMQIx24FxsZ6Mm}
   MARIADB_DATABASE: postal
   MARIADB_USER: postal
-  MARIADB_PASSWORD: ${MARIADB_PASSWORD:?set in .env}
-
-x-ui-networks: &ui-networks
-  networks: [email, dokploy-network]
+  MARIADB_PASSWORD: ${MARIADB_PASSWORD:-bqnl2tgU0sNIb8uY5PMXJ5v8}
 
 services:
   # ---------------- Postal ----------------
@@ -32,19 +26,19 @@ services:
     restart: unless-stopped
     command: postal web-server
     environment:
-      POSTAL_POSTAL_WEB_HOSTNAME: ${POSTAL_HOST_DOMAIN:?set in .env}
+      POSTAL_POSTAL_WEB_HOSTNAME: ${POSTAL_HOST_DOMAIN:-postal.emails.orewire.com}
       POSTAL_POSTAL_WEB_PROTOCOL: https
-      POSTAL_POSTAL_SMTP_HOSTNAME: ${POSTAL_HOST_DOMAIN}
+      POSTAL_POSTAL_SMTP_HOSTNAME: ${POSTAL_HOST_DOMAIN:-postal.emails.orewire.com}
       POSTAL_POSTAL_SIGNING_KEY_PATH: /config/signing.key
       POSTAL_MAIN_DB_HOST: postal-mariadb
       POSTAL_MAIN_DB_PORT: "3306"
       POSTAL_MAIN_DB_USERNAME: postal
-      POSTAL_MAIN_DB_PASSWORD: ${MARIADB_PASSWORD}
+      POSTAL_MAIN_DB_PASSWORD: ${MARIADB_PASSWORD:-bqnl2tgU0sNIb8uY5PMXJ5v8}
       POSTAL_MAIN_DB_DATABASE: postal
       POSTAL_MESSAGE_DB_HOST: postal-mariadb
       POSTAL_MESSAGE_DB_PORT: "3306"
       POSTAL_MESSAGE_DB_USERNAME: root
-      POSTAL_MESSAGE_DB_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      POSTAL_MESSAGE_DB_PASSWORD: ${MARIADB_ROOT_PASSWORD:-ulGYNpIWRzTMQIx24FxsZ6Mm}
       POSTAL_MESSAGE_DB_DATABASE_NAME_PREFIX: postal
       POSTAL_WEB_SERVER_DEFAULT_PORT: "5000"
       POSTAL_WEB_SERVER_DEFAULT_BIND_ADDRESS: 0.0.0.0
@@ -57,7 +51,7 @@ services:
     networks: [email, dokploy-network]
     labels:
       - traefik.enable=true
-      - traefik.http.routers.postal.rule=Host(`postal.${EMAIL_DOMAIN:?set in .env}`)
+      - traefik.http.routers.postal.rule=Host(`postal.${EMAIL_DOMAIN:-emails.orewire.com}`)
       - traefik.http.routers.postal.entrypoints=websecure
       - traefik.http.routers.postal.tls.certresolver=letsencrypt
       - traefik.http.services.postal.loadbalancer.server.port=5000
@@ -67,19 +61,19 @@ services:
     restart: unless-stopped
     command: postal smtp-server
     ports:
-      - "25:25"          # real mail; some providers require unlocking outbound 25
+      - "25:25"
     environment:
-      POSTAL_POSTAL_SMTP_HOSTNAME: ${POSTAL_HOST_DOMAIN}
+      POSTAL_POSTAL_SMTP_HOSTNAME: ${POSTAL_HOST_DOMAIN:-postal.emails.orewire.com}
       POSTAL_POSTAL_SIGNING_KEY_PATH: /config/signing.key
       POSTAL_MAIN_DB_HOST: postal-mariadb
       POSTAL_MAIN_DB_PORT: "3306"
       POSTAL_MAIN_DB_USERNAME: postal
-      POSTAL_MAIN_DB_PASSWORD: ${MARIADB_PASSWORD}
+      POSTAL_MAIN_DB_PASSWORD: ${MARIADB_PASSWORD:-bqnl2tgU0sNIb8uY5PMXJ5v8}
       POSTAL_MAIN_DB_DATABASE: postal
       POSTAL_MESSAGE_DB_HOST: postal-mariadb
       POSTAL_MESSAGE_DB_PORT: "3306"
       POSTAL_MESSAGE_DB_USERNAME: root
-      POSTAL_MESSAGE_DB_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      POSTAL_MESSAGE_DB_PASSWORD: ${MARIADB_ROOT_PASSWORD:-ulGYNpIWRzTMQIx24FxsZ6Mm}
       POSTAL_MESSAGE_DB_DATABASE_NAME_PREFIX: postal
       POSTAL_SMTP_SERVER_DEFAULT_PORT: "25"
       POSTAL_SMTP_SERVER_DEFAULT_BIND_ADDRESS: 0.0.0.0
@@ -100,12 +94,12 @@ services:
       POSTAL_MAIN_DB_HOST: postal-mariadb
       POSTAL_MAIN_DB_PORT: "3306"
       POSTAL_MAIN_DB_USERNAME: postal
-      POSTAL_MAIN_DB_PASSWORD: ${MARIADB_PASSWORD}
+      POSTAL_MAIN_DB_PASSWORD: ${MARIADB_PASSWORD:-bqnl2tgU0sNIb8uY5PMXJ5v8}
       POSTAL_MAIN_DB_DATABASE: postal
       POSTAL_MESSAGE_DB_HOST: postal-mariadb
       POSTAL_MESSAGE_DB_PORT: "3306"
       POSTAL_MESSAGE_DB_USERNAME: root
-      POSTAL_MESSAGE_DB_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      POSTAL_MESSAGE_DB_PASSWORD: ${MARIADB_ROOT_PASSWORD:-ulGYNpIWRzTMQIx24FxsZ6Mm}
       POSTAL_MESSAGE_DB_DATABASE_NAME_PREFIX: postal
     volumes:
       - postal-config:/config
@@ -133,7 +127,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: listmonk
-      POSTGRES_PASSWORD: ${LISTMONK_DB_PASSWORD:?set in .env}
+      POSTGRES_PASSWORD: ${LISTMONK_DB_PASSWORD:-FIeZ1vWzXxNr8QT2zQZnpuIi}
       POSTGRES_DB: listmonk
     volumes:
       - listmonk-data:/var/lib/postgresql/data
@@ -154,18 +148,18 @@ services:
     environment:
       LISTMONK_app__address: 0.0.0.0:9000
       LISTMONK_db__user: listmonk
-      LISTMONK_db__password: ${LISTMONK_DB_PASSWORD}
+      LISTMONK_db__password: ${LISTMONK_DB_PASSWORD:-FIeZ1vWzXxNr8QT2zQZnpuIi}
       LISTMONK_db__database: listmonk
       LISTMONK_db__host: listmonk-db
       LISTMONK_db__port: "5432"
       LISTMONK_db__ssl_mode: disable
-      LISTMONK_ADMIN_USER: ${LISTMONK_ADMIN_USER:-}
-      LISTMONK_ADMIN_PASSWORD: ${LISTMONK_ADMIN_PASSWORD:-}
+      LISTMONK_ADMIN_USER: ${LISTMONK_ADMIN_USER:-admin}
+      LISTMONK_ADMIN_PASSWORD: ${LISTMONK_ADMIN_PASSWORD:-dmmGAwNdePYl33zuivvIndqd}
       TZ: Etc/UTC
     networks: [email, dokploy-network]
     labels:
       - traefik.enable=true
-      - traefik.http.routers.lists.rule=Host(`lists.${EMAIL_DOMAIN}`)
+      - traefik.http.routers.lists.rule=Host(`lists.${EMAIL_DOMAIN:-emails.orewire.com}`)
       - traefik.http.routers.lists.entrypoints=websecure
       - traefik.http.routers.lists.tls.certresolver=letsencrypt
       - traefik.http.services.lists.loadbalancer.server.port=9000
@@ -180,7 +174,7 @@ services:
     networks: [email, dokploy-network]
     labels:
       - traefik.enable=true
-      - traefik.http.routers.console.rule=Host(`console.${EMAIL_DOMAIN}`) || Host(`${EMAIL_DOMAIN}`)
+      - traefik.http.routers.console.rule=Host(`console.${EMAIL_DOMAIN:-emails.orewire.com}`) || Host(`${EMAIL_DOMAIN:-emails.orewire.com}`)
       - traefik.http.routers.console.entrypoints=websecure
       - traefik.http.routers.console.tls.certresolver=letsencrypt
       - traefik.http.services.console.loadbalancer.server.port=8018
@@ -194,7 +188,7 @@ services:
 networks:
   email:
   dokploy-network:
-    external: true   # created by Dokploy on install (`docker network ls` to confirm)
+    external: true
 
 volumes:
   mariadb-data:
