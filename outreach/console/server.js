@@ -118,9 +118,11 @@ async function syncSentCounts() {
     });
   } catch (e) { return log("[stats] DB connect failed: " + String(e.message).slice(0, 100)); }
   try {
-    const [dbs] = await conn.query("SHOW DATABASES LIKE ?", [process.env.POSTAL_DB_PREFIX || "postal-server-%"]);
-    if (!dbs.length) return log("[stats] no postal-server-* DBs found");
-    const parts = dbs.map(d => `SELECT mail_from, COUNT(*) c FROM \`${d.Database}\`.messages WHERE scope = 'outgoing' AND mail_from IS NOT NULL AND timestamp >= UNIX_TIMESTAMP(CURDATE()) GROUP BY mail_from`);
+    const [dbs] = await conn.query("SHOW DATABASES");
+    const prefix = process.env.POSTAL_DB_PREFIX || "postal-server-";
+    const list = dbs.map(d => d.Database).filter(n => n && String(n).startsWith(prefix));
+    if (!list.length) return log(`[stats] no ${prefix}* DBs found (total dbs=${dbs.length})`);
+    const parts = list.map(n => `SELECT mail_from, COUNT(*) c FROM \`${n}\`.messages WHERE scope = 'outgoing' AND mail_from IS NOT NULL AND timestamp >= UNIX_TIMESTAMP(CURDATE()) GROUP BY mail_from`);
     const [rows] = await conn.query(parts.join(" UNION ALL "));
     const counts = {};
     let total = 0;
@@ -136,7 +138,7 @@ async function syncSentCounts() {
       if (c > 0) matched++;
       if (c !== mb.sent_today) { mb.sent_today = c; changed = true; }
     }
-    log(`[stats] synced: dbs=${dbs.length} rows=${rows.length} total=${total} mailboxes-with-sends=${matched} changed=${changed}`);
+    log(`[stats] synced: dbs=${list.length} rows=${rows.length} total=${total} mailboxes-with-sends=${matched} changed=${changed}`);
     if (changed) save();
   } finally {
     await conn.end();
