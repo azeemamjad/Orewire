@@ -18,14 +18,17 @@ Add **one** record (or one A record per host if your DNS provider lacks wildcard
 
 | Type | Name | Value |
 |------|------|-------|
-| A | `*.email.yourdomain` | VPS IP |
+| A | `*.emails.orewire.com` | VPS IP |
 
 That single record serves:
-- `console.email.yourdomain` → Outreach Console (daily driver; header links to the other two)
-- `lists.email.yourdomain` → Listmonk
-- `postal.email.yourdomain` → Postal
+- `emails.orewire.com` → Outreach Console (daily driver; header links to the other two)
+- `lists.emails.orewire.com` → Listmonk
+- `postal.emails.orewire.com` → Postal
 
-Infra host (once, for Postal's HELO/return-path): `postal.email.yourdomain` is covered by the
+⚠️ **Cloudflare users:** set the record to **DNS only (grey cloud)**. The orange-cloud proxy
+breaks Traefik's TLS termination and the Let's Encrypt HTTP-01 challenge.
+
+Infra host (once, for Postal's HELO/return-path): `postal.emails.orewire.com` is covered by the
 wildcard. Per-domain DKIM/SPF/return-path for the *sending* domains is separate — see §3.
 
 ## 3. DNS — per sending domain (getorewire.co, orewirehq.co, …)
