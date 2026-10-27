@@ -54,7 +54,24 @@ let state = {
   replied: [],      // {from, subject, seen_at, mailbox, purged, autoReplied}
   log: [],
 };
-if (fs.existsSync(STATE_FILE)) state = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+if (fs.existsSync(STATE_FILE)) {
+  const saved = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+  state = {
+    ...state,
+    ...saved,
+    settings: {
+      ...state.settings,
+      ...(saved.settings || {}),
+      imap: { ...state.settings.imap, ...((saved.settings || {}).imap || {}) },
+      links: { ...state.settings.links, ...((saved.settings || {}).links || {}) },
+      autoReply: { ...state.settings.autoReply, ...((saved.settings || {}).autoReply || {}) },
+    },
+    mailboxes: (saved.mailboxes || []).map(m => ({
+      ...m,
+      imap: { host: "imap.gmail.com", port: 993, secure: true, user: "", pass: "", ...(m.imap || {}) },
+    })),
+  };
+}
 function save() { fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 1)); }
 function log(msg) {
   const line = { at: new Date().toISOString(), msg };
