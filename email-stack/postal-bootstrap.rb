@@ -74,3 +74,20 @@ puts "HTTPENDPOINT=#{http.name} url=#{http.url}"
   end
 end
 
+# ---------- inbound diagnostics ----------
+begin
+  puts "INBOUND_DIAG routes=#{server.routes.count} endpoints=#{server.http_endpoints.count} domains_incoming=#{server.domains.where(incoming: true).count}"
+  require "net/http"
+  uri = URI(http.url)
+  res = Net::HTTP.start(uri.host, uri.port, read_timeout: 10) { |h| h.post(uri.request_uri, '{"from":"diag@example.com","to":"diag@getorewire.com","subject":"bootstrap diag","text":"diag"}', { "Content-Type" => "application/json" }) }
+  puts "INBOUND_DIAG http_test=#{res.code} body=#{res.body.to_s[0, 40]}"
+rescue => e
+  puts "INBOUND_DIAG http_test_error=#{e.message[0, 140]}"
+end
+begin
+  http.reload
+  puts "INBOUND_DIAG endpoint_error=#{http.error.to_s[0, 140]} disabled_until=#{http.disabled_until.inspect}"
+rescue => e
+  puts "INBOUND_DIAG endpoint_reload_error=#{e.message[0, 140]}"
+end
+
