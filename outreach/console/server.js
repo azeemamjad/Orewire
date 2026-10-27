@@ -181,12 +181,13 @@ async function syncSentCounts() {
     }
     log(`[stats] synced: dbs=${list.length} rows=${rows.length} total=${total} mailboxes-with-sends=${matched} changed=${changed}`);
     try {
-      const [inc] = await conn.query(`SELECT COUNT(*) c FROM \`${list[0]}\`.messages WHERE scope = 'incoming' AND timestamp >= UNIX_TIMESTAMP(CURDATE())`);
-      const [qd] = await conn.query(`SELECT COUNT(*) c FROM \`${list[0]}\`.queued_messages`);
-      log(`[stats] incoming today=${inc[0].c} queued_messages=${qd[0].c}`);
-    } catch (e) {
-      log(`[stats] incoming probe failed: ${String(e.message).slice(0, 80)}`);
-    }
+      const [inc] = await conn.query(`SELECT COUNT(*) c FROM \`${list[0]}\`.messages WHERE scope = 'incoming'`);
+      log(`[stats] incoming_total=${inc[0].c}`);
+    } catch (e) { log(`[stats] incoming probe failed: ${String(e.message).slice(0, 80)}`); }
+    try {
+      const [qd] = await conn.query("SELECT COUNT(*) c FROM postal.queued_messages");
+      log(`[stats] queued_messages=${qd[0].c}`);
+    } catch (e) { log(`[stats] queued probe failed: ${String(e.message).slice(0, 80)}`); }
     if (changed) save();
   } finally {
     await conn.end();
