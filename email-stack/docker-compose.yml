@@ -1,6 +1,6 @@
-# OreWire email outreach stack — single-compose deployment (Postal + Listmonk + Console + Reacher)
+# OreWire email outreach stack â€” single-compose deployment (Postal + Listmonk + Console + Reacher)
 #
-# ZERO-CONFIG: every variable has a baked-in default — deploys with no .env needed.
+# ZERO-CONFIG: every variable has a baked-in default â€” deploys with no .env needed.
 # Override anything via Dokploy's environment editor if you want different values.
 #
 # Dokploy: service type **Compose**, Compose file path: ./email-stack/docker-compose.yml
@@ -46,6 +46,7 @@ services:
     environment:
       POSTAL_CONFIG_FILE_PATH: /config/postal.yml
       POSTAL_POSTAL_SIGNING_KEY_PATH: /config/signing.key
+      POSTAL_ALLOWED_REQUEST_DESTINATIONS: console
       POSTAL_MAIN_DB_HOST: postal-mariadb
       POSTAL_MAIN_DB_PORT: "3306"
       POSTAL_MAIN_DB_USERNAME: postal
@@ -71,6 +72,7 @@ services:
     restart: unless-stopped
     command: postal web-server
     environment:
+      POSTAL_ALLOWED_REQUEST_DESTINATIONS: console
       POSTAL_POSTAL_WEB_HOSTNAME: ${POSTAL_HOST_DOMAIN:-postal.emails.orewire.com}
       POSTAL_POSTAL_WEB_PROTOCOL: https
       POSTAL_POSTAL_SMTP_HOSTNAME: ${POSTAL_HOST_DOMAIN:-postal.emails.orewire.com}
@@ -105,6 +107,7 @@ services:
     ports:
       - "25:25"
     environment:
+      POSTAL_ALLOWED_REQUEST_DESTINATIONS: console
       POSTAL_POSTAL_SMTP_HOSTNAME: ${POSTAL_HOST_DOMAIN:-postal.emails.orewire.com}
       POSTAL_POSTAL_SIGNING_KEY_PATH: /config/signing.key
       POSTAL_MAIN_DB_HOST: postal-mariadb
@@ -135,6 +138,7 @@ services:
     restart: unless-stopped
     command: postal worker
     environment:
+      POSTAL_ALLOWED_REQUEST_DESTINATIONS: console
       POSTAL_POSTAL_SIGNING_KEY_PATH: /config/signing.key
       POSTAL_MAIN_DB_HOST: postal-mariadb
       POSTAL_MAIN_DB_PORT: "3306"
@@ -250,3 +254,4 @@ volumes:
 # deploy trigger: reload Listmonk SMTP messenger from DB
 # deploy trigger: reload listmonk SMTP messenger (no-auth internal hop)
 # deploy trigger: reload listmonk SMTP messenger (auth_protocol=none)
+
