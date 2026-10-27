@@ -307,10 +307,65 @@ setInterval(() => {
 }, 60000);
 
 // ---------- web UI + API ----------
+const crypto = require("crypto");
+const CONSOLE_PASSWORD = process.env.CONSOLE_PASSWORD || "";
+const SESSION_TOKEN = CONSOLE_PASSWORD
+  ? crypto.createHmac("sha256", CONSOLE_PASSWORD).update("orewire-console-session-v1").digest("hex")
+  : null;
+
+function parseCookies(req) {
+  const out = {};
+  const h = req.headers.cookie || "";
+  for (const part of h.split(";")) {
+    const i = part.indexOf("=");
+    if (i > 0) out[part.slice(0, i).trim()] = part.slice(i + 1).trim();
+  }
+  return out;
+}
+function isAuthed(req) {
+  if (!SESSION_TOKEN) return true; // password not configured (dev)
+  return parseCookies(req).console_auth === SESSION_TOKEN;
+}
+
+const LOGIN_PAGE = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Outreach Console — Login</title>
+<style>body{margin:0;font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf3;display:flex;align-items:center;justify-content:center;height:100vh}
+.card{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:28px 30px;width:340px}
+h1{font-size:17px;margin:0 0 16px}input{width:100%;box-sizing:border-box;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:9px;font-size:14px;margin-bottom:14px}
+button{width:100%;background:#238636;color:#fff;border:0;border-radius:6px;padding:10px;font-size:14px;font-weight:600;cursor:pointer}
+.err{color:#f85149;font-size:13px;margin-bottom:10px}</style></head>
+<body><form class="card" method="POST" action="/api/login"><h1>📨 Outreach Console</h1>
+<div class="err" id="err"></div>
+<input type="password" name="password" placeholder="Password" autofocus autocomplete="current-password">
+<button type="submit">Sign in</button></form>
+<script>if(location.search.indexOf('err=1')>=0)document.getElementById('err').textContent='Wrong password.';</script>
+</body></html>`;
+
 const ui = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://x");
+
+  // ---- auth ----
+  if (req.method === "POST" && url.pathname === "/api/login") {
+    let body = ""; req.on("data", c => body += c); req.on("end", () => {
+      let pass = "";
+      try { pass = (JSON.parse(body).password || ""); } catch { const m = body.match(/(?:^|&)password=([^&]*)/); pass = m ? decodeURIComponent(m[1]) : ""; }
+      if (SESSION_TOKEN && pass === CONSOLE_PASSWORD) {
+        res.writeHead(302, { "Set-Cookie": `console_auth=${SESSION_TOKEN}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${60 * 60 * 24 * 7}`, Location: "/" });
+        return res.end();
+      }
+      res.writeHead(302, { Location: "/login?err=1" }); res.end();
+    });
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/login") {
+    res.writeHead(200, { "Content-Type": "text/html" }); return res.end(LOGIN_PAGE);
+  }
+  if (!isAuthed(req)) {
+    if (url.pathname.startsWith("/api/")) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"auth required"}'); }
+    res.writeHead(302, { Location: "/login" }); return res.end();
+  }
+
   if (req.method === "GET" && url.pathname === "/") {
     res.writeHead(200, { "Content-Type": "text/html" }); return res.end(ui);
   }
