@@ -12,6 +12,8 @@ postal:
   default_maximum_delivery_attempts: 18
   default_maximum_hold_expiry_days: 7
   default_suppression_list_automatic_removal_days: 30
+  allowed_request_destinations:
+    - console
 
 web_server:
   default_bind_address: 0.0.0.0
