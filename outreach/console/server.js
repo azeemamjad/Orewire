@@ -185,8 +185,9 @@ async function syncSentCounts() {
       log(`[stats] incoming_total=${inc[0].c}`);
     } catch (e) { log(`[stats] incoming probe failed: ${String(e.message).slice(0, 80)}`); }
     try {
-      const [qd] = await conn.query("SELECT COUNT(*) c FROM postal.queued_messages");
-      log(`[stats] queued_messages=${qd[0].c}`);
+      const [qd] = await conn.query("SELECT COUNT(*) c, COALESCE(SUM(locked_at IS NOT NULL),0) locked, COALESCE(MAX(attempts),0) maxatt FROM postal.queued_messages");
+      const [role] = await conn.query("SELECT COUNT(*) c FROM postal.worker_roles");
+      log(`[stats] queued=${qd[0].c} locked=${qd[0].locked} max_attempts=${qd[0].maxatt} worker_roles=${role[0].c}`);
     } catch (e) { log(`[stats] queued probe failed: ${String(e.message).slice(0, 80)}`); }
     if (changed) save();
   } finally {
