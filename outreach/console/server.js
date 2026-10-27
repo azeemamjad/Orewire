@@ -180,6 +180,13 @@ async function syncSentCounts() {
       if (c !== mb.sent_today) { mb.sent_today = c; changed = true; }
     }
     log(`[stats] synced: dbs=${list.length} rows=${rows.length} total=${total} mailboxes-with-sends=${matched} changed=${changed}`);
+    try {
+      const [inc] = await conn.query(`SELECT COUNT(*) c FROM \`${list[0]}\`.messages WHERE scope = 'incoming' AND timestamp >= UNIX_TIMESTAMP(CURDATE())`);
+      const [qd] = await conn.query(`SELECT COUNT(*) c FROM \`${list[0]}\`.queued_messages`);
+      log(`[stats] incoming today=${inc[0].c} queued_messages=${qd[0].c}`);
+    } catch (e) {
+      log(`[stats] incoming probe failed: ${String(e.message).slice(0, 80)}`);
+    }
     if (changed) save();
   } finally {
     await conn.end();
