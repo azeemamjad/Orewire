@@ -218,6 +218,7 @@ services:
       CONSOLE_PASSWORD: ${CONSOLE_PASSWORD:-XMoNeTB8hnCcWCfdNhw7}
       INBOUND_KEY: ${INBOUND_KEY:-inbound-8x3k}
       POSTAL_API_KEY: ${POSTAL_API_KEY:-mIwkfkU4y8ra787msubwLg8y}
+      POSTAL_API_URL: ${POSTAL_API_URL:-https://postal.emails.orewire.com}
       POSTAL_SMTP_HOST: postal-smtp
       POSTAL_SMTP_PORT: "25"
       POSTAL_MESSAGE_DB_HOST: postal-mariadb

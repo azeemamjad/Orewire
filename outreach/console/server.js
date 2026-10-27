@@ -83,10 +83,13 @@ function log(msg) {
   console.log("[console]", msg); save();
 }
 if (!fs.existsSync(STATE_FILE)) { save(); log("state initialised with 9 mailboxes"); }
-if (process.env.POSTAL_API_KEY && !state.settings.postalApi.key) {
-  state.settings.postalApi.key = process.env.POSTAL_API_KEY;
-  save();
+if (process.env.POSTAL_API_URL) {
+  state.settings.postalApi.url = process.env.POSTAL_API_URL;
 }
+if (process.env.POSTAL_API_KEY) {
+  state.settings.postalApi.key = process.env.POSTAL_API_KEY;
+}
+if (process.env.POSTAL_API_URL || process.env.POSTAL_API_KEY) save();
 
 // ---------- caps & warmup ----------
 function capFor(mb) {
