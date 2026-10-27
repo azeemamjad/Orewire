@@ -49,10 +49,13 @@ let state = {
       interestOnly: true,
       template: "<p>Thanks for getting back to me!</p><p>Here's the quick walkthrough: <a href=\"{{video}}\">{{video}}</a></p><p>Or grab a slot that suits you: <a href=\"{{booking}}\">{{booking}}</a></p><p>Best,</p>",
     },
+    postalApi: { url: "http://postal-web:5000", key: "" },
   },
   queue: [],        // {id, mailbox_id, mail_from, rcpt_to, raw, attempts, queued_at}
   replied: [],      // {from, subject, seen_at, mailbox, purged, autoReplied}
   inbox: [],        // {key, mailbox, from, subject, date, uid}
+  inbound: [],      // {id, received_at, from, to, subject, text, html, message_id, references}
+  sent: [],         // {at, to, subject, from}
   log: [],
 };
 if (fs.existsSync(STATE_FILE)) {
@@ -80,6 +83,10 @@ function log(msg) {
   console.log("[console]", msg); save();
 }
 if (!fs.existsSync(STATE_FILE)) { save(); log("state initialised with 9 mailboxes"); }
+if (process.env.POSTAL_API_KEY && !state.settings.postalApi.key) {
+  state.settings.postalApi.key = process.env.POSTAL_API_KEY;
+  save();
+}
 
 // ---------- caps & warmup ----------
 function capFor(mb) {
@@ -366,6 +373,71 @@ const server = http.createServer((req, res) => {
     res.writeHead(302, { Location: "/login" }); return res.end();
   }
 
+  // ---- inbound mail from Postal routes (POST /api/inbound?key=...) ----
+  if (req.method === "POST" && url.pathname === "/api/inbound") {
+    const key = process.env.INBOUND_KEY || "inbound-8x3k";
+    if (url.searchParams.get("key") !== key) { res.writeHead(403); return res.end("forbidden"); }
+    let body = ""; req.on("data", c => body += c); req.on("end", () => {
+      try {
+        const b = JSON.parse(body);
+        const headers = b.headers || {};
+        const item = {
+          id: Date.now() + "-" + Math.random().toString(36).slice(2, 7),
+          received_at: new Date().toISOString(),
+          from: typeof b.from === "string" ? b.from : (b.from && b.from.address) || "",
+          to: typeof b.to === "string" ? b.to : (b.to && b.to.address) || "",
+          subject: b.subject || "",
+          text: b.text || "",
+          html: b.html || "",
+          message_id: b.message_id || headers["message-id"] || "",
+          references: headers["references"] || "",
+        };
+        state.inbound = [item, ...(state.inbound || [])].slice(0, 500);
+        save();
+        log(`INBOUND from ${item.from} to ${item.to}: ${item.subject.slice(0, 60)}`);
+        res.writeHead(200, { "Content-Type": "application/json" }); res.end('{"ok":true}');
+      } catch (e) {
+        res.writeHead(400); res.end("bad json");
+      }
+    });
+    return;
+  }
+
+  // ---- send a manual reply through Postal (from the mailbox that received it) ----
+  if (req.method === "POST" && url.pathname === "/api/reply") {
+    let body = ""; req.on("data", c => body += c); req.on("end", async () => {
+      try {
+        const b = JSON.parse(body);
+        const msg = (state.inbound || []).find(x => x.id === b.inbound_id);
+        if (!msg) { res.writeHead(404); return res.end('{"error":"message not found"}'); }
+        const api = state.settings.postalApi || {};
+        const from = msg.to;
+        const to = msg.from;
+        const headers = {};
+        if (msg.message_id) {
+          headers["In-Reply-To"] = msg.message_id;
+          headers["References"] = (msg.references ? msg.references + " " : "") + msg.message_id;
+        }
+        const htmlBody = "<p>" + String(b.body || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>") + "</p>";
+        const payload = JSON.stringify({
+          to: [to], from, subject: "Re: " + String(msg.subject || "").replace(/^(re:\s*)+/i, ""),
+          html_body: htmlBody, plain_body: String(b.body || ""), headers,
+        });
+        const pr = await fetch((api.url || "http://postal-web:5000") + "/api/v1/send/message", {
+          method: "POST", headers: { "Content-Type": "application/json", "X-Server-API-Key": api.key || "" },
+          body: payload, signal: AbortSignal.timeout(30000),
+        });
+        if (!pr.ok) throw new Error("Postal send failed: " + pr.status);
+        state.sent = [{ at: new Date().toISOString(), to, subject: "Re: " + msg.subject, from }, ...(state.sent || [])].slice(0, 200);
+        save(); log(`REPLY SENT to ${to} from ${from}`);
+        res.writeHead(200, { "Content-Type": "application/json" }); res.end('{"ok":true}');
+      } catch (e) {
+        res.writeHead(500, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: String(e.message).slice(0, 200) }));
+      }
+    });
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/") {
     res.writeHead(200, { "Content-Type": "text/html" }); return res.end(ui);
   }
@@ -377,6 +449,8 @@ const server = http.createServer((req, res) => {
       queue: state.queue,
       replied: state.replied,
       inbox: state.inbox || [],
+      inbound: state.inbound || [],
+      sent: state.sent || [],
       log: state.log.slice(0, 60),
       sent_today: state.mailboxes.reduce((a, m) => a + (m.sent_date === today() ? m.sent_today : 0), 0),
     };

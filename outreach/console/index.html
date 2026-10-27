@@ -100,6 +100,18 @@
   </table>
   <p class="muted">Pulls the last 5 days from each Gmail inbox (requires the app passwords below). Reply manually from Gmail — no automation runs.</p>
 
+  <h2>📬 Inbound replies (via Postal — reply from here)</h2>
+  <table id="inboundTable">
+    <thead><tr><th>Received</th><th>To (mailbox)</th><th>From</th><th>Subject</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div class="card" style="margin-top:10px">
+    <h3>✍️ Reply</h3>
+    <div class="muted" id="replyInfo">Click “Reply” on a message above.</div>
+    <textarea id="replyBody" rows="5" style="width:100%;margin-top:8px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;font-size:13px;padding:8px" placeholder="Type your reply…"></textarea>
+    <div style="margin-top:8px"><button class="primary" onclick="sendReply()">Send reply via Postal</button> <span class="muted" id="replyStatus"></span></div>
+  </div>
+
   <h2>Activity log</h2>
   <div class="log" id="log"></div>
 </main>
@@ -162,6 +174,12 @@ function render() {
       ? inb.slice(0, 120).map(x => `<tr><td class="muted">${x.mailbox}</td><td>${x.from}</td><td>${x.subject || '(no subject)'}</td><td class="muted">${new Date(x.date).toLocaleString()}</td></tr>`).join('')
       : '<tr><td colspan="4" class="muted">inbox empty — add IMAP app passwords, then click Refresh inbox</td></tr>';
 
+    const ib = s.inbound || [];
+    window.__inbound = ib;
+    document.querySelector('#inboundTable tbody').innerHTML = ib.length
+      ? ib.slice(0, 120).map(m => `<tr><td class="muted">${new Date(m.received_at).toLocaleString()}</td><td class="muted">${m.to}</td><td>${m.from}</td><td>${m.subject || '(no subject)'}</td><td><button onclick="pickReply('${m.id}')">Reply</button></td></tr>`).join('')
+      : '<tr><td colspan="5" class="muted">no inbound yet — set the domain MX to postal.emails.orewire.com (Postal will route replies here)</td></tr>';
+
     document.getElementById('log').innerHTML = s.log.map(l => `<div><b>${new Date(l.at).toLocaleTimeString()}</b> ${l.msg}</div>`).join('');
   });
 }
@@ -192,6 +210,29 @@ function saveAutoReply() {
 }
 function checkReplies() {
   fetch('/api/check-replies', { method: 'POST' }).then(() => render());
+}
+let currentReply = null;
+function pickReply(id) {
+  currentReply = id;
+  const m = (window.__inbound || []).find(x => x.id === id);
+  if (!m) return;
+  document.getElementById('replyInfo').textContent = `Replying to ${m.from} — “${m.subject || '(no subject)'}” (as ${m.to})`;
+  document.getElementById('replyBody').value = '';
+  document.getElementById('replyStatus').textContent = '';
+  document.getElementById('replyBody').focus();
+}
+function sendReply() {
+  if (!currentReply) { document.getElementById('replyStatus').textContent = 'pick a message first'; return; }
+  const body = document.getElementById('replyBody').value;
+  if (!body.trim()) { document.getElementById('replyStatus').textContent = 'write something first'; return; }
+  document.getElementById('replyStatus').textContent = 'sending…';
+  fetch('/api/reply', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ inbound_id: currentReply, body }) })
+    .then(r => r.json()).then(j => {
+      if (j.error) { document.getElementById('replyStatus').textContent = 'error: ' + j.error; }
+      else { document.getElementById('replyStatus').textContent = 'sent ✓'; document.getElementById('replyBody').value = ''; }
+      render();
+    });
 }
 render();
 setInterval(render, 5000);

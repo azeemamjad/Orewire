@@ -43,3 +43,34 @@ puts "CF|INFRA|A|track.#{ENV.fetch('EMAIL_DOMAIN', 'emails.orewire.com')}|#{vps_
   puts "CF|#{d.name}|TXT|#{rp}|v=spf1 a mx include:#{spf_include} ~all"
 end
 
+# ---------- inbound mail -> console inbox portal ----------
+# Catch-all route: every incoming address on the domain is POSTed to the console.
+http = server.http_endpoints.find_or_create_by!(name: "console-inbox") do |e|
+  e.url = "http://console:8018/api/inbound?key=inbound-8x3k"
+  e.encoding = "BodyAsJSON"
+  e.format = "Hash"
+  e.include_attachments = false
+  e.strip_replies = false
+end
+puts "HTTPENDPOINT=#{http.name} url=#{http.url}"
+
+["getorewire.com", "orewiredata.com", "orewirehq.com"].each do |name|
+  d = server.domains.find_by(name: name)
+  next unless d
+  begin
+    if d.incoming != true
+      d.incoming = true
+      d.save!
+    end
+    route = Route.find_or_create_by!(domain: d, name: "*") do |r|
+      r.server = server
+      r.mode = "Endpoint"
+      r.endpoint = http
+      r.spam_mode = "Mark"
+    end
+    puts "ROUTE=#{d.name} catch-all -> console (mode=#{route.mode})"
+  rescue => e
+    puts "ROUTE_ERROR=#{d.name}: #{e.message[0, 140]}"
+  end
+end
+
