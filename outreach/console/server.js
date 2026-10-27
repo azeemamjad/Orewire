@@ -368,7 +368,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && url.pathname === "/login") {
     res.writeHead(200, { "Content-Type": "text/html" }); return res.end(LOGIN_PAGE);
   }
-  if (!isAuthed(req)) {
+  if (!isAuthed(req) && !(req.method === "POST" && url.pathname === "/api/inbound")) {
     if (url.pathname.startsWith("/api/")) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"auth required"}'); }
     res.writeHead(302, { Location: "/login" }); return res.end();
   }
