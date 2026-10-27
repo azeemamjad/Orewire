@@ -93,6 +93,13 @@
     </div>
   </div>
 
+  <h2>📥 Unified inbox — who received what <button onclick="checkReplies()" style="margin-left:10px">Refresh inbox</button></h2>
+  <table id="inboxTable">
+    <thead><tr><th>Received by (mailbox)</th><th>From</th><th>Subject</th><th>When</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <p class="muted">Pulls the last 5 days from each Gmail inbox (requires the app passwords below). Reply manually from Gmail — no automation runs.</p>
+
   <h2>Activity log</h2>
   <div class="log" id="log"></div>
 </main>
@@ -149,6 +156,11 @@ function render() {
     document.getElementById('replies').innerHTML = s.replied.length
       ? s.replied.map(r => `<div>↩ <b>${r.from}</b> — ${r.subject || '(no subject)'} ${r.autoReplied ? '· <span class="pill ok">auto-replied</span>' : ''} <span class="muted">${new Date(r.seen_at).toLocaleString()}</span></div>`).join('')
       : '<span class="muted">no replies detected</span>';
+
+    const inb = s.inbox || [];
+    document.querySelector('#inboxTable tbody').innerHTML = inb.length
+      ? inb.slice(0, 120).map(x => `<tr><td class="muted">${x.mailbox}</td><td>${x.from}</td><td>${x.subject || '(no subject)'}</td><td class="muted">${new Date(x.date).toLocaleString()}</td></tr>`).join('')
+      : '<tr><td colspan="4" class="muted">inbox empty — add IMAP app passwords, then click Refresh inbox</td></tr>';
 
     document.getElementById('log').innerHTML = s.log.map(l => `<div><b>${new Date(l.at).toLocaleTimeString()}</b> ${l.msg}</div>`).join('');
   });

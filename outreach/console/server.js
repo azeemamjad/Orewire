@@ -52,6 +52,7 @@ let state = {
   },
   queue: [],        // {id, mailbox_id, mail_from, rcpt_to, raw, attempts, queued_at}
   replied: [],      // {from, subject, seen_at, mailbox, purged, autoReplied}
+  inbox: [],        // {key, mailbox, from, subject, date, uid}
   log: [],
 };
 if (fs.existsSync(STATE_FILE)) {
@@ -228,7 +229,7 @@ const proxy = new SMTPServer({
 proxy.on("error", (e) => log("proxy error: " + e.message));
 proxy.listen(2526, () => log("SMTP proxy listening on 2526"));
 
-// ---------- reply watch (IMAP) + auto-reply ----------
+// ---------- reply watch (IMAP) + unified inbox ----------
 const OWN_DOMAINS = /@(?:orewire|getorewire|orewiredata|orewirehq)\.com$/i;
 
 async function sendAutoReply(mb, to, subject) {
@@ -249,37 +250,40 @@ async function checkMailboxReplies(mb) {
     await client.connect();
     const lock = await client.getMailboxLock("INBOX");
     try {
-      const since = new Date(Date.now() - 3 * 86400000);
-      const uids = await client.search({ since });
-      for (const uid of (uids || []).slice(-40)) {
-        const msg = await client.fetchOne(uid, { envelope: true, source: true });
+      const since = new Date(Date.now() - 5 * 86400000);
+      const uids = (await client.search({ since })) || [];
+      const recent = uids.slice(-30);
+      if (!recent.length) return;
+      const msgs = await client.fetch(recent, { envelope: true, uid: true });
+      const inbox = state.inbox || [];
+      for (const msg of msgs) {
         const f = msg.envelope && msg.envelope.from && msg.envelope.from[0];
         const from = f ? `${f.mailbox}@${f.host}` : "";
-        if (!from || OWN_DOMAINS.test(from)) continue;
-        if (state.replied.some(r => r.from === from)) continue;
         const subject = (msg.envelope && msg.envelope.subject) || "";
-        // New reply text only: strip the quoted original (Gmail "On ... wrote:" / "From:" blocks)
-        const rawText = msg.source ? Buffer.from(msg.source).toString("utf8") : "";
-        const intro = rawText.split(/\n(?:On\s.{10,140}wrote:|-{2,}\s*Original Message|From:\s)/)[0] || rawText;
-        const negative = /unsubscribe|remove me|not interested|no thanks|stop|opt.?out|do not contact/i.test(intro);
-        const interested = /interested|yes|send|sure|ok|please|video|walkthrough|meeting|call|demo|review/i.test(intro);
+        const when = msg.envelope && msg.envelope.date ? new Date(msg.envelope.date).toISOString() : new Date().toISOString();
+        if (!from) continue;
+        const key = mb.email + "|" + msg.uid;
+        if (!inbox.some(x => x.key === key)) {
+          inbox.push({ key, mailbox: mb.email, from, subject, date: when, uid: msg.uid });
+        }
+        const isOurs = OWN_DOMAINS.test(from);
+        if (isOurs) continue;
+        if (state.replied.some(r => r.from === from)) continue;
         // stop-on-reply: purge any pending sends addressed to this lead
         const before = state.queue.length;
         state.queue = state.queue.filter(it => !(it.rcpt_to || []).map(a => String(a).toLowerCase()).includes(from.toLowerCase()));
         const purged = before - state.queue.length;
         let autoReplied = false;
         const ar = state.settings.autoReply || {};
-        if (ar.enabled && (ar.videoUrl || ar.bookingUrl) && !negative) {
-          const needInterest = ar.interestOnly !== false;
-          if (!needInterest || interested) {
-            try { await sendAutoReply(mb, from, subject); autoReplied = true; }
-            catch (e) { log(`auto-reply failed to ${from}: ${String(e.message).slice(0, 120)}`); }
-          }
+        if (ar.enabled && (ar.videoUrl || ar.bookingUrl)) {
+          try { await sendAutoReply(mb, from, subject); autoReplied = true; }
+          catch (e) { log(`auto-reply failed to ${from}: ${String(e.message).slice(0, 120)}`); }
         }
         state.replied.unshift({ from, subject, seen_at: new Date().toISOString(), mailbox: mb.email, purged, autoReplied });
-        log(`REPLY from ${from} to ${mb.email} — purged ${purged} queued, auto-replied=${autoReplied}`);
-        save();
+        log(`REPLY from ${from} to ${mb.email} — purged ${purged} queued`);
       }
+      state.inbox = inbox.sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 300);
+      save();
     } finally { lock.release(); }
     await client.logout();
   } catch (e) {
@@ -317,6 +321,7 @@ const server = http.createServer((req, res) => {
       settings: state.settings,
       queue: state.queue,
       replied: state.replied,
+      inbox: state.inbox || [],
       log: state.log.slice(0, 60),
       sent_today: state.mailboxes.reduce((a, m) => a + (m.sent_date === today() ? m.sent_today : 0), 0),
     };
