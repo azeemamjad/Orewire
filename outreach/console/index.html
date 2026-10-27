@@ -69,20 +69,27 @@
       <div style="margin-top:12px"><button class="primary" onclick="saveSettings()">Save settings</button></div>
     </div>
     <div class="card">
-      <h3>📬 Stop on reply (IMAP watch)</h3>
-      <label>Auto-check every N minutes (0 = off)</label>
-      <input type="number" id="rcm" min="0">
-      <label>IMAP host</label><input type="text" id="ih">
-      <div class="row">
-        <div style="flex:1"><label>User</label><input type="text" id="iu"></div>
-        <div style="width:110px"><label>Port</label><input type="number" id="ip"></div>
+      <h3>📬 Stop on reply + auto-reply</h3>
+      <div class="row" style="margin-bottom:6px">
+        <label style="margin:0"><input type="checkbox" id="arOn"> Enabled</label>
+        <label style="margin:0"><input type="checkbox" id="arInt"> Reply only when interest words found</label>
       </div>
-      <label>Password</label><input type="password" id="ipw">
-      <div class="row" style="margin-top:12px">
-        <button class="primary" onclick="saveSettings()">Save</button>
+      <label>Video / walkthrough URL</label><input type="text" id="arVideo" placeholder="https://…">
+      <label>Booking / meeting URL</label><input type="text" id="arBooking" placeholder="https://cal.com/…">
+      <label>Reply template (HTML — use {{video}} and {{booking}})</label>
+      <textarea id="arTpl" rows="5" style="width:100%;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;font-size:12px;padding:6px"></textarea>
+      <label>Check replies every N minutes</label>
+      <input type="number" id="arMin" min="1" style="width:70px">
+      <div class="row" style="margin-top:10px">
+        <button class="primary" onclick="saveAutoReply()">Save</button>
         <button onclick="checkReplies()">Check replies now</button>
       </div>
       <div id="replies" style="margin-top:10px"></div>
+    </div>
+    <div class="card">
+      <h3>🔑 Mailbox IMAP passwords (Google app passwords)</h3>
+      <div id="imapRows"></div>
+      <p class="muted" style="margin-top:6px">Paste each mailbox's Google app password. Reply-watch + auto-reply use these.</p>
     </div>
   </div>
 
@@ -122,17 +129,25 @@ function render() {
     }).join('');
 
     document.getElementById('pace').value = s.settings.pace_seconds;
-    document.getElementById('rcm').value = s.settings.reply_check_minutes || 0;
-    document.getElementById('ih').value = s.settings.imap.host || '';
-    document.getElementById('iu').value = s.settings.imap.user || '';
-    document.getElementById('ip').value = s.settings.imap.port || 993;
-    document.getElementById('ipw').value = s.settings.imap.pass || '';
+    const ar = s.settings.autoReply || {};
+    document.getElementById('arOn').checked = !!ar.enabled;
+    document.getElementById('arInt').checked = ar.interestOnly !== false;
+    document.getElementById('arVideo').value = ar.videoUrl || '';
+    document.getElementById('arBooking').value = ar.bookingUrl || '';
+    document.getElementById('arTpl').value = ar.template || '';
+    document.getElementById('arMin').value = ar.checkMinutes || 10;
+    const im = document.getElementById('imapRows');
+    if (document.activeElement && document.activeElement.tagName === 'INPUT' && im.contains(document.activeElement)) {
+      // don't rebuild while typing
+    } else {
+      im.innerHTML = s.mailboxes.map(m => `<div class="row" style="margin:2px 0"><span class="muted" style="width:210px">${m.email}</span><input type="password" placeholder="app password" value="${(m.imap && m.imap.pass) ? '••••••••' : ''}" onchange="mb('${m.id}',{imap:{pass:this.value, user:'${m.email}'}})"></div>`).join('');
+    }
     if (!document.getElementById('ll').value) document.getElementById('ll').value = (s.settings.links && s.settings.links.lists) || '';
     if (!document.getElementById('lp').value) document.getElementById('lp').value = (s.settings.links && s.settings.links.postal) || '';
     applyLinks(s.settings.links);
 
     document.getElementById('replies').innerHTML = s.replied.length
-      ? s.replied.map(r => `<div>↩ <b>${r.from}</b> — ${r.subject || '(no subject)'} <span class="muted">${new Date(r.seen_at).toLocaleString()}</span></div>`).join('')
+      ? s.replied.map(r => `<div>↩ <b>${r.from}</b> — ${r.subject || '(no subject)'} ${r.autoReplied ? '· <span class="pill ok">auto-replied</span>' : ''} <span class="muted">${new Date(r.seen_at).toLocaleString()}</span></div>`).join('')
       : '<span class="muted">no replies detected</span>';
 
     document.getElementById('log').innerHTML = s.log.map(l => `<div><b>${new Date(l.at).toLocaleTimeString()}</b> ${l.msg}</div>`).join('');
@@ -147,10 +162,20 @@ function saveSettings() {
   fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       pace_seconds: Number(document.getElementById('pace').value),
-      reply_check_minutes: Number(document.getElementById('rcm').value),
-      imap: { host: document.getElementById('ih').value, user: document.getElementById('iu').value,
-              port: Number(document.getElementById('ip').value), pass: document.getElementById('ipw').value },
       links: { lists: document.getElementById('ll').value, postal: document.getElementById('lp').value }
+    }) }).then(() => render());
+}
+function saveAutoReply() {
+  fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      autoReply: {
+        enabled: document.getElementById('arOn').checked,
+        interestOnly: document.getElementById('arInt').checked,
+        videoUrl: document.getElementById('arVideo').value.trim(),
+        bookingUrl: document.getElementById('arBooking').value.trim(),
+        template: document.getElementById('arTpl').value,
+        checkMinutes: Math.max(1, Number(document.getElementById('arMin').value) || 10)
+      }
     }) }).then(() => render());
 }
 function checkReplies() {

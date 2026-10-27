@@ -25,6 +25,7 @@ function defaultMailboxes() {
       host: UPSTREAM.host, port: UPSTREAM.port,
       user: "2r3Fgs3I5XZupWRIm76JxIyl",      // local Postal credential (server-wide for now)
       pass: "2r3Fgs3I5XZupWRIm76JxIyl",
+      imap: { host: "imap.gmail.com", port: 993, secure: true, user: "", pass: "" },
       daily_cap: 5,
       enabled: true,
       warmup: { active: false, start: today(), start_per_day: 2, increment: 2, max_per_day: 30 },
@@ -36,9 +37,21 @@ function defaultMailboxes() {
 
 let state = {
   mailboxes: defaultMailboxes(),
-  settings: { pace_seconds: 300, reply_check_minutes: 0, imap: { host: "", port: 993, secure: true, user: "", pass: "", mailbox: "INBOX" }, links: { lists: "", postal: "" } },
+  settings: {
+    pace_seconds: 300, reply_check_minutes: 0,
+    imap: { host: "", port: 993, secure: true, user: "", pass: "", mailbox: "INBOX" },
+    links: { lists: "", postal: "" },
+    autoReply: {
+      enabled: false,
+      checkMinutes: 10,
+      videoUrl: "",
+      bookingUrl: "",
+      interestOnly: true,
+      template: "<p>Thanks for getting back to me!</p><p>Here's the quick walkthrough: <a href=\"{{video}}\">{{video}}</a></p><p>Or grab a slot that suits you: <a href=\"{{booking}}\">{{booking}}</a></p><p>Best,</p>",
+    },
+  },
   queue: [],        // {id, mailbox_id, mail_from, rcpt_to, raw, attempts, queued_at}
-  replied: [],      // {from, subject, seen_at}
+  replied: [],      // {from, subject, seen_at, mailbox, purged, autoReplied}
   log: [],
 };
 if (fs.existsSync(STATE_FILE)) state = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
@@ -198,33 +211,63 @@ const proxy = new SMTPServer({
 proxy.on("error", (e) => log("proxy error: " + e.message));
 proxy.listen(2526, () => log("SMTP proxy listening on 2526"));
 
-// ---------- reply watch (IMAP) ----------
-async function checkReplies() {
-  const imap = state.settings.imap;
-  if (!imap.host || !imap.user) return log("reply-check skipped: IMAP not configured");
+// ---------- reply watch (IMAP) + auto-reply ----------
+const OWN_DOMAINS = /@(?:orewire|getorewire|orewiredata|orewirehq)\.com$/i;
+
+async function sendAutoReply(mb, to, subject) {
+  const ar = state.settings.autoReply || {};
+  const html = String(ar.template || "")
+    .replaceAll("{{video}}", ar.videoUrl || "")
+    .replaceAll("{{booking}}", ar.bookingUrl || "");
+  const t = nodemailer.createTransport({ host: "smtp.gmail.com", port: 465, secure: true, auth: { user: mb.email, pass: mb.imap.pass } });
+  await t.sendMail({ from: mb.email, to, subject: "Re: " + String(subject || "").replace(/^(re:\s*)+/i, ""), html });
+}
+
+async function checkMailboxReplies(mb) {
+  if (!mb.imap || !mb.imap.pass) return;
   let ImapFlow;
-  try { ImapFlow = require("imapflow").ImapFlow; } catch { return log("reply-check skipped: imapflow not installed"); }
-  const client = new ImapFlow({ host: imap.host, port: imap.port || 993, secure: imap.secure !== false, auth: { user: imap.user, pass: imap.pass }, logger: false });
+  try { ImapFlow = require("imapflow").ImapFlow; } catch { return; }
+  const client = new ImapFlow({ host: mb.imap.host || "imap.gmail.com", port: mb.imap.port || 993, secure: true, auth: { user: mb.imap.user || mb.email, pass: mb.imap.pass }, logger: false });
   try {
     await client.connect();
-    const lock = await client.getMailboxLock(imap.mailbox || "INBOX");
+    const lock = await client.getMailboxLock("INBOX");
     try {
-      const since = new Date(Date.now() - 7 * 86400000);
+      const since = new Date(Date.now() - 3 * 86400000);
       const uids = await client.search({ since });
-      for (const uid of (uids || []).slice(-50)) {
-        const msg = await client.fetchOne(uid, { envelope: true, uid: true });
-        const from = (msg.envelope && msg.envelope.from && msg.envelope.from[0]) ? `${msg.envelope.from[0].mailbox}@${msg.envelope.from[0].host}` : "";
-        if (from && !state.replied.some(r => r.from === from)) {
-          state.replied.unshift({ from, subject: (msg.envelope && msg.envelope.subject) || "", seen_at: new Date().toISOString() });
-          log(`REPLY detected from ${from} — stop-on-reply`);
+      for (const uid of (uids || []).slice(-40)) {
+        const msg = await client.fetchOne(uid, { envelope: true });
+        const f = msg.envelope && msg.envelope.from && msg.envelope.from[0];
+        const from = f ? `${f.mailbox}@${f.host}` : "";
+        if (!from || OWN_DOMAINS.test(from)) continue;
+        if (state.replied.some(r => r.from === from)) continue;
+        const subject = (msg.envelope && msg.envelope.subject) || "";
+        // stop-on-reply: purge any pending sends addressed to this lead
+        const before = state.queue.length;
+        state.queue = state.queue.filter(it => !(it.rcpt_to || []).map(a => String(a).toLowerCase()).includes(from.toLowerCase()));
+        const purged = before - state.queue.length;
+        let autoReplied = false;
+        const ar = state.settings.autoReply || {};
+        if (ar.enabled && (ar.videoUrl || ar.bookingUrl)) {
+          const interested = !ar.interestOnly || /interested|yes|send|sure|ok|please|video|walkthrough|meeting|call|demo|review/i.test(subject + " " + from);
+          if (interested) {
+            try { await sendAutoReply(mb, from, subject); autoReplied = true; }
+            catch (e) { log(`auto-reply failed to ${from}: ${String(e.message).slice(0, 120)}`); }
+          }
         }
+        state.replied.unshift({ from, subject, seen_at: new Date().toISOString(), mailbox: mb.email, purged, autoReplied });
+        log(`REPLY from ${from} to ${mb.email} — purged ${purged} queued, auto-replied=${autoReplied}`);
+        save();
       }
     } finally { lock.release(); }
     await client.logout();
   } catch (e) {
-    log(`reply-check failed: ${String(e.message).slice(0, 140)}`);
+    log(`reply watch ${mb.email} failed: ${String(e.message).slice(0, 140)}`);
   }
-  state.replied = state.replied.slice(0, 100);
+}
+
+async function checkReplies() {
+  for (const mb of state.mailboxes) await checkMailboxReplies(mb);
+  state.replied = state.replied.slice(0, 200);
   save();
 }
 
@@ -232,7 +275,8 @@ async function checkReplies() {
 setInterval(() => { tick().catch(e => log("tick error: " + e.message)); }, 20000);
 let lastReplyCheck = 0;
 setInterval(() => {
-  const mins = Number(state.settings.reply_check_minutes || 0);
+  const ar = state.settings.autoReply || {};
+  const mins = Number(ar.checkMinutes || state.settings.reply_check_minutes || 0);
   if (mins > 0 && Date.now() - lastReplyCheck > mins * 60000) { lastReplyCheck = Date.now(); checkReplies(); }
 }, 60000);
 
@@ -331,6 +375,7 @@ const server = http.createServer((req, res) => {
         if (b.warmup) mb.warmup = { ...mb.warmup, ...b.warmup };
         if (b.user) mb.user = b.user;
         if (b.pass) mb.pass = b.pass;
+        if (b.imap) mb.imap = { ...(mb.imap || {}), ...b.imap };
         if (b.host) { mb.host = b.host; transports.delete(mb.id); }
         if (b.port !== undefined) { mb.port = Number(b.port); transports.delete(mb.id); }
         save(); log(`mailbox updated: ${mb.email}`);
@@ -345,6 +390,7 @@ const server = http.createServer((req, res) => {
       if (b.reply_check_minutes !== undefined) state.settings.reply_check_minutes = Number(b.reply_check_minutes);
       if (b.imap) state.settings.imap = { ...state.settings.imap, ...b.imap };
       if (b.links) state.settings.links = { ...state.settings.links, ...b.links };
+      if (b.autoReply) state.settings.autoReply = { ...state.settings.autoReply, ...b.autoReply };
       save(); log("settings updated");
       res.writeHead(200, { "Content-Type": "application/json" }); res.end('{"ok":true}');
     }); return;
