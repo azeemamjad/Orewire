@@ -252,21 +252,26 @@ async function checkMailboxReplies(mb) {
       const since = new Date(Date.now() - 3 * 86400000);
       const uids = await client.search({ since });
       for (const uid of (uids || []).slice(-40)) {
-        const msg = await client.fetchOne(uid, { envelope: true });
+        const msg = await client.fetchOne(uid, { envelope: true, source: true });
         const f = msg.envelope && msg.envelope.from && msg.envelope.from[0];
         const from = f ? `${f.mailbox}@${f.host}` : "";
         if (!from || OWN_DOMAINS.test(from)) continue;
         if (state.replied.some(r => r.from === from)) continue;
         const subject = (msg.envelope && msg.envelope.subject) || "";
+        // New reply text only: strip the quoted original (Gmail "On ... wrote:" / "From:" blocks)
+        const rawText = msg.source ? Buffer.from(msg.source).toString("utf8") : "";
+        const intro = rawText.split(/\n(?:On\s.{10,140}wrote:|-{2,}\s*Original Message|From:\s)/)[0] || rawText;
+        const negative = /unsubscribe|remove me|not interested|no thanks|stop|opt.?out|do not contact/i.test(intro);
+        const interested = /interested|yes|send|sure|ok|please|video|walkthrough|meeting|call|demo|review/i.test(intro);
         // stop-on-reply: purge any pending sends addressed to this lead
         const before = state.queue.length;
         state.queue = state.queue.filter(it => !(it.rcpt_to || []).map(a => String(a).toLowerCase()).includes(from.toLowerCase()));
         const purged = before - state.queue.length;
         let autoReplied = false;
         const ar = state.settings.autoReply || {};
-        if (ar.enabled && (ar.videoUrl || ar.bookingUrl)) {
-          const interested = !ar.interestOnly || /interested|yes|send|sure|ok|please|video|walkthrough|meeting|call|demo|review/i.test(subject + " " + from);
-          if (interested) {
+        if (ar.enabled && (ar.videoUrl || ar.bookingUrl) && !negative) {
+          const needInterest = ar.interestOnly !== false;
+          if (!needInterest || interested) {
             try { await sendAutoReply(mb, from, subject); autoReplied = true; }
             catch (e) { log(`auto-reply failed to ${from}: ${String(e.message).slice(0, 120)}`); }
           }
