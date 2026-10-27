@@ -187,7 +187,10 @@ async function syncSentCounts() {
     try {
       const [qd] = await conn.query("SELECT COUNT(*) c, COALESCE(SUM(locked_at IS NOT NULL),0) locked, COALESCE(MAX(attempts),0) maxatt FROM postal.queued_messages");
       const [role] = await conn.query("SELECT COUNT(*) c FROM postal.worker_roles");
-      log(`[stats] queued=${qd[0].c} locked=${qd[0].locked} max_attempts=${qd[0].maxatt} worker_roles=${role[0].c}`);
+      const [dv] = await conn.query(`SELECT status, COUNT(*) c FROM \`${list[0]}\`.deliveries GROUP BY status`);
+      const [d2] = await conn.query(`SELECT details FROM \`${list[0]}\`.deliveries ORDER BY id DESC LIMIT 1`);
+      const lastDetail = d2[0] && d2[0].details ? String(d2[0].details).slice(0, 160) : "none";
+      log(`[stats] queued=${qd[0].c} locked=${qd[0].locked} max_attempts=${qd[0].maxatt} roles=${role[0].c} deliveries=${dv.map(r => r.status + ":" + r.c).join(",")} last=${lastDetail}`);
     } catch (e) { log(`[stats] queued probe failed: ${String(e.message).slice(0, 80)}`); }
     if (changed) save();
   } finally {
