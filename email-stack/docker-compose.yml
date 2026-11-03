@@ -239,6 +239,12 @@ services:
     restart: unless-stopped
     networks: [email]
 
+  # ---------------- Rspamd (open-source spam filter for inbound mail) ----------------
+  rspamd:
+    image: rspamd/rspamd:latest
+    restart: unless-stopped
+    networks: [email]
+
 networks:
   email:
   dokploy-network:
@@ -251,7 +257,5 @@ volumes:
   postal-config:
   console-state:
 
-# deploy trigger: reload Listmonk SMTP messenger from DB
-# deploy trigger: reload listmonk SMTP messenger (no-auth internal hop)
-# deploy trigger: reload listmonk SMTP messenger (auth_protocol=none)
+# deploy triggers (older): reload listmonk SMTP messenger
 

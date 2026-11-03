@@ -406,6 +406,8 @@ const server = http.createServer((req, res) => {
           html: b.html || "",
           message_id: b.message_id || headers["message-id"] || "",
           references: headers["references"] || "",
+          spam_status: typeof b.spam_status === "string" ? b.spam_status : "",
+          spam_score: (b.spam_score === undefined || b.spam_score === null || b.spam_score === "") ? null : Number(b.spam_score),
         };
         state.inbound = [item, ...(state.inbound || [])].slice(0, 500);
         save();

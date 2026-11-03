@@ -41,6 +41,11 @@ smtp_server:
   default_bind_address: 0.0.0.0
   tls_enabled: false
 
+rspamd:
+  enabled: true
+  host: rspamd
+  port: 11334
+
 dns:
   mx_records:
     - mx.postal.emails.orewire.com

@@ -105,6 +105,11 @@
     <thead><tr><th>Received</th><th>To (mailbox)</th><th>From</th><th>Subject</th><th></th></tr></thead>
     <tbody></tbody>
   </table>
+  <h2>🚫 Spam — caught by Rspamd (kept out of the inbox above)</h2>
+  <table id="spamTable">
+    <thead><tr><th>Received</th><th>To (mailbox)</th><th>From</th><th>Subject</th><th>Score</th></tr></thead>
+    <tbody></tbody>
+  </table>
   <div class="card" style="margin-top:10px">
     <h3>✍️ Reply</h3>
     <div class="muted" id="replyInfo">Click “Reply” on a message above.</div>
@@ -176,9 +181,15 @@ function render() {
 
     const ib = s.inbound || [];
     window.__inbound = ib;
-    document.querySelector('#inboundTable tbody').innerHTML = ib.length
-      ? ib.slice(0, 120).map(m => `<tr><td class="muted">${new Date(m.received_at).toLocaleString()}</td><td class="muted">${m.to}</td><td>${m.from}</td><td>${m.subject || '(no subject)'}</td><td><button onclick="pickReply('${m.id}')">Reply</button></td></tr>`).join('')
+    const rowHtml = (m) => `<tr><td class="muted">${new Date(m.received_at).toLocaleString()}</td><td class="muted">${m.to}</td><td>${m.from}</td><td>${m.subject || '(no subject)'}</td><td><button onclick="pickReply('${m.id}')">Reply</button></td></tr>`;
+    const inboxRows = ib.filter(m => (m.spam_status || '') !== 'Spam');
+    const spamRows = ib.filter(m => (m.spam_status || '') === 'Spam');
+    document.querySelector('#inboundTable tbody').innerHTML = inboxRows.length
+      ? inboxRows.slice(0, 120).map(rowHtml).join('')
       : '<tr><td colspan="5" class="muted">no inbound yet — set the domain MX to postal.emails.orewire.com (Postal will route replies here)</td></tr>';
+    document.querySelector('#spamTable tbody').innerHTML = spamRows.length
+      ? spamRows.slice(0, 120).map(m => `<tr><td class="muted">${new Date(m.received_at).toLocaleString()}</td><td class="muted">${m.to}</td><td>${m.from}</td><td>${m.subject || '(no subject)'}</td><td class="muted">${m.spam_score !== null && m.spam_score !== undefined ? m.spam_score : '—'}</td></tr>`).join('')
+      : '<tr><td colspan="5" class="muted">no spam caught yet</td></tr>';
 
     document.getElementById('log').innerHTML = s.log.map(l => `<div><b>${new Date(l.at).toLocaleTimeString()}</b> ${l.msg}</div>`).join('');
   });
