@@ -478,6 +478,41 @@ const server = http.createServer((req, res) => {
     if (fs.existsSync(f)) { res.writeHead(200, { "Content-Type": "text/plain" }); return res.end(fs.readFileSync(f, "utf8")); }
     res.writeHead(404, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "no dns-records.txt yet — redeploy the email stack to generate it" }));
   }
+  if (url.pathname === "/api/sent-messages") {
+    (async () => {
+      let mysql;
+      try { mysql = require("mysql2/promise"); } catch (e) { res.writeHead(500, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "mysql2 not loadable" })); }
+      let conn;
+      try {
+        conn = await mysql.createConnection({
+          host: process.env.POSTAL_MESSAGE_DB_HOST || "postal-mariadb", port: 3306,
+          user: process.env.POSTAL_DB_USER || "root",
+          password: process.env.POSTAL_DB_PASSWORD || "",
+          connectTimeout: 8000,
+        });
+        const prefix = process.env.POSTAL_DB_PREFIX || "postal-server-";
+        const [dbs] = await conn.query("SHOW DATABASES");
+        const list = dbs.map(d => d.Database).filter(n => n && String(n).startsWith(prefix));
+        if (!list.length) { res.writeHead(200, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ rows: [] })); }
+        const parts = list.map(n =>
+          `SELECT mail_from, rcpt_to, subject, timestamp, status, (loaded IS NOT NULL) AS opened, (clicked IS NOT NULL) AS clicked, (SELECT COUNT(*) FROM \`${n}\`.loads l WHERE l.message_id = m.id) AS open_events FROM \`${n}\`.messages m WHERE m.scope = 'outgoing' AND m.mail_from IS NOT NULL`
+        );
+        const q = `SELECT * FROM (${parts.join(" UNION ALL ")}) u ORDER BY u.timestamp DESC LIMIT 300`;
+        const [rows] = await conn.query(q);
+        const mapped = rows.map(r => ({
+          sent_at: new Date(Number(r.timestamp) * 1000).toISOString(),
+          to: r.rcpt_to, mailbox: r.mail_from, subject: r.subject,
+          status: r.status, opened: !!r.opened, clicked: !!r.clicked, open_events: Number(r.open_events || 0),
+        }));
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ rows: mapped }));
+      } catch (e) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: String(e.message).slice(0, 180) }));
+      } finally { try { await conn.end(); } catch {} }
+    })();
+    return;
+  }
   if (url.pathname === "/api/selftest") {
     (async () => {
       const out = { steps: [] };
