@@ -13,6 +13,7 @@ puts "ORG_PERMALINK=#{org.permalink}"
 puts "SERVER_PERMALINK=#{server.permalink}"
 puts "SMTP_KEY=#{smtp.key}"
 puts "API_KEY=#{api.key}"
+puts "SPAM_THRESHOLDS=mark_at=#{server.spam_threshold} fail_at=#{server.spam_failure_threshold}"
 
 spf_include = Postal::Config.dns.spf_include
 smtp_host = Postal::Config.postal.smtp_hostname
