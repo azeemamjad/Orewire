@@ -101,6 +101,7 @@
   <p class="muted">Pulls the last 5 days from each Gmail inbox (requires the app passwords below). Reply manually from Gmail — no automation runs.</p>
 
   <h2>📨 Sent & opens (live from Postal)</h2>
+  <div class="row" id="openSummary" style="margin-bottom:8px"></div>
   <table id="sentTable">
     <thead><tr><th>When (UTC)</th><th>To</th><th>Mailbox</th><th>Subject</th><th>Delivery</th><th>Opened</th><th>Clicks</th></tr></thead>
     <tbody></tbody>
@@ -257,16 +258,36 @@ function fetchSent() {
   return fetch('/api/sent-messages').then(r => r.json()).then(j => {
     sentCache = { rows: j.rows || [], fetchedAt: Date.now() };
     const tb = document.querySelector('#sentTable tbody');
-    if (!sentCache.rows.length) { tb.innerHTML = '<tr><td colspan="7" class="muted">no sent messages yet</td></tr>'; return; }
-    tb.innerHTML = sentCache.rows.slice(0, 200).map(m => `<tr>
-      <td class="muted">${new Date(m.sent_at).toLocaleString()}</td>
-      <td>${m.to}</td>
-      <td class="muted">${m.mailbox}</td>
-      <td>${m.subject || '(no subject)'}</td>
-      <td>${m.status}</td>
-      <td>${m.opened ? '<span class="pill ok">opened</span>' : '<span class="muted">—</span>'}</td>
-      <td>${m.clicked ? '<span class="pill ok">clicked</span>' : '—'}</td>
-    </tr>`).join('');
+    const rows = sentCache.rows;
+    if (!rows.length) {
+      tb.innerHTML = '<tr><td colspan="7" class="muted">no sent messages yet</td></tr>';
+      document.getElementById('openSummary').innerHTML = '<span class="muted">no sent messages yet</span>';
+      return;
+    }
+    const opened = rows.filter(m => m.opened).length;
+    const clicked = rows.filter(m => m.clicked).length;
+    const rate = Math.round(100 * opened / rows.length);
+    document.getElementById('openSummary').innerHTML =
+      `<span class="stat">📤 sent <b>${rows.length}</b></span> ` +
+      `<span class="stat">👁 opened <b>${opened}</b></span> ` +
+      `<span class="stat">open rate <b>${rate}%</b></span> ` +
+      `<span class="stat">🖱 clicked <b>${clicked}</b></span>`;
+    tb.innerHTML = rows.slice(0, 200).map(m => {
+      const openedRow = m.opened ? ' style="background:rgba(63,185,80,.07)"' : '';
+      const openCell = m.opened
+        ? '<span class="pill ok">👁 opened</span>'
+        : '<span class="muted">✉ not opened</span>';
+      const clickCell = m.clicked ? '<span class="pill warm">🖱 clicked</span>' : '<span class="muted">—</span>';
+      return `<tr${openedRow}>
+        <td class="muted">${new Date(m.sent_at).toLocaleString()}</td>
+        <td>${m.to}</td>
+        <td class="muted">${m.mailbox}</td>
+        <td>${m.subject || '(no subject)'}</td>
+        <td>${m.status}</td>
+        <td>${openCell}</td>
+        <td>${clickCell}</td>
+      </tr>`;
+    }).join('');
   }).catch(() => {});
 }
 
