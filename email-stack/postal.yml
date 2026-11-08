@@ -52,7 +52,7 @@ dns:
   spf_include: spf.postal.emails.orewire.com
   return_path_domain: rp.emails.orewire.com
   route_domain: routes.emails.orewire.com
-  track_domain: track.emails.orewire.com
+  track_domain: postal.emails.orewire.com
   helo_hostname: postal.emails.orewire.com
   dkim_identifier: postal
   domain_verify_prefix: postal-verification
