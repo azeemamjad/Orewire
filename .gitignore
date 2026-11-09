@@ -82,3 +82,7 @@ outreach/apply-verification.sql
 
 # --- Scratch ---
 Server/tmp/
+outreach/.dokploy-session.json
+
+outreach/compose-one.json
+
