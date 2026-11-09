@@ -192,6 +192,11 @@ async function syncSentCounts() {
       const lastDetail = d2[0] && d2[0].details ? String(d2[0].details).slice(0, 160) : "none";
       log(`[stats] queued=${qd[0].c} locked=${qd[0].locked} max_attempts=${qd[0].maxatt} roles=${role[0].c} deliveries=${dv.map(r => r.status + ":" + r.c).join(",")} last=${lastDetail}`);
     } catch (e) { log(`[stats] queued probe failed: ${String(e.message).slice(0, 80)}`); }
+    try {
+      const [tr] = await conn.query(`SELECT COUNT(*) total, COALESCE(SUM(tracked_images),0) px, COALESCE(SUM(tracked_links),0) links, COALESCE(SUM(loaded IS NOT NULL),0) opened, COALESCE(SUM(clicked IS NOT NULL),0) clicked FROM \`${list[0]}\`.messages WHERE scope = 'outgoing'`);
+      const t = tr[0];
+      log(`[track] messages=${t.total} pixels_inserted=${t.px} links_inserted=${t.links} opened=${t.opened} clicked=${t.clicked}`);
+    } catch (e) { log(`[track] probe failed: ${String(e.message).slice(0, 80)}`); }
     if (changed) save();
   } finally {
     await conn.end();
