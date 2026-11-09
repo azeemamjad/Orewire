@@ -44,8 +44,27 @@ puts "CF|INFRA|A|track.#{ENV.fetch('EMAIL_DOMAIN', 'emails.orewire.com')}|#{vps_
   puts "CF|#{d.name}|TXT|#{rp}|v=spf1 a mx include:#{spf_include} ~all"
 end
 
-# ---------- inbound mail -> console inbox portal ----------
-# Catch-all route: every incoming address on the domain is POSTed to the console.
+# ---------- track domains (open/click tracking) ----------
+# Postal only inserts tracking pixels/links when a TrackDomain exists with dns_status OK.
+# Requires CNAME track.<domain> -> Postal::Config.dns.track_domain (set in postal.yml).
+["getorewire.com", "orewiredata.com", "orewirehq.com"].each do |name|
+  d = server.domains.find_by(name: name)
+  next unless d
+  begin
+    td = server.track_domains.find_or_create_by!(domain: d) do |t|
+      t.name = "track"
+      t.ssl_enabled = true
+      t.track_clicks = true
+      t.track_loads = true
+    end
+    td.check_dns
+    puts "TRACKDOMAIN=#{td.full_name} dns=#{td.dns_status} ssl=#{td.ssl_enabled?} err=#{td.dns_error.to_s[0, 80]}"
+  rescue => e
+    puts "TRACKDOMAIN_ERROR=#{name}: #{e.message[0, 140]}"
+  end
+end
+
+# ---------- inbound mail -> console inbox portal ----------# Catch-all route: every incoming address on the domain is POSTed to the console.
 http = server.http_endpoints.find_or_create_by!(name: "console-inbox") do |e|
   e.url = "http://console:8018/api/inbound?key=inbound-8x3k"
   e.encoding = "BodyAsJSON"
