@@ -259,3 +259,4 @@ volumes:
 
 # deploy triggers (older): reload listmonk SMTP messenger
 
+# deploy trigger: dns status refresh
