@@ -38,7 +38,63 @@ DKIM TXT (`postal._domainkey`), SPF include TXT, return-path MX/TXT, tracking CN
 Domains are "verified" in Postal only when these check out — campaigns must not run
 before verification.
 
+## 3b. Open / click tracking (track.* hostnames) — required for the opens column
+
+Postal only records an open when the message HTML contains a tracking pixel and that
+pixel URL is reachable. Two things must be true:
+
+1. **A TrackDomain per sending domain.** The bootstrap (`postal-bootstrap.rb`) creates
+   `track.<sending-domain>` with SSL on and checks DNS, so `dns_status` becomes `OK`
+   only when the CNAME resolves to `postal.emails.orewire.com`:
+
+   | Type | Name | Value | Proxy |
+   |------|------|-------|-------|
+   | CNAME | `track.getorewire.com` | `postal.emails.orewire.com` | DNS only (grey) |
+   | CNAME | `track.orewiredata.com` | `postal.emails.orewire.com` | DNS only (grey) |
+   | CNAME | `track.orewirehq.com` | `postal.emails.orewire.com` | DNS only (grey) |
+
+   Postal reads `track_domains.dns_status` at send time and only then rewrites links and
+   appends `<img src='https://track.<domain>/img/<server>/<message>'>`.
+
+2. **The track hostnames must reach Postal with the `X-Postal-Track-Host: 1` header.**
+   Postal's `TrackingMiddleware` is inserted *before* `ActionDispatch::HostAuthorization`
+   and only runs when that header is present; otherwise any host that is not
+   `postal.web_hostname` gets a bare **403** (which silently kills every open).
+   Traefik/Dokploy cannot add request headers, so the stack ships a 20-line nginx
+   service (`track-proxy`, see `track-proxy.conf`) that sets the header and proxies to
+   `postal-web:5000`. In Dokploy the three track domains therefore point at
+   **service `track-proxy`, port `80`**, not at `postal-web:5000`.
+
+   Compose domains in Dokploy are Traefik **labels** — a domain change only takes effect
+   on the next deployment, so redeploy the compose service after editing them.
+
+Verify (all three should answer `404 Invalid Server Token`; a 403 means the header never
+arrived):
+
+```bash
+curl -si https://track.getorewire.com/img/probe/probe | head -n 1
+curl -si https://track.getorewire.com/img/probe/probe | tail -n 1
+```
+
+End-to-end check: send a message through Postal, open its expanded HTML, fetch the pixel
+URL, then confirm the row shows `opened` in the console:
+
+```bash
+curl -s -X POST https://postal.emails.orewire.com/api/v1/send/message \
+  -H "X-Server-API-Key: $POSTAL_API_KEY" -H 'Content-Type: application/json' \
+  -d '{"to":["probe@getorewire.com"],"from":"jonathan@getorewire.com","subject":"probe","html_body":"<p>probe</p>"}'
+# then: POST /api/v1/messages/message {"id":<id>,"_expansions":true} -> data.html_body
+curl -so /dev/null -w '%{http_code}\n' 'https://track.getorewire.com/img/<server>/<message>'
+```
+
+The console's **Sent & opens** table shows `👁 opened` / `🖱 clicked` per message and the
+open rate is computed over *trackable* messages only (sent after tracking was wired up).
+Dokploy domain changes can be scripted with `outreach/dokploy-add-track-domains.mjs` and
+`outreach/dokploy-set-track-domains.mjs` (logs in with `POST /api/auth/sign-in/email`,
+then `domain.byComposeId` / `domain.create` / `domain.update` / `compose.deploy`).
+
 ## 4. Deploy on Dokploy
+
 
 - [ ] New service → **Compose** (⚠️ NOT "Application" — Applications expect a Dockerfile and
       fail with `failed to read dockerfile`). Compose file path: `./email-stack/docker-compose.yml`,

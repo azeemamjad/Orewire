@@ -500,7 +500,7 @@ const server = http.createServer((req, res) => {
         const list = dbs.map(d => d.Database).filter(n => n && String(n).startsWith(prefix));
         if (!list.length) { res.writeHead(200, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ rows: [] })); }
         const parts = list.map(n =>
-          `SELECT mail_from, rcpt_to, subject, timestamp, status, (loaded IS NOT NULL) AS opened, (clicked IS NOT NULL) AS clicked, (SELECT COUNT(*) FROM \`${n}\`.loads l WHERE l.message_id = m.id) AS open_events FROM \`${n}\`.messages m WHERE m.scope = 'outgoing' AND m.mail_from IS NOT NULL`
+          `SELECT mail_from, rcpt_to, subject, timestamp, status, COALESCE(tracked_images,0) AS tracked_images, (loaded IS NOT NULL) AS opened, (clicked IS NOT NULL) AS clicked, (SELECT COUNT(*) FROM \`${n}\`.loads l WHERE l.message_id = m.id) AS open_events FROM \`${n}\`.messages m WHERE m.scope = 'outgoing' AND m.mail_from IS NOT NULL`
         );
         const q = `SELECT * FROM (${parts.join(" UNION ALL ")}) u ORDER BY u.timestamp DESC LIMIT 300`;
         const [rows] = await conn.query(q);
@@ -508,6 +508,9 @@ const server = http.createServer((req, res) => {
           sent_at: new Date(Number(r.timestamp) * 1000).toISOString(),
           to: r.rcpt_to, mailbox: r.mail_from, subject: r.subject,
           status: r.status, opened: !!r.opened, clicked: !!r.clicked, open_events: Number(r.open_events || 0),
+          // Messages sent before the track domains existed carry no pixel, so they
+          // can never record an open — exclude them from the open-rate denominator.
+          tracked: Number(r.tracked_images || 0) > 0,
         }));
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ rows: mapped }));

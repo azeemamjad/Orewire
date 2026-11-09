@@ -264,19 +264,22 @@ function fetchSent() {
       document.getElementById('openSummary').innerHTML = '<span class="muted">no sent messages yet</span>';
       return;
     }
-    const opened = rows.filter(m => m.opened).length;
+    const trackable = rows.filter(m => m.tracked);
+    const opened = trackable.filter(m => m.opened).length;
     const clicked = rows.filter(m => m.clicked).length;
-    const rate = Math.round(100 * opened / rows.length);
+    const rate = trackable.length ? Math.round(100 * opened / trackable.length) : 0;
+    const untracked = rows.length - trackable.length;
     document.getElementById('openSummary').innerHTML =
       `<span class="stat">📤 sent <b>${rows.length}</b></span> ` +
-      `<span class="stat">👁 opened <b>${opened}</b></span> ` +
+      `<span class="stat">👁 opened <b>${opened}</b> of <b>${trackable.length}</b> tracked</span> ` +
       `<span class="stat">open rate <b>${rate}%</b></span> ` +
-      `<span class="stat">🖱 clicked <b>${clicked}</b></span>`;
+      `<span class="stat">🖱 clicked <b>${clicked}</b></span> ` +
+      (untracked ? `<span class="muted" style="font-size:11px">${untracked} older messages predate pixel tracking (not counted)</span>` : '');
     tb.innerHTML = rows.slice(0, 200).map(m => {
       const openedRow = m.opened ? ' style="background:rgba(63,185,80,.07)"' : '';
       const openCell = m.opened
         ? '<span class="pill ok">👁 opened</span>'
-        : '<span class="muted">✉ not opened</span>';
+        : (m.tracked ? '<span class="muted">✉ not opened</span>' : '<span class="muted">— no pixel</span>');
       const clickCell = m.clicked ? '<span class="pill warm">🖱 clicked</span>' : '<span class="muted">—</span>';
       return `<tr${openedRow}>
         <td class="muted">${new Date(m.sent_at).toLocaleString()}</td>
@@ -297,5 +300,4 @@ setInterval(fetchSent, 30000);
 fetchSent();
 </script>
 </body>
-</html>
 </html>

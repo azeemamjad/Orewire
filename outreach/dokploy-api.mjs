@@ -5,8 +5,12 @@
 //   GET  /api/trpc/<router>.<proc>?batch=1&input=<urlencoded {"0":{"json":<input>}}>
 //   POST /api/trpc/<router>.<proc>   body: {"json": <input>}
 //
-// Auth: POST /api/auth/sign-in/email -> signed `better-auth.session_token` cookie.
-// That cookie is cached in .dokploy-session.json so we only log in when needed.
+// Auth: POST /api/auth/sign-in/email -> signed `better-auth.session_token` cookie
+// (Dokploy rejects requests without an Origin header). The cookie is cached in
+// .dokploy-session.json so we only log in when needed.
+//
+// Transport note: this laptop's LAN resolver intermittently returns EAI_AGAIN
+// for *.orewire.com, so resolution falls back to 1.1.1.1 / 8.8.8.8 per request.
 //
 // Usage:
 //   node dokploy-api.mjs GET  domain.byComposeId '{"composeId":"..."}'
@@ -15,9 +19,12 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import https from "node:https";
+import dns from "node:dns";
 import { fileURLToPath } from "node:url";
 
 const BASE = process.env.DOKPLOY_URL || "https://dokploy.orewire.com";
+const HOST = new URL(BASE).hostname;
 const EMAIL = process.env.DOKPLOY_EMAIL || "azeemamjad225@gmail.com";
 const PASSWORD = process.env.DOKPLOY_PASSWORD || "Azeem@1234";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -25,6 +32,76 @@ const COOKIE_FILE = path.join(HERE, ".dokploy-session.json");
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// ---------------------------------------------------------------- transport
+const publicResolver = new dns.promises.Resolver({ timeout: 3000, tries: 2 });
+publicResolver.setServers(["1.1.1.1", "8.8.8.8"]);
+let cachedIp = null;
+
+async function resolveHost(hostname) {
+  if (cachedIp) return cachedIp;
+  const errors = [];
+  try {
+    const a = await dns.promises.lookup(hostname, { family: 4 });
+    cachedIp = a.address;
+    return cachedIp;
+  } catch (e) {
+    errors.push(e.message);
+  }
+  try {
+    const addrs = await publicResolver.resolve4(hostname);
+    if (addrs && addrs.length) {
+      cachedIp = addrs[0];
+      return cachedIp;
+    }
+    errors.push("no A records from public resolver");
+  } catch (e) {
+    errors.push(e.message);
+  }
+  throw new Error(`cannot resolve ${hostname} (${errors.join("; ")})`);
+}
+
+function request(method, pathAndQuery, headers, body) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        host: HOST,
+        port: 443,
+        path: pathAndQuery,
+        method,
+        headers,
+        servername: HOST,
+        // Node 20+ enables happy-eyeballs by default, which calls lookup with
+        // { all: true } and expects an array of addresses back — handing it a
+        // bare IP string throws ERR_INVALID_IP_ADDRESS.
+        autoSelectFamily: false,
+        lookup: (hostname, options, cb) => {
+          resolveHost(hostname)
+            .then((ip) => {
+              if (options && options.all) cb(null, [{ address: ip, family: 4 }]);
+              else cb(null, ip, 4);
+            })
+            .catch((e) => cb(e));
+        },
+      },
+      (res) => {
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () =>
+          resolve({
+            status: res.statusCode,
+            headers: res.headers,
+            text: Buffer.concat(chunks).toString("utf8"),
+          }),
+        );
+      },
+    );
+    req.on("error", reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+// ---------------------------------------------------------------- auth
 function loadCookie() {
   try {
     const j = JSON.parse(fs.readFileSync(COOKIE_FILE, "utf8"));
@@ -43,23 +120,24 @@ export async function login({ force = false, log = () => {} } = {}) {
     if (cached) return cached;
   }
   for (let attempt = 1; attempt <= 6; attempt++) {
-    const res = await fetch(`${BASE}/api/auth/sign-in/email`, {
-      method: "POST",
-      headers: {
+    const res = await request(
+      "POST",
+      "/api/auth/sign-in/email",
+      {
         "content-type": "application/json",
         // Dokploy's auth rejects requests with a missing/null Origin header.
         origin: BASE,
         referer: `${BASE}/`,
       },
-      body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
-    });
+      JSON.stringify({ email: EMAIL, password: PASSWORD }),
+    );
     if (res.status === 429) {
       log(`login rate-limited (429), sleeping ${10 * attempt}s`);
       await sleep(10000 * attempt);
       continue;
     }
-    if (!res.ok) throw new Error(`login failed: HTTP ${res.status} ${await res.text()}`);
-    const setCookie = res.headers.getSetCookie?.() ?? [];
+    if (res.status !== 200) throw new Error(`login failed: HTTP ${res.status} ${res.text}`);
+    const setCookie = res.headers["set-cookie"] || [];
     const raw = setCookie.find((c) => c.startsWith("better-auth.session_token="));
     if (!raw) throw new Error("login: no better-auth cookie in response");
     const cookie = raw.split(";")[0];
@@ -69,36 +147,36 @@ export async function login({ force = false, log = () => {} } = {}) {
   throw new Error("login: rate limited after retries");
 }
 
+// ---------------------------------------------------------------- tRPC
 async function call(method, proc, input, { cookie, raw = false } = {}) {
-  let url, init;
+  let pathAndQuery, body;
   if (method === "GET") {
     const payload = JSON.stringify({ 0: { json: input ?? null } });
-    url = `${BASE}/api/trpc/${proc}?batch=1&input=${encodeURIComponent(payload)}`;
-    init = { method: "GET", headers: { cookie } };
+    pathAndQuery = `/api/trpc/${proc}?batch=1&input=${encodeURIComponent(payload)}`;
   } else {
-    url = `${BASE}/api/trpc/${proc}`;
-    init = {
-      method: "POST",
-      headers: { cookie, "content-type": "application/json" },
-      body: JSON.stringify({ json: input ?? {} }),
-    };
+    pathAndQuery = `/api/trpc/${proc}`;
+    body = JSON.stringify({ json: input ?? {} });
   }
-  const res = await fetch(url, init);
-  const text = await res.text();
-  if (raw) return { status: res.status, text };
-  let body;
+  const res = await request(
+    method,
+    pathAndQuery,
+    { cookie, "content-type": "application/json", origin: BASE, referer: `${BASE}/` },
+    body,
+  );
+  if (raw) return res;
+  let parsed;
   try {
-    body = JSON.parse(text);
+    parsed = JSON.parse(res.text);
   } catch {
-    body = text;
+    parsed = res.text;
   }
-  if (!res.ok) {
-    const err = Array.isArray(body) ? body[0]?.error?.json : body?.error?.json;
-    const msg = err?.message || text;
+  if (res.status < 200 || res.status >= 300) {
+    const err = Array.isArray(parsed) ? parsed[0]?.error?.json : parsed?.error?.json;
+    const msg = err?.message || res.text;
     const zod = err?.data?.zodError ? JSON.stringify(err.data.zodError) : "";
     throw new Error(`${method} ${proc} -> HTTP ${res.status}: ${msg} ${zod}`.trim());
   }
-  return Array.isArray(body) ? body[0]?.result?.data?.json ?? body[0]?.result?.data ?? body : body;
+  return Array.isArray(parsed) ? parsed[0]?.result?.data?.json ?? parsed[0]?.result?.data ?? parsed : parsed;
 }
 
 export async function trpc(method, proc, input, opts = {}) {
@@ -106,7 +184,6 @@ export async function trpc(method, proc, input, opts = {}) {
   try {
     return await call(method, proc, input, { ...opts, cookie });
   } catch (e) {
-    // Session may have been rotated server-side; re-login once.
     if (/HTTP 401/.test(String(e.message))) {
       cookie = await login({ ...opts, force: true });
       return await call(method, proc, input, { ...opts, cookie });
@@ -115,7 +192,7 @@ export async function trpc(method, proc, input, opts = {}) {
   }
 }
 
-// ---- CLI ----
+// ---------------------------------------------------------------- CLI
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
   const [method, proc, jsonArg] = process.argv.slice(2);
