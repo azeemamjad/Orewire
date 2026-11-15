@@ -88,3 +88,18 @@ outreach/compose-one.json
 
 outreach/console-opens.png
 
+
+# --- Outreach lead batches (PII / run state) ---
+outreach/leads-*/leads.json
+outreach/leads-*/domains.json
+outreach/leads-*/crawl_results.jsonl
+outreach/leads-*/enriched.csv
+outreach/leads-*/enriched.json
+outreach/leads-*/verify_cache.json
+outreach/leads-*/import_report.json
+outreach/leads-*/campaigns_report.json
+outreach/leads-*/listmonk-cookies.json
+outreach/leads-*/missing_email_rows.csv
+outreach/leads-*/profile.json
+outreach/leads-*/*.log
+outreach/cf-bridge/bridge.log
