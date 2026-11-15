@@ -464,11 +464,17 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/html" }); return res.end(ui);
   }
   if (url.pathname === "/api/state") {
+    // Never ship the queue's full raw bodies: a 500-message backlog is multi-MB and
+    // the UI polls this every 5s. Metadata only (the raw stays server-side).
     const view = {
       today: today(),
       mailboxes: state.mailboxes.map(mb => ({ ...mb, cap_now: capFor(mb) })),
       settings: state.settings,
-      queue: state.queue,
+      queue: (state.queue || []).map(it => ({
+        id: it.id, mail_from: it.mail_from, rcpt_to: it.rcpt_to,
+        queued_at: it.queued_at, attempts: it.attempts,
+      })),
+      queue_len: (state.queue || []).length,
       replied: state.replied,
       inbox: state.inbox || [],
       inbound: state.inbound || [],
