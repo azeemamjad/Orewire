@@ -576,14 +576,27 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (url.pathname === "/api/queue-sample") {
-    const first = state.queue[0];
+    // ?rcpt=addr returns the queued MIME for that recipient (first 4 KB, headers
+    // and text part) so the rendered copy can be inspected before it is released.
+    const wantRcpt = (url.searchParams.get("rcpt") || "").toLowerCase();
+    const item = wantRcpt
+      ? state.queue.find((it) => (it.rcpt_to || []).map((a) => String(a).toLowerCase()).includes(wantRcpt))
+      : state.queue[0];
     let sigContext = null;
-    if (first) {
-      const m = first.raw.search(/Azeem/i);
-      if (m >= 0) sigContext = first.raw.slice(Math.max(0, m - 200), m + 300);
+    if (item) {
+      const m = item.raw.search(/Azeem/i);
+      if (m >= 0) sigContext = item.raw.slice(Math.max(0, m - 200), m + 300);
     }
     res.writeHead(200, { "Content-Type": "application/json" });
-    return res.end(JSON.stringify({ len: state.queue.length, sample: first ? first.raw.slice(0, 400) : null, sigContext }));
+    return res.end(JSON.stringify({
+      len: state.queue.length,
+      rcpt: wantRcpt || null,
+      found: !!item,
+      queued_at: item ? item.queued_at : null,
+      mail_from: item ? item.mail_from : null,
+      sample: item ? item.raw.slice(0, 4096) : null,
+      sigContext,
+    }));
   }
   if (req.method === "POST" && url.pathname === "/api/queue-drop") {
     // Remove queued (not yet released) messages by recipient. Used when a batch is
