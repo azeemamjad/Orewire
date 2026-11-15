@@ -585,6 +585,42 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "application/json" });
     return res.end(JSON.stringify({ len: state.queue.length, sample: first ? first.raw.slice(0, 400) : null, sigContext }));
   }
+  if (req.method === "POST" && url.pathname === "/api/queue-drop") {
+    // Remove queued (not yet released) messages by recipient. Used when a batch is
+    // split or a segment's copy changes after Listmonk already handed everything to
+    // this proxy — the queue holds rendered MIME, so re-sending needs it gone first.
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      try {
+        const b = JSON.parse(body || "{}");
+        const targets = new Set((b.emails || []).map((e) => String(e).toLowerCase()));
+        const domainMatch = b.domain ? String(b.domain).toLowerCase() : null;
+        const dryRun = b.dryRun === true;
+        let dropped = 0;
+        const kept = [];
+        for (const item of state.queue) {
+          const rcpts = (item.rcpt_to || []).map((a) => String(a).toLowerCase());
+          const hit = targets.size || domainMatch
+            ? rcpts.some((r) => targets.has(r) || (domainMatch && r.endsWith("@" + domainMatch)))
+            : b.all === true;
+          if (hit) dropped++;
+          else kept.push(item);
+        }
+        if (dropped && !dryRun) {
+          state.queue = kept;
+          save();
+          log(`queue-drop: removed ${dropped} queued message(s), ${kept.length} left`);
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ dryRun, dropped, queue_len: (dryRun ? state.queue.length : kept.length) }));
+      } catch (e) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: String(e.message).slice(0, 200) }));
+      }
+    });
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/api/sanitize-queue") {
     // Tolerant matcher: allow quoted-printable soft breaks (=CRLF) between any two characters.
     function tolerant(str) {
