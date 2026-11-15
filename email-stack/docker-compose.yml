@@ -242,6 +242,7 @@ services:
       POSTAL_DB_USER: root
       POSTAL_DB_PASSWORD: ${MARIADB_ROOT_PASSWORD:-ulGYNpIWRzTMQIx24FxsZ6Mm}
       POSTAL_DB_PREFIX: postal-server-
+      EMAIL_VERIFIER_URL: http://email-verifier:8080
     volumes:
       - console-state:/data
     networks: [email, dokploy-network]

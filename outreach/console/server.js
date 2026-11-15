@@ -521,6 +521,36 @@ const server = http.createServer((req, res) => {
     })();
     return;
   }
+  // ---- email verification (Reacher, self-hosted on the VPS: port 25 is open there) ----
+  // Used by the lead-enrichment pipeline before a guessed address is ever mailed.
+  if (req.method === "POST" && url.pathname === "/api/verify-email") {
+    let body = ""; req.on("data", c => body += c); req.on("end", async () => {
+      try {
+        const b = JSON.parse(body || "{}");
+        const email = String(b.email || "").trim().toLowerCase();
+        if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email)) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          return res.end('{"error":"invalid email argument"}');
+        }
+        const base = process.env.EMAIL_VERIFIER_URL || "http://email-verifier:8080";
+        const pr = await fetch(base.replace(/\/$/, "") + "/v0/check_email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ to_email: email }),
+          signal: AbortSignal.timeout(50000),
+        });
+        const text = await pr.text();
+        let result;
+        try { result = JSON.parse(text); } catch { result = { raw: text.slice(0, 500) }; }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ email, upstream_status: pr.status, result }));
+      } catch (e) {
+        res.writeHead(502, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: String(e.message).slice(0, 200) }));
+      }
+    });
+    return;
+  }
   if (url.pathname === "/api/selftest") {
     (async () => {
       const out = { steps: [] };
