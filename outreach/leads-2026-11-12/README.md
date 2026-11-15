@@ -51,6 +51,34 @@ Confidence ladder written into `Email Found By` / `Email Confidence`:
 | `generic` / `generic-csv` | company inbox (ir@ > contact@ > info@), one per company |
 | `catchall-skip` | domain accepts any mailbox so nothing can be verified — **not mailed** |
 
+## Two audiences, two templates
+
+The batch was originally one campaign, but it mixes addresses found for a named
+person with monitored company inboxes (`info@`, `ir@`) — greeting an inbox with
+"Hi Neville," is wrong. `split_batch.mjs` separates them:
+
+| list | count | template |
+|---|---|---|
+| `AU Person 11-12` / `CA Person 11-12` | 12 + 86 | existing step-1 copy: "Hi {{ FirstName }}, …" (campaigns B1, already handed to the proxy) |
+| `AU Company 11-12` / `CA Company 11-12` | 214 + 167 | team copy: **"Hi team at {{ Attribs.company_name }}, …"**, subject *Peer filings for \<Company\>* (campaigns B2) |
+
+Because Listmonk renders and hands MIME to the console proxy up front, the queued
+company messages had to be pulled back out before the copy changed:
+
+```powershell
+node split_batch.mjs --dry-run   # shows the move counts + queue impact
+node split_batch.mjs --start     # move lists, POST /api/queue-drop, start B2
+node cleanup_old_lists.mjs       # drop stale IR/Research memberships (no double sends)
+node verify_lists.mjs            # attribs/template variables per list
+node verify_split.mjs            # campaign copy per segment
+```
+
+Inspect any queued message before it is released (rendered greeting, From rotation):
+
+```powershell
+curl "https://emails-web.orewire.com/api/queue-sample?rcpt=info@example.com" -H "Cookie: console_auth=<hmac>"
+```
+
 ## Commands
 
 ```powershell
